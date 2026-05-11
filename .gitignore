@@ -1,0 +1,73 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+*.env
+.env.local
+.env.production
+.env.development
+
+# Claude Code
+.claude/settings.local.json
+
+# Python virtual environments
+**/venv/
+**/.venv/
+ENV/
+env/
+venv/
+
+# Node.js modules
+**/node_modules/
+
+# Next.js
+.next/
+out/
+build/
+.turbo/
+
+# Distribution files
+dist/
+build/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.DS_Store
+
+# Recommended directory-level ignores for secrets and keys
+# Prefer storing secrets in a dedicated directory (e.g., secrets/ or credentials/)
+secrets/
+secrets/**
+credentials/
+credentials/**
+keys/
+keys/**
+certs/
+certs/**
+# SSH keys directory (if present)
+.ssh/
+# Provider-specific directories
+.aws/
+.azure/
+.gcloud/
+# Local app settings directory (if you move local config files into a folder)
+local_settings/
+local_settings/**
+# Local caches and package manager stores
+.cache/
+.cache/**
+npm-cache/
+yarn-cache/
+.pnpm-store/

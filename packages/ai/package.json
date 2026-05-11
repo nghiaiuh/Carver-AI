@@ -1,0 +1,17 @@
+{
+  "name": "@carver/ai",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "@langchain/langgraph": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
