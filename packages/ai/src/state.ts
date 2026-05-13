@@ -1,6 +1,10 @@
 import { Annotation } from "@langchain/langgraph";
 
-export type CarverIntent = "chat" | "edit" | "generate" | "annotate";
+export type CarverIntent =
+  | "chat"
+  | "generate"
+  | "refine"
+  | "analyze_reference";
 
 export const CarverStateAnnotation = Annotation.Root({
   intent: Annotation<CarverIntent>({

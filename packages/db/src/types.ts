@@ -1,14 +1,3 @@
-// ─── Auto-generated Database Types từ Supabase ───────────────────────────────
-// Để tự động sinh types từ Supabase project thực tế của bạn, chạy lệnh:
-//
-//   npx supabase gen types typescript --project-id <PROJECT_ID> > src/types.ts
-//
-// Hoặc nếu đang dùng Supabase CLI local:
-//   npx supabase gen types typescript --local > src/types.ts
-//
-// Tham khảo: https://supabase.com/docs/guides/api/rest/generating-types
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type Json =
   | string
   | number
@@ -17,97 +6,408 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-// ─── Định nghĩa schema Database ───────────────────────────────────────────────
-// Cập nhật interface này để phản ánh đúng schema của bạn trên Supabase.
-// Mỗi table/view được khai báo trong Tables/Views với các kiểu Row, Insert, Update.
+export type PlanType = "free" | "premium";
+export type ProjectStatus = "active" | "archived" | "deleted";
+export type AssetKind = "upload" | "generated" | "reference" | "export";
+export type ChatRole = "user" | "assistant" | "system" | "tool";
+export type AiJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+export type AiJobType =
+  | "generate_concept"
+  | "refine_concept"
+  | "analyze_reference"
+  | "export";
+export type ExportFormat = "png" | "jpg" | "pdf";
+export type ExportStatus = "queued" | "running" | "succeeded" | "failed";
+
+type Table<Row, Insert, Update, Relationships extends readonly unknown[] = []> = {
+  Row: Row;
+  Insert: Insert;
+  Update: Update;
+  Relationships: Relationships;
+};
+
 export interface Database {
   public: {
     Tables: {
-      // ── Ví dụ: bảng projects ──────────────────────────────────────────────
-      projects: {
-        Row: {
+      profiles: Table<
+        {
           id: string;
+          display_name: string | null;
+          avatar_url: string | null;
+          plan_type: PlanType;
+          credits_amount: number;
+          onboarding: Json;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          plan_type?: PlanType;
+          credits_amount?: number;
+          onboarding?: Json;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          plan_type?: PlanType;
+          credits_amount?: number;
+          onboarding?: Json;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      projects: Table<
+        {
+          id: string;
+          owner_id: string;
           name: string;
           description: string | null;
-          owner_id: string;
-          canvas_data: Json | null;
+          status: ProjectStatus;
+          current_canvas_snapshot_id: string | null;
+          landscape_goal: string | null;
           created_at: string;
           updated_at: string;
-        };
-        Insert: {
+        },
+        {
           id?: string;
+          owner_id: string;
           name: string;
           description?: string | null;
-          owner_id: string;
-          canvas_data?: Json | null;
+          status?: ProjectStatus;
+          current_canvas_snapshot_id?: string | null;
+          landscape_goal?: string | null;
           created_at?: string;
           updated_at?: string;
-        };
-        Update: {
+        },
+        {
           id?: string;
+          owner_id?: string;
           name?: string;
           description?: string | null;
-          owner_id?: string;
-          canvas_data?: Json | null;
+          status?: ProjectStatus;
+          current_canvas_snapshot_id?: string | null;
+          landscape_goal?: string | null;
           created_at?: string;
           updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "projects_owner_id_fkey";
-            columns: ["owner_id"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-
-      // ── Ví dụ: bảng jobs (BullMQ job tracking) ───────────────────────────
-      jobs: {
-        Row: {
+        }
+      >;
+      landscape_briefs: Table<
+        {
           id: string;
           project_id: string;
-          type: string;
-          status: "pending" | "running" | "completed" | "failed";
-          payload: Json | null;
-          result: Json | null;
-          error: string | null;
+          property_type: string | null;
+          location_text: string | null;
+          climate_zone: string | null;
+          yard_dimensions: string | null;
+          sun_shade: string | null;
+          soil_drainage: string | null;
+          budget_range: string | null;
+          style_preferences: string[] | null;
+          must_keep_items: string[] | null;
+          avoid_items: string[] | null;
+          notes: Json;
           created_at: string;
           updated_at: string;
-        };
-        Insert: {
+        },
+        {
           id?: string;
           project_id: string;
-          type: string;
-          status?: "pending" | "running" | "completed" | "failed";
-          payload?: Json | null;
-          result?: Json | null;
-          error?: string | null;
+          property_type?: string | null;
+          location_text?: string | null;
+          climate_zone?: string | null;
+          yard_dimensions?: string | null;
+          sun_shade?: string | null;
+          soil_drainage?: string | null;
+          budget_range?: string | null;
+          style_preferences?: string[] | null;
+          must_keep_items?: string[] | null;
+          avoid_items?: string[] | null;
+          notes?: Json;
           created_at?: string;
           updated_at?: string;
-        };
-        Update: {
+        },
+        {
           id?: string;
           project_id?: string;
-          type?: string;
-          status?: "pending" | "running" | "completed" | "failed";
-          payload?: Json | null;
-          result?: Json | null;
-          error?: string | null;
+          property_type?: string | null;
+          location_text?: string | null;
+          climate_zone?: string | null;
+          yard_dimensions?: string | null;
+          sun_shade?: string | null;
+          soil_drainage?: string | null;
+          budget_range?: string | null;
+          style_preferences?: string[] | null;
+          must_keep_items?: string[] | null;
+          avoid_items?: string[] | null;
+          notes?: Json;
           created_at?: string;
           updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "jobs_project_id_fkey";
-            columns: ["project_id"];
-            isOneToOne: false;
-            referencedRelation: "projects";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
+        }
+      >;
+      canvas_snapshots: Table<
+        {
+          id: string;
+          project_id: string;
+          version: number;
+          canvas_json: Json;
+          thumbnail_asset_id: string | null;
+          created_by: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          version: number;
+          canvas_json?: Json;
+          thumbnail_asset_id?: string | null;
+          created_by: string;
+          created_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          version?: number;
+          canvas_json?: Json;
+          thumbnail_asset_id?: string | null;
+          created_by?: string;
+          created_at?: string;
+        }
+      >;
+      assets: Table<
+        {
+          id: string;
+          project_id: string;
+          owner_id: string;
+          kind: AssetKind;
+          storage_bucket: string;
+          storage_path: string;
+          mime_type: string | null;
+          width: number | null;
+          height: number | null;
+          size_bytes: number | null;
+          source_job_id: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          owner_id: string;
+          kind: AssetKind;
+          storage_bucket: string;
+          storage_path: string;
+          mime_type?: string | null;
+          width?: number | null;
+          height?: number | null;
+          size_bytes?: number | null;
+          source_job_id?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          owner_id?: string;
+          kind?: AssetKind;
+          storage_bucket?: string;
+          storage_path?: string;
+          mime_type?: string | null;
+          width?: number | null;
+          height?: number | null;
+          size_bytes?: number | null;
+          source_job_id?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      chat_threads: Table<
+        {
+          id: string;
+          project_id: string;
+          title: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          title?: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          title?: string;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      chat_messages: Table<
+        {
+          id: string;
+          thread_id: string;
+          project_id: string;
+          role: ChatRole;
+          content: string;
+          referenced_asset_ids: string[] | null;
+          referenced_canvas_object_ids: Json;
+          metadata: Json;
+          created_at: string;
+        },
+        {
+          id?: string;
+          thread_id: string;
+          project_id: string;
+          role: ChatRole;
+          content: string;
+          referenced_asset_ids?: string[] | null;
+          referenced_canvas_object_ids?: Json;
+          metadata?: Json;
+          created_at?: string;
+        },
+        {
+          id?: string;
+          thread_id?: string;
+          project_id?: string;
+          role?: ChatRole;
+          content?: string;
+          referenced_asset_ids?: string[] | null;
+          referenced_canvas_object_ids?: Json;
+          metadata?: Json;
+          created_at?: string;
+        }
+      >;
+      ai_jobs: Table<
+        {
+          id: string;
+          project_id: string;
+          thread_id: string | null;
+          status: AiJobStatus;
+          job_type: AiJobType;
+          prompt: string | null;
+          input_asset_ids: string[] | null;
+          output_asset_ids: string[] | null;
+          provider: string | null;
+          provider_job_id: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          thread_id?: string | null;
+          status?: AiJobStatus;
+          job_type: AiJobType;
+          prompt?: string | null;
+          input_asset_ids?: string[] | null;
+          output_asset_ids?: string[] | null;
+          provider?: string | null;
+          provider_job_id?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          thread_id?: string | null;
+          status?: AiJobStatus;
+          job_type?: AiJobType;
+          prompt?: string | null;
+          input_asset_ids?: string[] | null;
+          output_asset_ids?: string[] | null;
+          provider?: string | null;
+          provider_job_id?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      design_versions: Table<
+        {
+          id: string;
+          project_id: string;
+          source_snapshot_id: string | null;
+          output_snapshot_id: string | null;
+          source_job_id: string | null;
+          label: string | null;
+          notes: string | null;
+          created_by: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          source_snapshot_id?: string | null;
+          output_snapshot_id?: string | null;
+          source_job_id?: string | null;
+          label?: string | null;
+          notes?: string | null;
+          created_by: string;
+          created_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          source_snapshot_id?: string | null;
+          output_snapshot_id?: string | null;
+          source_job_id?: string | null;
+          label?: string | null;
+          notes?: string | null;
+          created_by?: string;
+          created_at?: string;
+        }
+      >;
+      exports: Table<
+        {
+          id: string;
+          project_id: string;
+          asset_id: string | null;
+          format: ExportFormat;
+          resolution: string | null;
+          status: ExportStatus;
+          created_by: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          project_id: string;
+          asset_id?: string | null;
+          format: ExportFormat;
+          resolution?: string | null;
+          status?: ExportStatus;
+          created_by: string;
+          created_at?: string;
+        },
+        {
+          id?: string;
+          project_id?: string;
+          asset_id?: string | null;
+          format?: ExportFormat;
+          resolution?: string | null;
+          status?: ExportStatus;
+          created_by?: string;
+          created_at?: string;
+        }
+      >;
     };
     Views: {
       [_ in never]: never;
@@ -116,7 +416,14 @@ export interface Database {
       [_ in never]: never;
     };
     Enums: {
-      [_ in never]: never;
+      plan_type: PlanType;
+      project_status: ProjectStatus;
+      asset_kind: AssetKind;
+      chat_role: ChatRole;
+      ai_job_status: AiJobStatus;
+      ai_job_type: AiJobType;
+      export_format: ExportFormat;
+      export_status: ExportStatus;
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -124,7 +431,6 @@ export interface Database {
   };
 }
 
-// ─── Utility Types ────────────────────────────────────────────────────────────
 export type Tables<T extends keyof Database["public"]["Tables"]> =
   Database["public"]["Tables"][T]["Row"];
 

@@ -1,54 +1,39 @@
-# Carver AI Developer Skills & Guidelines
+---
+name: carver-ai-development
+description: Work on the Carver AI codebase, an AI landscape design canvas app using Next.js, Supabase, LangGraph, BullMQ, and Turborepo. Use for security reviews, Supabase schema/RLS work, canvas chat APIs, AI routing, project cleanup, and infrastructure guidance.
+---
 
-You are an AI coding assistant working on **Carver AI**, a collaborative ChatCanvas application (similar to Lovart.ai).
-This file contains the "skills" and context you need to successfully navigate and develop within this codebase.
+# Carver AI Development
 
-## 1. Project Context & Objectives
-- **Goal:** Build an infinite canvas app with real-time collaboration where users can chat with an AI agent to edit images, generate content, and add annotations.
-- **Key Features:**
-  - Real-time collaborative canvas (tldraw + Liveblocks).
-  - AI Orchestration (LangGraph routing intents: edit, generate, annotate, chat).
-  - Asynchronous Processing (BullMQ workers for heavy image processing).
-  - Cloud Storage (Cloudflare R2).
-  - Database (PostgreSQL + Prisma).
+## Mission
+Build a Lovart-style AI landscape design workspace: authenticated users create projects, upload yard/reference images, chat with an AI agent, generate/refine concepts, and persist canvas snapshots in Supabase.
 
-## 2. Architecture & Tech Stack
-- **Monorepo:** Turborepo (npm workspaces)
-- **Frontend/API:** Next.js 14 (App Router), TailwindCSS, TypeScript.
-- **Canvas:** `tldraw` integrated with `Liveblocks` for real-time multiplayer.
-- **AI Agent:** `@langchain/langgraph` defining a state graph for routing intents.
-- **Database Layer:** Prisma ORM.
-- **Background Worker:** BullMQ + Redis, running on a separate Node.js service (Railway).
-- **Image Processing:** Replicate (Flux Fill, Flux Schnell).
+## Workflow
+1. Inspect the relevant package before editing.
+2. Keep changes inside the package boundary that owns the behavior.
+3. Prefer Supabase-first data access for MVP persistence.
+4. Keep AI jobs asynchronous when generation/refinement may run longer than a request.
+5. Run `npm run build`, `npm run typecheck`, and `npm run lint` before handoff when feasible.
 
-## 3. Monorepo Structure Map
-- `/apps/web`: Next.js frontend, API route handlers (chat streaming, canvas auth), UI components.
-- `/apps/worker`: BullMQ processors for long-running AI tasks (e.g., Flux inpainting).
-- `/packages/ai`: LangGraph definitions, nodes, state schema, and tools.
-- `/packages/db`: Prisma schema, migrations, and typed database client.
-- `/packages/queue`: Shared BullMQ types, queue names, and job interfaces.
-- `/packages/config`: Shared configurations (ESLint, TSConfig).
+## File Ownership
+- Web UI and API routes: `apps/web`.
+- AI state, intent routing, and graph nodes: `packages/ai`.
+- Supabase clients, DB types, SQL schema, and RLS policies: `packages/db`.
+- Queue configuration and job contracts: `packages/queue`.
+- Worker processors and background job execution: `apps/worker`.
 
-## 4. Coding Standards & Guidelines
-- **TypeScript Only:** Use strict TypeScript. Avoid `any`.
-- **Server vs Client Components:** In Next.js 14, strictly define `"use client"` for interactive components (e.g., `CarverCanvas`). Use Server Components by default.
-- **Shared Packages:** When adding a database model, do it in `/packages/db/prisma/schema.prisma` and run `prisma generate`. Don't redefine models in `apps/web`.
-- **Environment Variables:** Use `process.env` safely. For client-side envs in Next.js, use `NEXT_PUBLIC_` prefix.
-- **Tool Calls:** When building LangGraph nodes in `/packages/ai`, ensure tool calls emit state updates that can be streamed to the client via Server Sent Events (SSE).
+## Security Checklist
+- Browser code imports only anon Supabase clients.
+- Server routes and workers import service-role helpers only from `@carver/db/server`.
+- Do not log raw prompts, private asset URLs, signed URLs, full job payloads, or tokens.
+- Every user-owned table must be protected by RLS.
+- Profile rows must include `plan_type` and `credits_amount`.
+- Use one local `.env` file; do not create `.env.example`.
 
-## 5. Development Workflow
-- **Adding an AI Feature:**
-  1. Define the input/output state in `packages/ai/src/state.ts`.
-  2. Add a new node or update the router in `packages/ai/src/graph.ts`.
-  3. Update `apps/web/app/api/chat/route.ts` if the stream payload structure changes.
-- **Adding a Canvas Tool:**
-  1. Create a custom tool in `apps/web/components/canvas/`.
-  2. Register the tool in the `<Tldraw>` configuration.
-  3. Use Liveblocks mutations to broadcast custom events if necessary.
-
-## 6. Useful Commands
-- `npm run dev`: Starts all dev servers via Turbo.
-- `npm run build`: Builds the monorepo.
-- `cd packages/db && npx prisma db push`: Pushes database schema changes.
-
-**Always refer to these principles when suggesting code modifications.**
+## Canvas Chat MVP
+- `projects` owns user projects and points to the latest snapshot.
+- `canvas_snapshots` stores versioned canvas JSON.
+- `chat_threads` and `chat_messages` store the conversation.
+- `assets` stores uploaded, generated, reference, and exported files.
+- `ai_jobs` tracks generate/refine/analyze/export work.
+- `landscape_briefs` stores property and style requirements for landscape design.

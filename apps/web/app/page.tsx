@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ProfilesPanel from "../components/ProfilesPanel";
 
 export default function HomePage() {
   return (
@@ -164,7 +165,7 @@ export default function HomePage() {
           Tech Stack
         </h2>
         <div className="flex flex-wrap justify-center gap-3">
-          {["Next.js 14", "tldraw", "Liveblocks", "LangGraph", "BullMQ", "Redis", "PostgreSQL", "Prisma", "Tailwind CSS"].map(
+          {["Next.js 16", "tldraw", "Liveblocks", "LangGraph", "BullMQ", "Redis", "PostgreSQL", "Prisma", "Tailwind CSS"].map(
             (tech) => (
               <span
                 key={tech}
@@ -176,6 +177,9 @@ export default function HomePage() {
           )}
         </div>
       </section>
+
+      {/* Profile data */}
+      <ProfilesPanel />
     </main>
   );
 }

@@ -1,36 +1,55 @@
-# Carver AI Project Instructions
+# Carver AI Operating Guide
 
-This file provides system instructions and context for Claude when working on the **Carver AI** project. 
+Carver AI is a solo-user MVP for AI landscape design: users create a project, upload yard/reference images, chat with an AI agent, and save generated or refined concepts on an infinite canvas.
 
-## Project Architecture
-- **Type**: Monorepo managed by Turborepo and npm workspaces.
-- **Frontend/API**: `apps/web` (Next.js 14 App Router, Tailwind, tldraw, Liveblocks).
-- **Background Worker**: `apps/worker` (BullMQ, Redis, Node.js).
-- **AI Core**: `packages/ai` (LangGraph agent, state schema, intent router).
-- **Database**: `packages/db` (PostgreSQL, Prisma).
-- **Shared Queue Logic**: `packages/queue` (BullMQ jobs, types).
+## Architecture
+- Monorepo: npm workspaces with Turborepo.
+- Web/API: `apps/web` with Next.js App Router, Tailwind, and server route handlers.
+- AI core: `packages/ai` with LangGraph state, router, and future generation/refinement nodes.
+- Database: `packages/db` with Supabase clients, generated-style TypeScript types, and SQL migrations.
+- Queue: `packages/queue` and `apps/worker` for long-running AI/image jobs.
 
-## Tech Stack Rules
-1. **TypeScript**: Strictly typed. No `any` without explicit justification.
-2. **Next.js**: Use Server Components where possible. Use `"use client"` only for files that need browser APIs or React hooks (like tldraw canvas).
-3. **Database**: All Prisma models must go into `packages/db/prisma/schema.prisma`. 
-4. **AI Orchestration**: Follow LangGraph node structures. Input and Output states must match `CarverState` in `packages/ai/src/state.ts`.
-5. **Realtime**: Canvas operations should use `Liveblocks` for synchronizing state to multiple users.
+## Security Rules
+- Supabase Auth is the identity source. Do not create a parallel user table.
+- The browser may only use `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- `SUPABASE_SERVICE_ROLE_KEY` belongs only in server routes and workers. Import it from `@carver/db/server`, never from browser code.
+- All user-owned tables must have RLS enabled before production use.
+- Do not log prompts, uploaded image URLs, storage paths with signed tokens, job payloads, access tokens, refresh tokens, or service-role keys.
+- API routes must check the authenticated user before reading or mutating project data.
 
-## Common Tasks & Where They Go
-- **UI/Components**: `apps/web/components/`
-- **API Endpoints**: `apps/web/app/api/`
-- **Adding AI Intent**: `packages/ai/src/nodes/` and update `packages/ai/src/graph.ts`
-- **Updating Database**: `packages/db/prisma/schema.prisma` -> then run `npx prisma db push`
-- **Long-running Tasks**: `apps/worker/src/processors/`
+## Database Rules
+- Supabase is the source of truth for the MVP.
+- Canvas state is persisted as versioned rows in `canvas_snapshots`.
+- Active realtime collaboration can be added later with Liveblocks/tldraw, but Supabase snapshots remain canonical.
+- SQL schema and RLS policies live in `packages/db/sql`.
+- After applying SQL to Supabase, regenerate `packages/db/src/types.ts` from the real project when available.
 
-## Style Guidelines
-- Use modern ES6+ syntax.
-- Write modular, testable code.
-- Provide inline documentation for complex logic (e.g., LangGraph routing decisions, specific canvas manipulations).
+## Environment
+Use one local `.env` file only. It is intentionally ignored by git.
 
-## Execution Environment
-- Package manager: `npm` (use `npm run <script>` from root to leverage Turborepo).
-- Environment Variables: Refer to the provided structure in `carver_ai_plan.md.resolved`.
+Required server/client variables:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-*When starting a new session or executing commands, always respect the monorepo boundaries and use Turborepo scripts for builds and linting.*
+Optional infrastructure variables:
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_USERNAME`
+- `REDIS_PASSWORD`
+
+## Development Commands
+- `npm run dev`: run all dev tasks through Turbo.
+- `npm run build`: build all packages/apps.
+- `npm run typecheck`: run TypeScript checks for all packages/apps.
+- `npm run lint`: run lint/static checks for all packages/apps.
+
+## Implementation Notes
+- Keep TypeScript strict. Avoid `any`; prefer typed JSON aliases or narrow interfaces.
+- Server Components are the default in Next.js. Use `"use client"` only for interactive canvas/account UI.
+- API routes belong in `apps/web/app/api`.
+- Shared DB access belongs in `packages/db`.
+- AI state and routing changes belong in `packages/ai/src`.
+- Long-running image generation/refinement belongs in the worker, not the request path.

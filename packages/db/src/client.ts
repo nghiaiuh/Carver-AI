@@ -1,8 +1,6 @@
-export { prisma } from "./prisma";
 export {
   createBrowserSupabaseClient,
   getBrowserSupabaseClient,
 } from "./supabase";
-export { getSupabasePublicEnv } from "./env";
 
 export type { Database, Tables, InsertTables, UpdateTables, Json } from "./types";

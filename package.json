@@ -16,7 +16,10 @@
   "devDependencies": {
     "turbo": "latest"
   },
+  "overrides": {
+    "eslint": "9.39.4"
+  },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.9.0"
   }
 }
