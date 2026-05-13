@@ -1,5 +1,12 @@
-import { PrismaClient } from "@prisma/client";
+// ─── Prisma (local / self-hosted Postgres) ────────────────────────────────────
+export { prisma } from "./prisma";
 
-export const prisma = new PrismaClient();
+// ─── Supabase (online database via REST API) ──────────────────────────────────
+export {
+  supabase,
+  getSupabaseAdmin,
+  createServerClient,
+} from "./supabase";
 
-export * from "@prisma/client";
+// ─── Types ────────────────────────────────────────────────────────────────────
+export type { Database, Tables, InsertTables, UpdateTables, Json } from "./types";

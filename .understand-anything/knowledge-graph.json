@@ -1,0 +1,732 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "Carver AI",
+    "languages": ["TypeScript", "JavaScript", "CSS", "Python", "JSON"],
+    "frameworks": ["Next.js 14", "LangGraph", "BullMQ", "Prisma", "Supabase", "Tailwind CSS", "tldraw", "Liveblocks"],
+    "description": "A collaborative canvas application where teams draw in real-time with AI assistance. Built as a Turborepo monorepo with a Next.js 14 frontend, LangGraph AI orchestration, BullMQ background workers with Redis, and PostgreSQL/Supabase for persistence.",
+    "analyzedAt": "2026-05-12T11:55:00.000Z",
+    "gitCommitHash": "9877ce0c43fc7f878687e921a9b6bf990dbada96"
+  },
+  "nodes": [
+    {
+      "id": "file:apps/web/app/page.tsx",
+      "type": "file",
+      "name": "page.tsx",
+      "filePath": "apps/web/app/page.tsx",
+      "summary": "Next.js App Router homepage component. Renders hero section, feature cards (Realtime Sync, AI Orchestration, Canvas Engine, Background Workers), and tech stack badges. Links to /canvas route and GitHub repo.",
+      "tags": ["nextjs", "react", "ui", "homepage", "app-router"]
+    },
+    {
+      "id": "file:apps/web/app/layout.tsx",
+      "type": "file",
+      "name": "layout.tsx",
+      "filePath": "apps/web/app/layout.tsx",
+      "summary": "Root layout component wrapping all pages. Sets HTML lang, dark theme background (bg-slate-950), and text color (text-slate-100).",
+      "tags": ["nextjs", "react", "layout", "root-layout"]
+    },
+    {
+      "id": "file:apps/web/app/globals.css",
+      "type": "file",
+      "name": "globals.css",
+      "filePath": "apps/web/app/globals.css",
+      "summary": "Global CSS with Tailwind directives and dark color-scheme. Resets body margin to 0.",
+      "tags": ["css", "tailwind", "global-styles"]
+    },
+    {
+      "id": "file:apps/web/next.config.mjs",
+      "type": "config",
+      "name": "next.config.mjs",
+      "filePath": "apps/web/next.config.mjs",
+      "summary": "Next.js configuration enabling React strict mode.",
+      "tags": ["nextjs", "config"]
+    },
+    {
+      "id": "file:apps/web/tailwind.config.ts",
+      "type": "config",
+      "name": "tailwind.config.ts",
+      "filePath": "apps/web/tailwind.config.ts",
+      "summary": "Tailwind CSS configuration targeting app/** and components/** for content scanning.",
+      "tags": ["tailwind", "css", "config"]
+    },
+    {
+      "id": "file:apps/web/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "apps/web/tsconfig.json",
+      "summary": "TypeScript config for Next.js web app. Target ES2020, module esnext, JSX preserve, with Next.js plugin for type checking.",
+      "tags": ["typescript", "config"]
+    },
+    {
+      "id": "file:apps/web/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "apps/web/package.json",
+      "summary": "Web app package manifest. Dependencies: next 14.2.3, react ^18, react-dom ^18. Dev dependencies include tailwindcss, postcss, autoprefixer, typescript, eslint.",
+      "tags": ["package-manifest", "nextjs", "dependencies"]
+    },
+    {
+      "id": "file:apps/web/postcss.config.js",
+      "type": "config",
+      "name": "postcss.config.js",
+      "filePath": "apps/web/postcss.config.js",
+      "summary": "PostCSS configuration with tailwindcss and autoprefixer plugins.",
+      "tags": ["postcss", "css", "config"]
+    },
+    {
+      "id": "file:apps/web/next-env.d.ts",
+      "type": "config",
+      "name": "next-env.d.ts",
+      "filePath": "apps/web/next-env.d.ts",
+      "summary": "Next.js auto-generated type references. Includes references to next types and next/image global types.",
+      "tags": ["typescript", "nextjs", "types"]
+    },
+    {
+      "id": "file:apps/worker/src/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "apps/worker/src/index.ts",
+      "summary": "Background worker entry point using BullMQ. Creates an image-processing worker with default queue options from @carver/queue. Handles completed and failed job events.",
+      "tags": ["bullmq", "worker", "background-processing", "job-queue"]
+    },
+    {
+      "id": "file:apps/worker/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "apps/worker/package.json",
+      "summary": "Worker app package manifest. Depends on @carver/queue. Uses ts-node-dev for development, tsc for build.",
+      "tags": ["package-manifest", "bullmq", "worker"]
+    },
+    {
+      "id": "file:apps/worker/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "apps/worker/tsconfig.json",
+      "summary": "TypeScript config for worker. Node16 module resolution, outputs to dist/.",
+      "tags": ["typescript", "config"]
+    },
+    {
+      "id": "file:packages/ai/src/graph.ts",
+      "type": "file",
+      "name": "graph.ts",
+      "filePath": "packages/ai/src/graph.ts",
+      "summary": "LangGraph state graph builder. Creates a StateGraph with CarverStateAnnotation, adds router node, and connects START -> router -> END. Compiles and exports buildGraph function.",
+      "tags": ["langgraph", "state-machine", "ai-orchestration", "graph-builder"]
+    },
+    {
+      "id": "file:packages/ai/src/state.ts",
+      "type": "file",
+      "name": "state.ts",
+      "filePath": "packages/ai/src/state.ts",
+      "summary": "Defines CarverState type using LangGraph Annotation. Intent field is a union of 'chat' | 'edit' | 'generate' | 'annotate' with reducer that replaces on each update. Provides createInitialState helper.",
+      "tags": ["langgraph", "state", "types", "ai-orchestration"]
+    },
+    {
+      "id": "file:packages/ai/src/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "packages/ai/src/index.ts",
+      "summary": "AI package barrel export. Re-exports everything from state and graph modules.",
+      "tags": ["exports", "ai-package"]
+    },
+    {
+      "id": "file:packages/ai/src/nodes/router.ts",
+      "type": "file",
+      "name": "router.ts",
+      "filePath": "packages/ai/src/nodes/router.ts",
+      "summary": "Intent routing LangGraph node. Takes CarverState and returns the current intent (defaults to 'chat'). This is the single processing node in the graph.",
+      "tags": ["langgraph", "node", "router", "intent-routing"]
+    },
+    {
+      "id": "file:packages/ai/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "packages/ai/package.json",
+      "summary": "AI package manifest. Depends on @langchain/langgraph. TypeScript source outputs to dist/.",
+      "tags": ["package-manifest", "langgraph", "ai"]
+    },
+    {
+      "id": "file:packages/ai/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "packages/ai/tsconfig.json",
+      "summary": "TypeScript config for AI package. Node16 module resolution, outputs to dist/.",
+      "tags": ["typescript", "config"]
+    },
+    {
+      "id": "file:packages/db/src/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "packages/db/src/index.ts",
+      "summary": "Database package barrel export. Exports prisma client, supabase client, getSupabaseAdmin, createServerClient, and type aliases (Database, Tables, InsertTables, UpdateTables, Json).",
+      "tags": ["exports", "database", "prisma", "supabase"]
+    },
+    {
+      "id": "file:packages/db/src/prisma.ts",
+      "type": "file",
+      "name": "prisma.ts",
+      "filePath": "packages/db/src/prisma.ts",
+      "summary": "Prisma client singleton. Uses global variable to prevent multiple instances in dev (hot-reload). Logs queries/errors in development mode only.",
+      "tags": ["prisma", "database", "singleton", "postgresql"]
+    },
+    {
+      "id": "file:packages/db/src/supabase.ts",
+      "type": "file",
+      "name": "supabase.ts",
+      "filePath": "packages/db/src/supabase.ts",
+      "summary": "Supabase client setup with three clients: public (anon key, RLS-enforced), admin (service role key, no RLS, server-side only), and server client (user JWT). All target the 'public' schema.",
+      "tags": ["supabase", "database", "auth", "client"]
+    },
+    {
+      "id": "file:packages/db/src/types.ts",
+      "type": "file",
+      "name": "types.ts",
+      "filePath": "packages/db/src/types.ts",
+      "summary": "Auto-generated Supabase database type definitions. Defines Database type with Tables (projects, jobs), Views, Functions, Enums, and CompositeTypes. Includes utility types Tables<T>, InsertTables<T>, UpdateTables<T>.",
+      "tags": ["types", "supabase", "database", "type-generation"]
+    },
+    {
+      "id": "file:packages/db/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "packages/db/package.json",
+      "summary": "DB package manifest. Depends on @prisma/client and @supabase/supabase-js. Provides db:push and db:generate scripts.",
+      "tags": ["package-manifest", "prisma", "supabase", "database"]
+    },
+    {
+      "id": "file:packages/db/.env.example",
+      "type": "config",
+      "name": ".env.example",
+      "filePath": "packages/db/.env.example",
+      "summary": "Environment variable template for Supabase and Prisma. Documents NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL, and DIRECT_URL.",
+      "tags": ["config", "env", "supabase", "prisma", "documentation"]
+    },
+    {
+      "id": "file:packages/db/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "packages/db/tsconfig.json",
+      "summary": "TypeScript config for DB package. Node16 module resolution, outputs to dist/.",
+      "tags": ["typescript", "config"]
+    },
+    {
+      "id": "file:packages/queue/src/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "packages/queue/src/index.ts",
+      "summary": "Queue package exports. Re-exports Queue, Worker, QueueEvents from bullmq. Provides defaultQueueOptions with Redis connection (host/port from env, defaults to localhost:6379).",
+      "tags": ["bullmq", "queue", "exports", "redis"]
+    },
+    {
+      "id": "file:packages/queue/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "packages/queue/package.json",
+      "summary": "Queue package manifest. Depends on bullmq ^4.0.0. TypeScript source outputs to dist/.",
+      "tags": ["package-manifest", "bullmq", "queue"]
+    },
+    {
+      "id": "file:packages/queue/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "packages/queue/tsconfig.json",
+      "summary": "TypeScript config for queue package. Node16 module resolution, outputs to dist/.",
+      "tags": ["typescript", "config"]
+    },
+    {
+      "id": "file:packages/config/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "packages/config/package.json",
+      "summary": "Config package manifest (placeholder). No source files yet, no dependencies.",
+      "tags": ["package-manifest", "config", "placeholder"]
+    },
+    {
+      "id": "config:package.json",
+      "type": "config",
+      "name": "package.json (root)",
+      "filePath": "package.json",
+      "summary": "Root workspace manifest. Turborepo monorepo with workspaces: apps/* and packages/*. Scripts: build, dev, lint, typecheck via turbo.",
+      "tags": ["root-config", "turborepo", "workspaces"]
+    },
+    {
+      "id": "config:turbo.json",
+      "type": "config",
+      "name": "turbo.json",
+      "filePath": "turbo.json",
+      "summary": "Turborepo task orchestration config. Build depends on ^build, outputs .next/** and dist/**. Dev is persistent and uncached. Typecheck depends on ^typecheck.",
+      "tags": ["turborepo", "build-system", "config"]
+    },
+    {
+      "id": "config:.gitignore",
+      "type": "config",
+      "name": ".gitignore",
+      "filePath": ".gitignore",
+      "summary": "Git ignore rules for env files, node_modules, .next, dist, build, .turbo, IDE files, logs, and Python venvs.",
+      "tags": ["gitignore", "config"]
+    },
+    {
+      "id": "config:.env",
+      "type": "config",
+      "name": ".env",
+      "filePath": ".env",
+      "summary": "Environment variables file containing OpenAI API key (sk-or-v1-...).",
+      "tags": ["env", "secrets", "openai"]
+    },
+    {
+      "id": "document:CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "summary": "Project instructions for Claude AI assistant. Defines architecture, tech stack rules, common tasks, style guidelines, and execution environment conventions.",
+      "tags": ["documentation", "project-instructions", "architecture"]
+    },
+    {
+      "id": "document:SKILL.md",
+      "type": "document",
+      "name": "SKILL.md",
+      "filePath": "SKILL.md",
+      "summary": "Custom skill definitions and system instructions for MCP servers including pencil editor and understand-anything plugin.",
+      "tags": ["documentation", "mcp", "skills"]
+    },
+    {
+      "id": "script:scripts/openai_demo/main.py",
+      "type": "script",
+      "name": "main.py",
+      "filePath": "scripts/openai_demo/main.py",
+      "summary": "OpenAI API demo script. Calls the OpenAI Responses API and prints raw and parsed JSON output.",
+      "tags": ["demo", "openai", "python"]
+    },
+    {
+      "id": "document:scripts/openai_demo/README.md",
+      "type": "document",
+      "name": "README.md (openai_demo)",
+      "filePath": "scripts/openai_demo/README.md",
+      "summary": "Setup and run instructions for the OpenAI demo script. Requires API key in .env file.",
+      "tags": ["documentation", "demo", "setup-guide"]
+    },
+    {
+      "id": "file:scripts/openai_demo/requirements.txt",
+      "type": "file",
+      "name": "requirements.txt",
+      "filePath": "scripts/openai_demo/requirements.txt",
+      "summary": "Python dependencies for the OpenAI demo script.",
+      "tags": ["python", "dependencies"]
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:apps/web/app/page.tsx",
+      "target": "file:apps/web/app/layout.tsx",
+      "type": "contains",
+      "weight": 1.0
+    },
+    {
+      "source": "file:apps/web/app/page.tsx",
+      "target": "file:apps/web/app/globals.css",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/app/page.tsx",
+      "target": "file:apps/web/next-env.d.ts",
+      "type": "imports",
+      "weight": 0.3
+    },
+    {
+      "source": "file:apps/web/app/layout.tsx",
+      "target": "file:apps/web/app/globals.css",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/next.config.mjs",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/tailwind.config.ts",
+      "target": "file:apps/web/app/globals.css",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/tsconfig.json",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/package.json",
+      "target": "config:package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/postcss.config.js",
+      "target": "file:apps/web/tailwind.config.ts",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/worker/src/index.ts",
+      "target": "file:packages/queue/src/index.ts",
+      "type": "imports",
+      "weight": 0.8
+    },
+    {
+      "source": "file:apps/worker/package.json",
+      "target": "file:packages/queue/package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/worker/tsconfig.json",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/ai/src/graph.ts",
+      "target": "file:packages/ai/src/state.ts",
+      "type": "imports",
+      "weight": 0.8
+    },
+    {
+      "source": "file:packages/ai/src/graph.ts",
+      "target": "file:packages/ai/src/nodes/router.ts",
+      "type": "imports",
+      "weight": 0.8
+    },
+    {
+      "source": "file:packages/ai/src/nodes/router.ts",
+      "target": "file:packages/ai/src/state.ts",
+      "type": "imports",
+      "weight": 0.8
+    },
+    {
+      "source": "file:packages/ai/src/index.ts",
+      "target": "file:packages/ai/src/state.ts",
+      "type": "exports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:packages/ai/src/index.ts",
+      "target": "file:packages/ai/src/graph.ts",
+      "type": "exports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:packages/ai/package.json",
+      "target": "config:package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/ai/tsconfig.json",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/db/src/index.ts",
+      "target": "file:packages/db/src/prisma.ts",
+      "type": "exports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:packages/db/src/index.ts",
+      "target": "file:packages/db/src/supabase.ts",
+      "type": "exports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:packages/db/src/index.ts",
+      "target": "file:packages/db/src/types.ts",
+      "type": "exports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:packages/db/src/prisma.ts",
+      "target": "file:packages/db/src/types.ts",
+      "type": "imports",
+      "weight": 0.5
+    },
+    {
+      "source": "file:packages/db/src/supabase.ts",
+      "target": "file:packages/db/src/types.ts",
+      "type": "imports",
+      "weight": 0.8
+    },
+    {
+      "source": "file:packages/db/.env.example",
+      "target": "file:packages/db/src/supabase.ts",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/db/.env.example",
+      "target": "file:packages/db/src/prisma.ts",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/db/package.json",
+      "target": "config:package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/db/tsconfig.json",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/queue/src/index.ts",
+      "target": "config:package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/queue/package.json",
+      "target": "config:package.json",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:packages/queue/tsconfig.json",
+      "target": "config:package.json",
+      "type": "configures",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/package.json",
+      "target": "file:packages/ai/package.json",
+      "type": "depends_on",
+      "weight": 0.5
+    },
+    {
+      "source": "file:apps/web/package.json",
+      "target": "file:packages/db/package.json",
+      "type": "depends_on",
+      "weight": 0.5
+    },
+    {
+      "source": "config:package.json",
+      "target": "config:turbo.json",
+      "type": "configures",
+      "weight": 0.8
+    },
+    {
+      "source": "config:package.json",
+      "target": "config:.gitignore",
+      "type": "configures",
+      "weight": 0.5
+    },
+    {
+      "source": "config:package.json",
+      "target": "config:.env",
+      "type": "configures",
+      "weight": 0.5
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "config:package.json",
+      "type": "documents",
+      "weight": 0.5
+    },
+    {
+      "source": "document:SKILL.md",
+      "target": "config:package.json",
+      "type": "documents",
+      "weight": 0.5
+    },
+    {
+      "source": "script:scripts/openai_demo/main.py",
+      "target": "document:scripts/openai_demo/README.md",
+      "type": "documents",
+      "weight": 0.5
+    },
+    {
+      "source": "config:package.json",
+      "target": "file:packages/config/package.json",
+      "type": "depends_on",
+      "weight": 0.5
+    },
+    {
+      "source": "document:scripts/openai_demo/README.md",
+      "target": "file:scripts/openai_demo/requirements.txt",
+      "type": "documents",
+      "weight": 0.5
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:presentation",
+      "name": "Presentation (Frontend)",
+      "description": "Next.js 14 web application with App Router, Tailwind CSS, tldraw canvas, and Liveblocks realtime synchronization. Contains all UI components, layouts, pages, and frontend configuration.",
+      "nodeIds": [
+        "file:apps/web/app/page.tsx",
+        "file:apps/web/app/layout.tsx",
+        "file:apps/web/app/globals.css",
+        "file:apps/web/next.config.mjs",
+        "file:apps/web/tailwind.config.ts",
+        "file:apps/web/tsconfig.json",
+        "file:apps/web/package.json",
+        "file:apps/web/postcss.config.js",
+        "file:apps/web/next-env.d.ts"
+      ]
+    },
+    {
+      "id": "layer:background-workers",
+      "name": "Background Workers",
+      "description": "BullMQ-based background job processing with Redis. Handles heavy tasks like image rendering and long-running jobs to keep the UI responsive.",
+      "nodeIds": [
+        "file:apps/worker/src/index.ts",
+        "file:apps/worker/package.json",
+        "file:apps/worker/tsconfig.json"
+      ]
+    },
+    {
+      "id": "layer:ai-core",
+      "name": "AI Core (LangGraph Orchestration)",
+      "description": "LangGraph-based AI agent with state machine for intent routing (chat, edit, generate, annotate). Defines CarverState schema and compiles the AI processing graph.",
+      "nodeIds": [
+        "file:packages/ai/src/graph.ts",
+        "file:packages/ai/src/state.ts",
+        "file:packages/ai/src/index.ts",
+        "file:packages/ai/src/nodes/router.ts",
+        "file:packages/ai/package.json",
+        "file:packages/ai/tsconfig.json"
+      ]
+    },
+    {
+      "id": "layer:data-persistence",
+      "name": "Data Persistence (Database)",
+      "description": "Database layer using Prisma ORM for local PostgreSQL and Supabase for cloud database access. Includes type-safe database client, Supabase admin/client/supabase server clients, and DB type definitions.",
+      "nodeIds": [
+        "file:packages/db/src/index.ts",
+        "file:packages/db/src/prisma.ts",
+        "file:packages/db/src/supabase.ts",
+        "file:packages/db/src/types.ts",
+        "file:packages/db/package.json",
+        "file:packages/db/.env.example",
+        "file:packages/db/tsconfig.json"
+      ]
+    },
+    {
+      "id": "layer:shared-infrastructure",
+      "name": "Shared Infrastructure (Queue & Config)",
+      "description": "Shared BullMQ queue definitions and type exports used by both the web app and workers. Also includes root monorepo configuration (Turborepo, workspaces).",
+      "nodeIds": [
+        "file:packages/queue/src/index.ts",
+        "file:packages/queue/package.json",
+        "file:packages/queue/tsconfig.json",
+        "file:packages/config/package.json",
+        "config:package.json",
+        "config:turbo.json",
+        "config:.gitignore",
+        "config:.env"
+      ]
+    },
+    {
+      "id": "layer:documentation-scripts",
+      "name": "Documentation & Scripts",
+      "description": "Project documentation, Claude AI instructions, custom skill definitions, and utility scripts like the OpenAI API demo.",
+      "nodeIds": [
+        "document:CLAUDE.md",
+        "document:SKILL.md",
+        "script:scripts/openai_demo/main.py",
+        "document:scripts/openai_demo/README.md",
+        "file:scripts/openai_demo/requirements.txt"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Project Overview",
+      "description": "Start with the root package.json and CLAUDE.md to understand Carver AI's purpose as a collaborative canvas with real-time AI assistance, and its monorepo structure managed by Turborepo.",
+      "nodeIds": [
+        "config:package.json",
+        "document:CLAUDE.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "Frontend Entry Point",
+      "description": "Explore the Next.js 14 frontend starting with the root layout and homepage. The page.tsx renders a hero section with feature cards showcasing realtime sync, AI orchestration, the canvas engine, and background workers.",
+      "nodeIds": [
+        "file:apps/web/app/layout.tsx",
+        "file:apps/web/app/page.tsx",
+        "file:apps/web/app/globals.css"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Frontend Configuration",
+      "description": "Review the frontend build toolchain: Next.js config, Tailwind CSS setup, PostCSS pipeline, and TypeScript configuration. These enable the modern development environment for the Next.js app.",
+      "nodeIds": [
+        "file:apps/web/next.config.mjs",
+        "file:apps/web/tailwind.config.ts",
+        "file:apps/web/postcss.config.js",
+        "file:apps/web/tsconfig.json",
+        "file:apps/web/next-env.d.ts"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "AI Orchestration Layer",
+      "description": "Dive into the LangGraph-based AI core. The state.ts file defines the CarverState with intents (chat, edit, generate, annotate). The graph.ts wires up a StateGraph with a router node. The router.ts node handles intent routing logic.",
+      "nodeIds": [
+        "file:packages/ai/src/state.ts",
+        "file:packages/ai/src/nodes/router.ts",
+        "file:packages/ai/src/graph.ts",
+        "file:packages/ai/src/index.ts"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Database & Persistence",
+      "description": "Explore the database layer combining Prisma ORM for local Postgres and Supabase for cloud database access. The types.ts defines the schema (projects, jobs tables), prisma.ts creates a singleton client, and supabase.ts sets up public/admin/server clients.",
+      "nodeIds": [
+        "file:packages/db/src/types.ts",
+        "file:packages/db/src/prisma.ts",
+        "file:packages/db/src/supabase.ts",
+        "file:packages/db/src/index.ts",
+        "file:packages/db/.env.example"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Background Workers",
+      "description": "See how BullMQ workers handle heavy processing tasks. The worker/src/index.ts creates an image-processing worker consuming jobs from a Redis-backed queue. The @carver/queue package provides shared queue configuration and default connection options.",
+      "nodeIds": [
+        "file:apps/worker/src/index.ts",
+        "file:packages/queue/src/index.ts"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Monorepo Infrastructure",
+      "description": "Understand the Turborepo orchestration via turbo.json (build pipelines, caching, task dependencies) and the npm workspaces setup in the root package.json. Each package and app has its own package.json forming the dependency graph.",
+      "nodeIds": [
+        "config:turbo.json",
+        "config:package.json",
+        "file:packages/config/package.json"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "Utility Scripts & Custom Skills",
+      "description": "Finally, check out the OpenAI API demo script and the project's custom Claude skills. The SKILL.md file defines MCP server instructions for the pencil design editor and understand-anything knowledge graph tools.",
+      "nodeIds": [
+        "script:scripts/openai_demo/main.py",
+        "document:scripts/openai_demo/README.md",
+        "document:SKILL.md"
+      ]
+    }
+  ]
+}

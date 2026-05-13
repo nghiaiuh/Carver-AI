@@ -11,7 +11,8 @@
     "db:generate": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^5.0.0"
+    "@prisma/client": "^5.0.0",
+    "@supabase/supabase-js": "^2.105.4"
   },
   "devDependencies": {
     "prisma": "^5.0.0",
