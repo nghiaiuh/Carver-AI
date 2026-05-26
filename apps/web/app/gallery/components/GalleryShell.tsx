@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ReactNode, useRef } from "react";
 import { ArrowRight, Bot, GalleryHorizontalEnd, Medal, Send, SlidersHorizontal } from "lucide-react";
 import { motion, useScroll, useSpring } from "framer-motion";
-import { gsap, useGSAP } from "../../landing/components/gsapSetup";
+import { gsap, useGSAP } from "../../components/gsapSetup";
 
 type ShellProps = {
   children: ReactNode;

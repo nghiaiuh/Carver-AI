@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Download, Save, Share2, Sparkles } from "lucide-react";
-import { gsap, useGSAP } from "../../landing/components/gsapSetup";
+import { gsap, useGSAP } from "../../components/gsapSetup";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import EditorLeftSidebar from "./EditorLeftSidebar";

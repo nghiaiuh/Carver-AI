@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Droplets, Hammer, Leaf, MessageCircle, Mountain, Star, Waves } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { gsap, useGSAP } from "../../landing/components/gsapSetup";
+import { gsap, useGSAP } from "../../components/gsapSetup";
 import { engineers, filters, Project, projects, reviewRoles, sortOptions, styleDirectory, technicalIcons } from "../data/galleryData";
 import { MagneticButton } from "./GalleryShell";
 
