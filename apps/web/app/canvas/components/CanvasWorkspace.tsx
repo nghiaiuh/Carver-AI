@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Download, Save, Share2, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { gsap, useGSAP } from "../../components/gsapSetup";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
@@ -31,7 +31,9 @@ export type SelectedItem =
   | { type: "reference"; id: string }
   | { type: "marker"; id: string }
   | { type: "region"; id: string }
-  | { type: "object"; id: string };
+  | { type: "object"; id: string }
+  | { type: "node"; id: string; menu?: { x: number; y: number } }
+  | { type: "edge"; id: string };
 
 export type Marker = {
   id: string;
@@ -60,10 +62,73 @@ export type AddedObject = {
   label: string;
 };
 
+export type CanvasNode = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  imageUrl: string;
+  title: string;
+  prompt: string | null;
+  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output";
+  model?: string;
+  createdAt?: string;
+};
+
+export type CanvasEdge = {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  label: string;
+};
+
 const initialMarkers: Marker[] = [{ id: "marker-1", x: 58, y: 56, label: "Place koi pond here" }];
 const initialRegions: Region[] = [
   { id: "region-lock-1", x: 9, y: 10, w: 34, h: 19, label: "Keep unchanged", kind: "locked" },
   { id: "region-edit-1", x: 48, y: 58, w: 34, h: 21, label: "Editable Zone", kind: "editable" },
+];
+
+const initialNodes: CanvasNode[] = [
+  {
+    id: "node-1",
+    x: -400,
+    y: -200,
+    width: 320,
+    height: 240,
+    imageUrl: "/assets/garden_3d_render.png",
+    title: "Site Photo",
+    prompt: null,
+    role: "layout",
+  },
+  {
+    id: "node-2",
+    x: -400,
+    y: 100,
+    width: 240,
+    height: 180,
+    imageUrl: "https://images.unsplash.com/photo-1660232370139-d38f527522fe?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+    title: "Pasted Image",
+    prompt: null,
+    role: "style",
+  },
+  {
+    id: "node-3",
+    x: 100,
+    y: -50,
+    width: 480,
+    height: 360,
+    imageUrl: "https://images.unsplash.com/photo-1779778642242-183108a8222f?q=80&w=2080&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // reusing for demo
+    title: "Flux Kontext",
+    prompt: "A beautiful villa garden with a koi pond, realistic rendering, natural lighting",
+    role: "output",
+    model: "Flux Kontext",
+  },
+];
+
+const initialEdges: CanvasEdge[] = [
+  { id: "edge-1", sourceId: "node-1", targetId: "node-3", label: "layout" },
+  { id: "edge-2", sourceId: "node-2", targetId: "node-3", label: "style" },
 ];
 
 export default function CanvasWorkspace() {
@@ -80,11 +145,22 @@ export default function CanvasWorkspace() {
   const [addedObjects, setAddedObjects] = useState<AddedObject[]>([
     { id: "object-1", x: 62, y: 58, w: 17, h: 10, rotation: -5, label: "Koi Pond" },
   ]);
+  const [nodes, setNodes] = useState<CanvasNode[]>(initialNodes);
+  const [edges, setEdges] = useState<CanvasEdge[]>(initialEdges);
   const [promptText, setPromptText] = useState("");
   const [mockConcepts, setMockConcepts] = useState<string[]>([]);
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [status, setStatus] = useState("Ready");
+  const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+
+  // Sync activeNodeId when selectedItem changes to a node
+  useEffect(() => {
+    if (selectedItem.type === "node") {
+      setActiveNodeId(selectedItem.id);
+    }
+  }, [selectedItem]);
 
   useGSAP(
     () => {
@@ -179,45 +255,43 @@ export default function CanvasWorkspace() {
     showToast("Edit instruction added");
   };
 
-  const removeSelected = () => {
-    if (selectedItem.type === "marker") setMarkers((items) => items.filter((item) => item.id !== selectedItem.id));
-    if (selectedItem.type === "region") setRegions((items) => items.filter((item) => item.id !== selectedItem.id));
-    if (selectedItem.type === "object") setAddedObjects((items) => items.filter((item) => item.id !== selectedItem.id));
-    setSelectedItem({ type: "none" });
-  };
-
   return (
     <div ref={rootRef} className="min-h-screen bg-white text-[#0A0A0A]">
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-white xl:flex">
-        <header data-enter className="flex h-16 shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-5">
-          <div className="flex items-center gap-4">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#111827] text-sm font-black text-white">C</div>
-            <div>
-              <p className="text-sm font-black leading-none">Carver AI</p>
-              <p className="mt-1 text-xs font-semibold text-[#667085]">Object-based image editor · {status}</p>
+        <div data-enter className="relative flex min-h-0 flex-1">
+          <div
+            className={[
+              "relative h-full overflow-hidden transition-[width] duration-300 ease-out",
+              leftSidebarOpen ? "w-[292px]" : "w-0",
+            ].join(" ")}
+          >
+            <div
+              className={[
+                "h-full transition-[transform,opacity] duration-300 ease-out",
+                leftSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0",
+              ].join(" ")}
+              aria-hidden={!leftSidebarOpen}
+            >
+              <EditorLeftSidebar selectedItem={selectedItem} onSelectReference={() => setSelectedItem({ type: "reference", id: "reference-1" })} onToast={showToast} />
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-bold text-[#111827] hover:bg-[#F7F8FA]">
-              <Save className="h-4 w-4" aria-hidden="true" />
-              Save
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-bold text-[#111827] hover:bg-[#F7F8FA]">
-              <Share2 className="h-4 w-4" aria-hidden="true" />
-              Share
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-xl border border-[#E5E7EB] px-3 py-2 text-sm font-bold text-[#111827] hover:bg-[#F7F8FA]">
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Export
-            </button>
-            <button onClick={generateConcept} className="inline-flex items-center gap-2 rounded-xl bg-[#111827] px-4 py-2 text-sm font-black text-white shadow-lg shadow-black/10">
-              <Sparkles className="h-4 w-4 text-[#A7A1FF]" aria-hidden="true" />
-              Generate
-            </button>
-          </div>
-        </header>
-        <div data-enter className="flex min-h-0 flex-1">
-          <EditorLeftSidebar selectedItem={selectedItem} onSelectReference={() => setSelectedItem({ type: "reference", id: "reference-1" })} onToast={showToast} />
+          <button
+            type="button"
+            onClick={() => setLeftSidebarOpen((value) => !value)}
+            className={[
+              "absolute top-5 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10 transition-[left,transform] duration-300 ease-out",
+              leftSidebarOpen ? "left-[276px]" : "left-3",
+            ].join(" ")}
+            title={leftSidebarOpen ? "Hide sources" : "Show sources"}
+            aria-pressed={leftSidebarOpen}
+            aria-label={leftSidebarOpen ? "Hide sources panel" : "Show sources panel"}
+          >
+            {leftSidebarOpen ? (
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
           <CanvasBoard
             selectedItem={selectedItem}
             activeTool={activeTool}
@@ -225,6 +299,8 @@ export default function CanvasWorkspace() {
             markers={markers}
             regions={regions}
             addedObjects={addedObjects}
+            nodes={nodes}
+            edges={edges}
             mockConcepts={mockConcepts}
             angleResults={outputAngles}
             onSelect={setSelectedItem}
@@ -237,20 +313,14 @@ export default function CanvasWorkspace() {
             onRealityCheck={() => setShowRealityCheckPanel(true)}
             onGenerate={generateConcept}
             onToast={showToast}
+            onNodesChange={setNodes}
+            onEdgesChange={setEdges}
+            activeNodeId={activeNodeId}
+            onSetActiveNode={setActiveNodeId}
           />
           <EditorRightPanel
-            selectedItem={selectedItem}
-            activeTool={activeTool}
-            markers={markers}
-            regions={regions}
-            addedObjects={addedObjects}
-            promptText={promptText}
-            onPromptChange={setPromptText}
-            onQuickEdit={() => setShowQuickEditModal(true)}
-            onMultiAngle={() => setShowMultiAngleModal(true)}
-            onRealityCheck={() => setShowRealityCheckPanel(true)}
-            onGenerate={generateConcept}
-            onRemoveSelected={removeSelected}
+            draft={promptText}
+            onDraftChange={setPromptText}
           />
         </div>
         <QuickEditModal open={showQuickEditModal} promptText={promptText} onPromptChange={setPromptText} onClose={() => setShowQuickEditModal(false)} onApply={applyQuickEdit} />

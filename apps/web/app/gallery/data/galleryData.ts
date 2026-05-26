@@ -102,7 +102,7 @@ export const projects: Project[] = [
     category: "Koi Pond / Courtyard",
     score: 9.2,
     reviews: 58,
-    image: "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=1600&q=85",
+    image: "https://images.unsplash.com/photo-1660232370139-d38f527522fe?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
     tags: ["Koi Pond", "Courtyard", "Japanese"],
     metrics: {
       Creativity: 88,
@@ -212,7 +212,7 @@ export const projects: Project[] = [
     category: "Villa Landscape",
     score: 8.7,
     reviews: 39,
-    image: "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&w=1600&q=85",
+    image: "https://images.unsplash.com/photo-1654077842967-1af3695ba1b6?q=80&w=1150&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
     tags: ["Tropical", "Villa Garden", "Rain Garden"],
     metrics: {
       Creativity: 87,

@@ -32,7 +32,7 @@ export function GalleryShell({ children, active = "Gallery" }: ShellProps) {
   const scaleX = useSpring(scrollYProgress, { stiffness: 90, damping: 24 });
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f4f0e8] text-[#101412]">
+    <main className="min-h-screen overflow-x-hidden bg-[#f4f0e8] text-[#101412] isolate">
       <motion.div className="fixed left-0 right-0 top-0 z-[80] h-1 origin-left bg-[#101412]" style={{ scaleX }} />
       <ContourBackground />
       <RippleCursor />
@@ -49,7 +49,7 @@ function TopNav() {
       <div className="mx-auto flex max-w-[1560px] items-center justify-between px-5 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3 focus:outline-none focus:ring-2 focus:ring-[#7aa6a7]">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-[#101412] text-sm font-black text-[#f8f5ee]">C.</span>
-          <span className="text-sm font-black uppercase tracking-[0.2em]">Carver Gallery</span>
+          <span className="text-sm font-black uppercase tracking-[0.2em]">Carver AI</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm font-semibold text-black/62 lg:flex" aria-label="Primary">
           {topLinks.map(([label, href]) => (
@@ -109,20 +109,27 @@ export function FloatingDock({ active = "Gallery" }: { active?: ShellProps["acti
     <div className="fixed inset-x-0 bottom-5 z-50 flex justify-center px-4">
       <div
         ref={dockRef}
-        className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/12 bg-[#101412]/88 p-1.5 text-[#f8f5ee] shadow-2xl shadow-black/30 backdrop-blur-2xl"
+        className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-black/10 bg-white/85 p-1.5 text-[#111827] shadow-2xl shadow-black/10 backdrop-blur-2xl"
       >
-        <Link href="/" className="mr-1 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-sm font-black text-[#101412]">
+        <Link
+          href="/"
+          className="mr-1 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#111827] text-sm font-black text-white"
+        >
           C.
         </Link>
+
         {dockLinks.map(([label, href, Icon]) => {
           const isActive = active === label;
+
           return (
             <Link
               data-dock-item
               key={label}
               href={href}
               className={`flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-bold transition ${
-                isActive ? "bg-[#e8dcc5] text-[#101412]" : "text-white/70 hover:bg-white/10 hover:text-white"
+                isActive
+                  ? "bg-[#111827] text-white shadow-sm"
+                  : "text-[#4B5563] hover:bg-[#F3F4F6] hover:text-[#111827]"
               }`}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -137,7 +144,7 @@ export function FloatingDock({ active = "Gallery" }: { active?: ShellProps["acti
 
 export function ContourBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-70">
+    <div className="pointer-events-none fixed inset-0 z-[-1] overflow-hidden opacity-70">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(122,166,167,0.18),transparent_28%),radial-gradient(circle_at_82%_18%,rgba(139,130,114,0.13),transparent_26%),linear-gradient(180deg,#fbf8f1,#efe8db)]" />
       <svg className="absolute -left-40 top-8 h-[860px] w-[860px] text-[#7d8c7a]/25" viewBox="0 0 800 800" fill="none" aria-hidden="true">
         {[80, 135, 190, 245, 300].map((size, index) => (
@@ -227,9 +234,8 @@ export function MagneticButton({ href, children, dark = false }: { href: string;
     <Link
       ref={ref}
       href={href}
-      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black shadow-xl transition ${
-        dark ? "bg-[#101412] text-[#f8f5ee] shadow-black/20" : "bg-[#f8f5ee] text-[#101412] shadow-black/10"
-      }`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black shadow-xl transition ${dark ? "bg-[#101412] text-[#f8f5ee] shadow-black/20" : "bg-[#f8f5ee] text-[#101412] shadow-black/10"
+        }`}
     >
       {children}
       <ArrowRight className="h-4 w-4" aria-hidden="true" />
