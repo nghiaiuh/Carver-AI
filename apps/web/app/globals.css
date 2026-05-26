@@ -24,7 +24,7 @@
 
   /* Left Sidebar */
   .left-sidebar {
-    @apply w-[280px] h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-color)] flex flex-col shrink-0 relative z-10 transition-transform duration-300;
+    @apply w-[280px] h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-color)] flex flex-col shrink-0 relative z-10 transition-transform duration-300 overflow-hidden;
   }
 
   .sidebar-header {
@@ -235,7 +235,7 @@
 
   /* Right Panel */
   .right-panel {
-    @apply w-[360px] h-full bg-[var(--bg-sidebar)] border-l border-[var(--border-color)] flex flex-col shrink-0 relative z-10;
+    @apply w-[360px] h-full bg-[var(--bg-sidebar)] border-l border-[var(--border-color)] flex flex-col shrink-0 relative z-10 overflow-hidden;
   }
 
   .rp-header {
