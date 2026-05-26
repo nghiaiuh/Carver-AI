@@ -279,7 +279,7 @@ export default function CanvasWorkspace() {
             type="button"
             onClick={() => setLeftSidebarOpen((value) => !value)}
             className={[
-              "absolute top-5 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10 transition-[left,transform] duration-300 ease-out",
+              "absolute top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10 transition-[left,transform] duration-300 ease-out",
               leftSidebarOpen ? "left-[276px]" : "left-3",
             ].join(" ")}
             title={leftSidebarOpen ? "Hide sources" : "Show sources"}

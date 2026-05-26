@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Menu } from "lucide-react";
 import type { AddedObject, CanvasNode, CanvasEdge, EditorTool, Marker, Region, SelectedItem } from "./CanvasWorkspace";
 import BottomToolDock from "./BottomToolDock";
 import MiniMap from "./MiniMap";
@@ -69,10 +71,17 @@ export default function CanvasBoard({
   onSetActiveNode,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const projectNameInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [projectName, setProjectName] = useState("Project");
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("Project");
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -265,6 +274,46 @@ export default function CanvasBoard({
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!projectMenuRef.current) return;
+      if (!projectMenuRef.current.contains(event.target as Node)) {
+        setProjectMenuOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [projectMenuOpen]);
+
+  useEffect(() => {
+    if (!editingProjectName) return;
+    projectNameInputRef.current?.focus();
+    projectNameInputRef.current?.select();
+  }, [editingProjectName]);
+
+  const startEditingProjectName = () => {
+    setProjectNameDraft(projectName);
+    setEditingProjectName(true);
+    setProjectMenuOpen(false);
+  };
+
+  const commitProjectName = () => {
+    const next = projectNameDraft.trim();
+    if (next) setProjectName(next);
+    setEditingProjectName(false);
+  };
+
+  const cancelProjectName = () => {
+    setProjectNameDraft(projectName);
+    setEditingProjectName(false);
+  };
+
+  const handleMenuSelect = (item: MenuItem) => {
+    setProjectMenuOpen(false);
+    item.onSelect?.();
+  };
+
   const zoomIn = () => setZoom((prev) => clamp(parseFloat((prev + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
   const zoomOut = () => setZoom((prev) => clamp(parseFloat((prev - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
   const resetZoom = () => {
@@ -288,8 +337,90 @@ export default function CanvasBoard({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      <div className="absolute left-6 top-5 z-40 rounded-full border border-[#E5E7EB] bg-white/85 px-3 py-2 text-xs font-black text-[#667085] shadow-sm backdrop-blur">
-        {activeTool === "select" ? "Select an image or object" : `Active: ${activeTool.replaceAll("-", " ")}`}
+      <div ref={projectMenuRef} className="absolute left-6 top-5 z-50">
+        <div className="flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white/90 px-2 py-2 text-xs font-black text-[#111827] shadow-sm backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setProjectMenuOpen((value) => !value)}
+            className="grid h-8 w-8 place-items-center rounded-full bg-[#111827] text-white shadow-sm"
+            title={projectMenuOpen ? "Close menu" : "Open menu"}
+            aria-haspopup="menu"
+            aria-expanded={projectMenuOpen}
+            aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
+          >
+            {projectMenuOpen ? (
+              <Menu className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <span className="text-[11px] font-black">C.</span>
+            )}
+          </button>
+          {editingProjectName ? (
+            <input
+              ref={projectNameInputRef}
+              value={projectNameDraft}
+              onChange={(e) => setProjectNameDraft(e.target.value)}
+              onBlur={commitProjectName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitProjectName();
+                if (e.key === "Escape") cancelProjectName();
+              }}
+              className="w-36 bg-transparent text-xs font-black text-[#111827] outline-none"
+              aria-label="Project name"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={startEditingProjectName}
+              className="pr-2 text-xs font-black text-[#111827]"
+              title="Edit project name"
+            >
+              {projectName}
+            </button>
+          )}
+        </div>
+
+        {projectMenuOpen ? (
+          <div
+            role="menu"
+            className="mt-3 w-64 overflow-hidden rounded-3xl border border-[#E5E7EB] bg-white/95 shadow-2xl shadow-black/20 backdrop-blur"
+          >
+            <MenuSection
+              items={[
+                { label: "Home", onSelect: () => router.push("/") },
+                { label: projectName },
+              ]}
+              onSelect={handleMenuSelect}
+            />
+            <MenuSection
+              items={[
+                { label: "New Project" },
+                { label: "Delete Project", tone: "danger" },
+              ]}
+              onSelect={handleMenuSelect}
+            />
+            <MenuSection
+              items={[{ label: "Import Images" }]}
+              onSelect={handleMenuSelect}
+            />
+            <MenuSection
+              items={[
+                { label: "Undo", shortcut: "Ctrl+Z", disabled: true },
+                { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: true },
+                { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
+              ]}
+              onSelect={handleMenuSelect}
+            />
+            <MenuSection
+              items={[
+                { label: "Zoom to Fit", shortcut: "Shift+1" },
+                { label: "Zoom In", shortcut: "Ctrl++" },
+                { label: "Zoom Out", shortcut: "Ctrl+-" },
+              ]}
+              onSelect={handleMenuSelect}
+              noDivider
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* Zoomable + pannable canvas layer */}
@@ -367,5 +498,50 @@ export default function CanvasBoard({
         </div>
       ) : null}
     </section>
+  );
+}
+
+type MenuItem = {
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  tone?: "danger";
+  onSelect?: () => void;
+};
+
+function MenuSection({
+  items,
+  onSelect,
+  noDivider,
+}: {
+  items: MenuItem[];
+  onSelect: (item: MenuItem) => void;
+  noDivider?: boolean;
+}) {
+  return (
+    <div className={noDivider ? "" : "border-b border-[#EFEFF1]"}>
+      <div className="py-1">
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => onSelect(item)}
+            disabled={item.disabled}
+            className={[
+              "flex w-full items-center justify-between gap-4 px-5 py-2.5 text-left text-sm",
+              item.disabled
+                ? "cursor-not-allowed text-[#D0D5DD]"
+                : "text-[#111827] hover:bg-[#F7F8FA]",
+              item.tone === "danger" && !item.disabled ? "text-[#B42318]" : "",
+            ].join(" ")}
+          >
+            <span className="font-medium">{item.label}</span>
+            {item.shortcut ? (
+              <span className="text-xs font-semibold text-[#98A2B3]">{item.shortcut}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
