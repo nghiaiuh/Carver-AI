@@ -14,9 +14,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useRef } from "react";
-import { features } from "../../data/features";
+import { features } from "../../../data/features";
 import AnimatedCard from "./AnimatedCard";
-import { gsap, useGSAP } from "./gsapSetup";
+import { useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, revealUp, scopedSelector } from "./landingMotion";
 
 const icons = [
   ImagePlus,
@@ -44,13 +45,11 @@ export default function FeaturesSection() {
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from(".feature-card", {
-        y: 40,
-        opacity: 0,
-        duration: 0.75,
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      revealUp(q(".feature-card"), {
         stagger: 0.05,
-        ease: "power3.out",
         scrollTrigger: { trigger: rootRef.current, start: "top 70%" },
       });
     },

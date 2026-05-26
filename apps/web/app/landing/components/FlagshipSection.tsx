@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, scopedSelector } from "./landingMotion";
 
 const cards = [
   ["Hồ Koi sân vườn", "Luồng nước, điểm ngắm, vật liệu ven hồ và cảm giác thư giãn."],
@@ -17,10 +18,12 @@ export default function FlagshipSection() {
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from(".flagship-card", {
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      gsap.from(q(".flagship-card"), {
         scale: 0.94,
-        opacity: 0,
+        autoAlpha: 0,
         duration: 0.75,
         stagger: 0.07,
         ease: "power3.out",

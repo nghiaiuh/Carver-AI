@@ -3,18 +3,21 @@
 import { ArrowRight, CalendarDays, FileText, Gauge, Gem, Layers3 } from "lucide-react";
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, scopedSelector } from "./landingMotion";
 
 export default function ProposalPreviewSection() {
   const rootRef = useRef<HTMLElement>(null);
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from(".proposal-card", {
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      gsap.from(q(".proposal-card"), {
         y: 50,
         rotate: -2,
         scale: 0.96,
-        opacity: 0,
+        autoAlpha: 0,
         duration: 0.9,
         ease: "power3.out",
         scrollTrigger: { trigger: rootRef.current, start: "top 70%" },

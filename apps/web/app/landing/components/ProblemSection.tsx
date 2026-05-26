@@ -3,7 +3,8 @@
 import { Brain, Clock, ImageOff, WandSparkles } from "lucide-react";
 import { useRef } from "react";
 import AnimatedCard from "./AnimatedCard";
-import { gsap, useGSAP } from "./gsapSetup";
+import { useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, revealUp, scopedSelector } from "./landingMotion";
 
 const problems = [
   ["Khách khó tưởng tượng sân vườn tương lai", Brain],
@@ -17,13 +18,13 @@ export default function ProblemSection() {
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from(".problem-card", {
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      revealUp(q(".problem-card"), {
         y: 42,
-        opacity: 0,
         duration: 0.8,
         stagger: 0.09,
-        ease: "power3.out",
         scrollTrigger: { trigger: rootRef.current, start: "top 72%" },
       });
     },

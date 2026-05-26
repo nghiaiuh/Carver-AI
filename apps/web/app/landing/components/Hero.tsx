@@ -3,6 +3,7 @@
 import { ArrowDown, Sparkles, Upload } from "lucide-react";
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, scopedSelector } from "./landingMotion";
 
 const badges = [
   "Photo Redesign",
@@ -19,33 +20,41 @@ export default function Hero() {
 
   useGSAP(
     () => {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) return;
+      if (prefersReducedMotion()) return;
 
-      gsap.from(".hero-line", {
-        yPercent: 105,
-        opacity: 0,
-        duration: 1,
-        stagger: 0.12,
-        ease: "power4.out",
+      const q = scopedSelector(rootRef);
+      const intro = gsap.timeline({
+        defaults: { duration: 0.9, ease: "power3.out" },
       });
-      gsap.from(".hero-reveal", {
-        y: 24,
-        opacity: 0,
-        duration: 0.9,
-        stagger: 0.08,
-        delay: 0.35,
-        ease: "power3.out",
-      });
-      gsap.to(".floating-mockup", {
+
+      intro
+        .from(q(".hero-line"), {
+          yPercent: 105,
+          autoAlpha: 0,
+          duration: 1,
+          stagger: 0.12,
+          ease: "power4.out",
+        })
+        .from(
+          q(".hero-reveal"),
+          {
+            y: 24,
+            autoAlpha: 0,
+            stagger: 0.08,
+          },
+          "-=0.45",
+        );
+
+      gsap.to(q(".floating-mockup"), {
         y: -12,
         duration: 3.5,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
         stagger: 0.2,
+        overwrite: "auto",
       });
-      gsap.to(".garden-orbit", {
+      gsap.to(q(".garden-orbit"), {
         y: 32,
         x: -18,
         scrollTrigger: {
@@ -90,7 +99,7 @@ export default function Hero() {
             ràng để làm việc với chuyên gia.
           </p>
 
-          <div className="hero-reveal mt-9 flex flex-col gap-3 sm:flex-row">
+          <div className="hero-reveal mt-9 flex flex-col gap-3 will-change-transform sm:flex-row">
             <a
               href="/canvas"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#102A24] px-6 py-4 text-sm font-black text-[#FFFDF6] shadow-2xl shadow-[#102A24]/20 transition hover:bg-[#2F4A3D] focus:outline-none focus:ring-2 focus:ring-[#D9A441]"
@@ -107,7 +116,7 @@ export default function Hero() {
             </a>
           </div>
 
-          <div className="hero-reveal mt-9 flex flex-wrap gap-2">
+          <div className="hero-reveal mt-9 flex flex-wrap gap-2 will-change-transform">
             {badges.map((badge) => (
               <span key={badge} className="rounded-full border border-[#102A24]/10 bg-[#FFFDF6]/70 px-3 py-1.5 text-xs font-bold text-[#102A24]/70">
                 {badge}
@@ -116,7 +125,7 @@ export default function Hero() {
           </div>
         </div>
 
-        <div className="hero-reveal relative min-h-[560px]">
+        <div className="hero-reveal relative min-h-[560px] will-change-transform">
           <div className="floating-mockup relative overflow-hidden rounded-[2.25rem] border border-white/70 bg-[#FFFDF6]/75 p-4 shadow-2xl shadow-[#102A24]/20 backdrop-blur-xl">
             <div className="rounded-[1.8rem] border border-[#102A24]/10 bg-[#F4EFE3] p-4">
               <div className="mb-4 flex items-center justify-between">

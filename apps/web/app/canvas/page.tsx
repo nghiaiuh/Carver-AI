@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import LeftSidebar from "../../components/LeftSidebar";
-import CanvasArea from "../../components/CanvasArea";
-import RightPanel from "../../components/RightPanel";
+import LeftSidebar from "./components/LeftSidebar";
+import CanvasArea from "./components/CanvasArea";
+import RightPanel from "./components/RightPanel";
 
 export default function CanvasPage() {
   const [activeLayer, setActiveLayer] = useState<string | null>("layer-1");

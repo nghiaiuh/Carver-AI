@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowRight, Waves } from "lucide-react";
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, revealUp, scopedSelector } from "./landingMotion";
 
 const scores = [
   ["Phù hợp kiến trúc", 82],
@@ -25,29 +26,28 @@ export default function RealityCheckSection() {
 
   useGSAP(
     () => {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) return;
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
 
       gsap.fromTo(
-        ".score-fill",
-        { width: "0%" },
+        q(".score-fill"),
+        { scaleX: 0, transformOrigin: "left center" },
         {
-          width: (_, el) => `${el.getAttribute("data-score")}%`,
+          scaleX: 1,
           duration: 1.1,
           stagger: 0.08,
           ease: "power3.out",
           scrollTrigger: { trigger: rootRef.current, start: "top 65%" },
         },
       );
-      gsap.from(".warning-card", {
+      revealUp(q(".warning-card"), {
         x: 24,
-        opacity: 0,
+        y: 0,
         duration: 0.7,
         stagger: 0.08,
-        ease: "power3.out",
         scrollTrigger: { trigger: rootRef.current, start: "top 62%" },
       });
-      gsap.to(".reality-blob", {
+      gsap.to(q(".reality-blob"), {
         y: -40,
         x: 20,
         scrollTrigger: { trigger: rootRef.current, start: "top bottom", end: "bottom top", scrub: 1 },
@@ -95,9 +95,9 @@ export default function RealityCheckSection() {
                   </div>
                   <div className="h-3 overflow-hidden rounded-full bg-[#102A24]/10">
                     <div
-                      className="score-fill h-full rounded-full bg-gradient-to-r from-[#4F6F52] to-[#D9A441]"
+                      className="score-fill h-full origin-left rounded-full bg-gradient-to-r from-[#4F6F52] to-[#D9A441] will-change-transform"
                       data-score={value}
-                      style={{ width: "0%" }}
+                      style={{ width: `${value}%` }}
                     />
                   </div>
                 </div>

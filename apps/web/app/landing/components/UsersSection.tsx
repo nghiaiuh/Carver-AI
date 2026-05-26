@@ -2,7 +2,8 @@
 
 import { Check, HardHat, Home } from "lucide-react";
 import { useRef } from "react";
-import { gsap, useGSAP } from "./gsapSetup";
+import { useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, revealUp, scopedSelector } from "./landingMotion";
 
 const users = [
   {
@@ -38,13 +39,12 @@ export default function UsersSection() {
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.from(".user-card", {
-        y: 36,
-        opacity: 0,
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      revealUp(q(".user-card"), {
         duration: 0.8,
         stagger: 0.12,
-        ease: "power3.out",
         scrollTrigger: { trigger: rootRef.current, start: "top 70%" },
       });
     },

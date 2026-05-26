@@ -3,16 +3,19 @@
 import { ArrowRight, Upload } from "lucide-react";
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, scopedSelector } from "./landingMotion";
 
 export default function FinalCTA() {
   const rootRef = useRef<HTMLElement>(null);
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      gsap.to(".cta-glow", {
+      if (prefersReducedMotion()) return;
+      const q = scopedSelector(rootRef);
+
+      gsap.to(q(".cta-glow"), {
         scale: 1.14,
-        opacity: 0.75,
+        autoAlpha: 0.75,
         duration: 2.8,
         repeat: -1,
         yoyo: true,

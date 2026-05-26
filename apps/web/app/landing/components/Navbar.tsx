@@ -4,16 +4,17 @@ import Link from "next/link";
 import { ArrowRight, Sprout } from "lucide-react";
 import { useRef } from "react";
 import { gsap, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion } from "./landingMotion";
 
 export default function Navbar() {
   const navRef = useRef<HTMLElement>(null);
 
   useGSAP(
     () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (prefersReducedMotion()) return;
       gsap.from(navRef.current, {
         y: -24,
-        opacity: 0,
+        autoAlpha: 0,
         duration: 0.8,
         ease: "power3.out",
       });

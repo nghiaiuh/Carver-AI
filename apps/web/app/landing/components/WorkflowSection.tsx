@@ -3,6 +3,7 @@
 import { Banknote, CheckCircle2, FileText, ImagePlus, Palette, WandSparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { gsap, ScrollTrigger, useGSAP } from "./gsapSetup";
+import { prefersReducedMotion, revealUp, scopedSelector } from "./landingMotion";
 
 const steps = [
   { title: "Upload ảnh/mặt bằng", copy: "Bắt đầu từ ảnh sân thật, plan hoặc sketch.", icon: ImagePlus },
@@ -16,40 +17,86 @@ const steps = [
 export default function WorkflowSection() {
   const rootRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(0);
   const [active, setActive] = useState(0);
 
   useGSAP(
     () => {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce || !rootRef.current || !trackRef.current) return;
+      if (prefersReducedMotion() || !rootRef.current || !trackRef.current) return;
 
-      const cards = gsap.utils.toArray<HTMLElement>(".workflow-step");
+      const q = scopedSelector(rootRef);
+      const cards = q(".workflow-step");
       const totalShift = () => Math.max(trackRef.current!.scrollWidth - window.innerWidth + 80, 0);
+      const setActiveIndex = (index: number) => {
+        if (activeRef.current === index) return;
+        activeRef.current = index;
+        setActive(index);
+      };
 
-      gsap.to(trackRef.current, {
-        x: () => -totalShift(),
-        ease: "none",
-        scrollTrigger: {
-          trigger: rootRef.current,
-          start: "top top",
-          end: () => `+=${Math.max(totalShift(), 1) + window.innerHeight}`,
-          pin: true,
-          scrub: 0.8,
-          invalidateOnRefresh: true,
-          onUpdate: (self) => {
-            setActive(Math.min(steps.length - 1, Math.floor(self.progress * steps.length)));
-          },
+      const mm = gsap.matchMedia();
+
+      mm.add(
+        {
+          isDesktop: "(min-width: 900px)",
         },
+        (context) => {
+          if (!context.conditions?.isDesktop || !trackRef.current) return;
+
+          // 1. Create pinning ScrollTrigger first
+          gsap.to(trackRef.current, {
+            x: () => -totalShift(),
+            ease: "none",
+            scrollTrigger: {
+              trigger: rootRef.current,
+              start: "top top",
+              end: () => `+=${Math.max(totalShift(), 1) + window.innerHeight}`,
+              pin: true,
+              scrub: 0.8,
+              invalidateOnRefresh: true,
+              onUpdate: (self) => {
+                setActiveIndex(Math.min(steps.length - 1, Math.round(self.progress * (steps.length - 1))));
+              },
+            },
+          });
+
+          // 2. Create reveal ScrollTrigger after pinning so GSAP handles spacing correctly
+          revealUp(cards, {
+            y: 28,
+            duration: 0.7,
+            stagger: 0.06,
+            scrollTrigger: { trigger: rootRef.current, start: "top 68%" },
+          });
+
+          ScrollTrigger.refresh();
+        },
+        rootRef,
+      );
+
+      mm.add("(max-width: 899px)", () => {
+        // Mobile: Just reveal and scroll track active steps
+        revealUp(cards, {
+          y: 28,
+          duration: 0.7,
+          stagger: 0.06,
+          scrollTrigger: { trigger: rootRef.current, start: "top 68%" },
+        });
+
+        const triggers = cards.map((card, index) =>
+          ScrollTrigger.create({
+            trigger: card,
+            start: "top 58%",
+            end: "bottom 45%",
+            onEnter: () => setActiveIndex(index),
+            onEnterBack: () => setActiveIndex(index),
+          }),
+        );
+
+        return () => {
+          triggers.forEach((trigger) => trigger.kill());
+        };
       });
 
-      cards.forEach((card, index) => {
-        ScrollTrigger.create({
-          trigger: card,
-          containerAnimation: undefined,
-          start: "left center",
-          onEnter: () => setActive(index),
-        });
-      });
+      return () => mm.revert();
     },
     { scope: rootRef },
   );
@@ -71,7 +118,7 @@ export default function WorkflowSection() {
           </p>
         </div>
 
-        <div className="mt-14 overflow-visible">
+        <div className="mt-14 overflow-x-auto overflow-y-visible pb-4 lg:overflow-visible lg:pb-0">
           <div ref={trackRef} className="flex w-max gap-5 pr-8">
             {steps.map((step, index) => {
               const Icon = step.icon;
@@ -79,7 +126,7 @@ export default function WorkflowSection() {
               return (
                 <article
                   key={step.title}
-                  className={`workflow-step h-[410px] w-[78vw] max-w-[430px] rounded-[2rem] border p-6 transition duration-300 md:w-[430px] ${
+                  className={`workflow-step h-[410px] w-[78vw] max-w-[430px] rounded-[2rem] border p-6 transition-colors duration-300 md:w-[430px] ${
                     isActive
                       ? "scale-[1.02] border-[#D9A441]/60 bg-[#FFFDF6] text-[#102A24]"
                       : "border-white/10 bg-white/10 text-[#FFFDF6]"
