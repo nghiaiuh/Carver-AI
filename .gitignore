@@ -1,12 +1,10 @@
-# Environment variables
+# Environment variables & Local configurations
 .env
 .env.*
 *.env
 .env.local
 .env.production
 .env.development
-
-# Claude Code
 .claude/settings.local.json
 
 # Python virtual environments
@@ -19,35 +17,32 @@ venv/
 # Node.js modules
 **/node_modules/
 
-# Next.js
+# Next.js, Turbo, and Vercel build/cache directories
 .next/
 out/
 build/
-.turbo/
-
-# Distribution files
 dist/
-build/
+.turbo/
+.vercel/
 
-# IDE and editor files
+# IDE & Editor configurations
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sxo
 
-# Logs
+# Logs and OS files
 *.log
+.DS_Store
+Thumbs.db
 
-# Testing
+# Testing outputs
 coverage/
 .nyc_output/
 **/*.tsbuildinfo
 
-# Misc
-.DS_Store
-
-# Recommended directory-level ignores for secrets and keys
-# Prefer storing secrets in a dedicated directory (e.g., secrets/ or credentials/)
+# Secrets, keys, and credentials
 secrets/
 secrets/**
 credentials/
@@ -56,16 +51,14 @@ keys/
 keys/**
 certs/
 certs/**
-# SSH keys directory (if present)
 .ssh/
-# Provider-specific directories
 .aws/
 .azure/
 .gcloud/
-# Local app settings directory (if you move local config files into a folder)
+
+# Local app settings and caches
 local_settings/
 local_settings/**
-# Local caches and package manager stores
 .cache/
 .cache/**
 npm-cache/

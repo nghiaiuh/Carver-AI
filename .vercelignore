@@ -1,0 +1,72 @@
+# Node modules (Vercel will install them)
+node_modules
+**/node_modules
+
+# Build outputs and cache directories
+.next
+**/.next
+dist
+**/dist
+build
+**/build
+out
+**/out
+.turbo
+**/.turbo
+.vercel
+**/.vercel
+
+# Test files & configurations (keep in git, but ignore on Vercel deployment)
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/tests
+**/test
+coverage
+.nyc_output
+
+# Local environment variables & secrets (Crucial for security)
+.env
+.env.*
+.env.local
+.env.*.local
+*.env
+secrets
+secrets/**
+credentials
+credentials/**
+keys
+keys/**
+certs
+certs/**
+.ssh
+.aws
+.azure
+.gcloud
+local_settings
+local_settings/**
+
+# IDE, Editors, and OS files
+.vscode
+.idea
+.claude
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Python virtual environments
+**/venv
+**/.venv
+ENV
+env
+venv
+
+# Miscellaneous development files
+.git
+.github
+scripts
+*.log
+npm-debug.log*
+*.tsbuildinfo
