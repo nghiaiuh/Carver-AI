@@ -9,10 +9,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
-import type { AddedObject, CanvasNode, CanvasEdge, EditorTool, Marker, Region, SelectedItem } from "./CanvasWorkspace";
+import { ChevronDown, CircleDot, Menu, Zap } from "lucide-react";
+import type { AddedObject, CanvasNode, CanvasEdge, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
 import BottomToolDock from "./BottomToolDock";
-import MiniMap from "./MiniMap";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";
 
@@ -23,12 +22,18 @@ type CanvasBoardProps = {
   markers: Marker[];
   regions: Region[];
   addedObjects: AddedObject[];
+  sketchLines: SketchLine[];
+  sketchGroups: SketchGroup[];
+  selectedSketchLineIds: string[];
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   mockConcepts: string[];
   angleResults: string[];
   onSelect: (item: SelectedItem) => void;
   onImageAction: (xPercent: number, yPercent: number) => void;
+  onAddSketchLine: (line: SketchLine) => void;
+  onSelectSketchLine: (id: string, additive: boolean) => void;
+  onSelectSketchGroup: (id: string) => void;
   onTool: (tool: EditorTool) => void;
   onToggleGrid: () => void;
   onQuickEdit: () => void;
@@ -43,9 +48,15 @@ type CanvasBoardProps = {
   onSetActiveNode: (id: string) => void;
 };
 
+type DeletedNodeSnapshot = {
+  node: CanvasNode;
+  edges: CanvasEdge[];
+};
+
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
-const ZOOM_STEP = 0.1;
+const ZOOM_STEP = 0.05;
+const WHEEL_ZOOM_SENSITIVITY = 0.0025;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -58,12 +69,18 @@ export default function CanvasBoard({
   markers,
   regions,
   addedObjects,
+  sketchLines,
+  sketchGroups,
+  selectedSketchLineIds,
   nodes,
   edges,
   mockConcepts,
   angleResults,
   onSelect,
   onImageAction,
+  onAddSketchLine,
+  onSelectSketchLine,
+  onSelectSketchGroup,
   onTool,
   onToggleGrid,
   onQuickEdit,
@@ -80,6 +97,7 @@ export default function CanvasBoard({
   const containerRef = useRef<HTMLElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const projectNameInputRef = useRef<HTMLInputElement>(null);
+  const importImagesInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -87,9 +105,10 @@ export default function CanvasBoard({
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [projectName, setProjectName] = useState("Project");
+  const [projectName, setProjectName] = useState("Untitled");
   const [editingProjectName, setEditingProjectName] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState("Project");
+  const [projectNameDraft, setProjectNameDraft] = useState("Untitled");
+  const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -98,9 +117,33 @@ export default function CanvasBoard({
   // ── Edge Creation State ───────────────────────────────────────────────────
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
 
-  // ── Paste Logic ───────────────────────────────────────────────────────────
+  const addImageNode = useCallback(
+    (imageUrl: string, title = "Pasted Image") => {
+      onNodesChange((prev) => {
+        const isFirst = prev.length === 0;
+        const newNode: CanvasNode = {
+          id: `node-${Date.now()}-${prev.length}`,
+          x: -pan.x / zoom,
+          y: -pan.y / zoom,
+          width: 240,
+          height: 180,
+          imageUrl,
+          title: isFirst ? "Site Photo" : title,
+          prompt: null,
+          role: isFirst ? "layout" : "reference",
+        };
+        return [...prev, newNode];
+      });
+      onToast("Image added to canvas");
+    },
+    [onNodesChange, onToast, pan.x, pan.y, zoom],
+  );
+
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-prompt-composer]") || target?.closest("textarea,input,[contenteditable='true']")) return;
+
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -108,33 +151,17 @@ export default function CanvasBoard({
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-            const url = URL.createObjectURL(blob);
-            onNodesChange((prev) => {
-              const isFirst = prev.length === 0;
-              const newNode: CanvasNode = {
-                id: `node-${Date.now()}`,
-                // Paste in the center of the current view
-                x: -pan.x / zoom,
-                y: -pan.y / zoom,
-                width: 240,
-                height: 180,
-                imageUrl: url,
-                title: isFirst ? "Site Photo" : "Pasted Image",
-                prompt: null,
-                role: isFirst ? "layout" : "reference",
-              };
-              return [...prev, newNode];
-            });
-            onToast("Image pasted");
+            e.preventDefault();
+            addImageNode(URL.createObjectURL(blob));
           }
-          break; // only handle one image paste for now
+          break;
         }
       }
     };
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [pan, zoom, onNodesChange, onToast]);
+  }, [addImageNode]);
 
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
@@ -147,19 +174,27 @@ export default function CanvasBoard({
     if (!container) return;
     const rect = container.getBoundingClientRect();
 
-    const cursorX = (event.clientX - rect.left - rect.width / 2) * PAN_DAMPING;
-    const cursorY = (event.clientY - rect.top - rect.height / 2) * PAN_DAMPING;
+    if (event.ctrlKey || event.metaKey) {
+      const cursorX = (event.clientX - rect.left - rect.width / 2) * PAN_DAMPING;
+      const cursorY = (event.clientY - rect.top - rect.height / 2) * PAN_DAMPING;
 
-    setZoom((prev) => {
-      const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-      const next = clamp(prev + delta, MIN_ZOOM, MAX_ZOOM);
-      const ratio = next / prev - 1;
-      setPan((p) => ({
-        x: p.x - cursorX * ratio,
-        y: p.y - cursorY * ratio,
-      }));
-      return next;
-    });
+      setZoom((prev) => {
+        const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
+        const next = clamp(prev + delta, MIN_ZOOM, MAX_ZOOM);
+        const ratio = next / prev - 1;
+        setPan((p) => ({
+          x: p.x - cursorX * ratio,
+          y: p.y - cursorY * ratio,
+        }));
+        return next;
+      });
+      return;
+    }
+
+    setPan((prev) => ({
+      x: prev.x - event.deltaX,
+      y: prev.y - event.deltaY,
+    }));
   }, []);
 
   const handleMouseDown = useCallback(
@@ -324,6 +359,74 @@ export default function CanvasBoard({
     item.onSelect?.();
   };
 
+  const importImages = (files: FileList | null) => {
+    if (!files?.length) return;
+    Array.from(files)
+      .filter((file) => file.type.startsWith("image/"))
+      .forEach((file) => addImageNode(URL.createObjectURL(file), file.name));
+    if (importImagesInputRef.current) importImagesInputRef.current.value = "";
+  };
+
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      const nodeToDelete = nodes.find((node) => node.id === nodeId);
+      if (!nodeToDelete) return;
+      const relatedEdges = edges.filter((edge) => edge.sourceId === nodeId || edge.targetId === nodeId);
+
+      setDeletedNodeStack((prev) => [...prev, { node: nodeToDelete, edges: relatedEdges }]);
+      onNodesChange((prev) => prev.filter((node) => node.id !== nodeId));
+      onEdgesChange((prev) => prev.filter((edge) => edge.sourceId !== nodeId && edge.targetId !== nodeId));
+      if (activeNodeId === nodeId) {
+        const nextActiveNode = nodes.find((node) => node.id !== nodeId);
+        onSetActiveNode(nextActiveNode?.id ?? "");
+      }
+      onSelect({ type: "none" });
+      onToast("Image deleted");
+    },
+    [activeNodeId, edges, nodes, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast],
+  );
+
+  const undoDeleteNode = useCallback(() => {
+    const snapshot = deletedNodeStack.at(-1);
+    if (!snapshot) {
+      onToast("Nothing to undo");
+      return;
+    }
+
+    setDeletedNodeStack((prev) => prev.slice(0, -1));
+    onNodesChange((currentNodes) =>
+      currentNodes.some((node) => node.id === snapshot.node.id) ? currentNodes : [...currentNodes, snapshot.node],
+    );
+    onEdgesChange((currentEdges) => [
+      ...currentEdges,
+      ...snapshot.edges.filter((edge) => !currentEdges.some((currentEdge) => currentEdge.id === edge.id)),
+    ]);
+    onSetActiveNode(snapshot.node.id);
+    onSelect({ type: "node", id: snapshot.node.id });
+    onToast("Image restored");
+  }, [deletedNodeStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("textarea,input,[contenteditable='true']")) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undoDeleteNode();
+        return;
+      }
+
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (selectedItem.type !== "node") return;
+      event.preventDefault();
+      deleteNode(selectedItem.id);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteNode, selectedItem, undoDeleteNode]);
+
   const zoomIn = () => setZoom((prev) => clamp(parseFloat((prev + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
   const zoomOut = () => setZoom((prev) => clamp(parseFloat((prev - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
   const resetZoom = () => {
@@ -334,7 +437,7 @@ export default function CanvasBoard({
   return (
     <section
       ref={containerRef}
-      className="relative h-full flex-1 overflow-hidden bg-[#F5F5F4] touch-none"
+      className="relative h-full flex-1 overflow-hidden bg-white touch-none"
       style={{ cursor: isPanningCanvas ? "grabbing" : "default" }}
       onClick={(e) => {
         // Only deselect if clicking on the background
@@ -347,22 +450,26 @@ export default function CanvasBoard({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      <div ref={projectMenuRef} className="absolute left-6 top-5 z-50">
-        <div className="flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-white/90 px-2 py-2 text-xs font-black text-[#111827] shadow-sm backdrop-blur">
+      <input
+        ref={importImagesInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => importImages(event.target.files)}
+      />
+      <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50">
+        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[#F4F4F4] px-3 text-[#3F454E]">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
-            className="grid h-8 w-8 place-items-center rounded-full bg-[#111827] text-white shadow-sm"
+            className="grid h-8 w-8 place-items-center rounded-full bg-[#2D2D2D] text-white"
             title={projectMenuOpen ? "Close menu" : "Open menu"}
             aria-haspopup="menu"
             aria-expanded={projectMenuOpen}
             aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
           >
-            {projectMenuOpen ? (
-              <Menu className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <span className="text-[11px] font-black">C.</span>
-            )}
+            {projectMenuOpen ? <Menu className="h-4 w-4" aria-hidden="true" /> : <CircleDot className="h-5 w-5" aria-hidden="true" />}
           </button>
           {editingProjectName ? (
             <input
@@ -374,19 +481,33 @@ export default function CanvasBoard({
                 if (e.key === "Enter") commitProjectName();
                 if (e.key === "Escape") cancelProjectName();
               }}
-              className="w-36 bg-transparent text-xs font-black text-[#111827] outline-none"
+              className="w-24 bg-transparent text-base font-semibold tracking-[-0.02em] text-[#3F454E] outline-none"
               aria-label="Project name"
             />
           ) : (
             <button
               type="button"
               onClick={startEditingProjectName}
-              className="pr-2 text-xs font-black text-[#111827]"
+              className="max-w-[120px] truncate text-base font-semibold tracking-[-0.02em] text-[#3F454E]"
               title="Edit project name"
             >
               {projectName}
             </button>
           )}
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-full text-[#707780] hover:bg-white"
+            title="Project mode"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToast("Project mode");
+            }}
+          >
+            <span className="relative grid h-5 w-5 place-items-center rounded-full border border-[#8B9097] text-[10px] font-semibold">
+              ◒
+            </span>
+          </button>
+          <ChevronDown className="h-4 w-4 text-[#7D838B]" aria-hidden="true" />
         </div>
 
         {projectMenuOpen ? (
@@ -397,24 +518,44 @@ export default function CanvasBoard({
             <MenuSection
               items={[
                 { label: "Home", onSelect: () => router.push("/") },
-                { label: projectName },
+                { label: projectName, onSelect: startEditingProjectName },
               ]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
               items={[
-                { label: "New Project" },
-                { label: "Delete Project", tone: "danger" },
+                {
+                  label: "New Project",
+                  onSelect: () => {
+                    setProjectName("Untitled");
+                    onNodesChange([]);
+                    onEdgesChange([]);
+                    setDeletedNodeStack([]);
+                    resetZoom();
+                    onToast("New project created");
+                  },
+                },
+                {
+                  label: "Delete Project",
+                  tone: "danger",
+                  onSelect: () => {
+                    onNodesChange([]);
+                    onEdgesChange([]);
+                    setDeletedNodeStack([]);
+                    resetZoom();
+                    onToast("Project cleared");
+                  },
+                },
               ]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
-              items={[{ label: "Import Images" }]}
+              items={[{ label: "Import Images", onSelect: () => importImagesInputRef.current?.click() }]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
               items={[
-                { label: "Undo", shortcut: "Ctrl+Z", disabled: true },
+                { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
                 { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: true },
                 { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
               ]}
@@ -422,15 +563,32 @@ export default function CanvasBoard({
             />
             <MenuSection
               items={[
-                { label: "Zoom to Fit", shortcut: "Shift+1" },
-                { label: "Zoom In", shortcut: "Ctrl++" },
-                { label: "Zoom Out", shortcut: "Ctrl+-" },
+                { label: "Zoom to Fit", shortcut: "Shift+1", onSelect: resetZoom },
+                { label: "Zoom In", shortcut: "Ctrl++", onSelect: zoomIn },
+                { label: "Zoom Out", shortcut: "Ctrl+-", onSelect: zoomOut },
               ]}
               onSelect={handleMenuSelect}
               noDivider
             />
           </div>
         ) : null}
+      </div>
+
+      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[#F4F4F4] px-3 text-xs font-semibold text-[#5D636C]">
+        <Zap className="h-4 w-4 fill-[#2D2D2D] text-[#2D2D2D]" aria-hidden="true" />
+        <span>30</span>
+        <button
+          type="button"
+          className="relative grid h-8 w-8 place-items-center rounded-full bg-[#2F80ED] text-white"
+          title="Time credits"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToast("30 credits");
+          }}
+        >
+          <span className="text-sm font-bold">↻</span>
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-white" />
+        </button>
       </div>
 
       {/* Zoomable + pannable canvas layer */}
@@ -464,9 +622,15 @@ export default function CanvasBoard({
             markers={markers}
             regions={regions}
             addedObjects={addedObjects}
+            sketchLines={sketchLines}
+            sketchGroups={sketchGroups}
+            selectedSketchLineIds={selectedSketchLineIds}
             activeNodeId={activeNodeId}
             onSelect={(id) => onSelect({ type: "node", id })}
             onSelectOverlay={(item) => onSelect(item)}
+            onAddSketchLine={onAddSketchLine}
+            onSelectSketchLine={onSelectSketchLine}
+            onSelectSketchGroup={(id) => onSelectSketchGroup(id)}
             onSelectContextMenu={(id, x, y) => onSelect({ type: "node", id, menu: { x, y } })}
             onDragStart={handleNodePointerDown}
             onHandlePointerDown={handleEdgePointerDown}
@@ -478,11 +642,14 @@ export default function CanvasBoard({
             onRealityCheck={onRealityCheck}
             onToast={onToast}
             onSetActiveNode={onSetActiveNode}
+            onDelete={deleteNode}
           />
         ))}
       </div>
 
-      <MiniMap zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onResetZoom={resetZoom} />
+      <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[#ECECEC] bg-white">
+        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[#E5E5E5] bg-white" />
+      </div>
       <BottomToolDock
         activeTool={activeTool}
         gridVisible={gridVisible}

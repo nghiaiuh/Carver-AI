@@ -1,214 +1,308 @@
 /*
- * Flow: Renders one interactive canvas workspace component.
- * 1. Receive canvas state and callbacks from the workspace.
- * 2. Render the focused control, overlay, or board UI.
- * 3. Send user actions back up through typed handlers.
+ * Flow: Renders the Lovart-style chat panel.
+ * 1. Show a compact chat header with quick actions.
+ * 2. Offer centered Carver skills before messages exist.
+ * 3. Keep the composer anchored at the bottom with image paste support.
  */
 
 "use client";
 
 import {
-  ArrowRightFromLine,
+  ArrowRight,
   BookOpen,
+  Bot,
   Box,
   ChevronDown,
-  CornerDownLeft,
+  CircleDollarSign,
   Lightbulb,
   Mic,
   Plus,
   Share2,
-  Trash2,
+  Sparkles,
+  Store,
+  Video,
+  X,
+  type LucideIcon,
 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type EditorRightPanelProps = {
   draft: string;
   onDraftChange: (value: string) => void;
+  onClose: () => void;
+  onToast: (message: string) => void;
 };
 
-export default function EditorRightPanel({ draft, onDraftChange }: EditorRightPanelProps) {
+type PromptAttachment = {
+  id: string;
+  name: string;
+  url: string;
+};
+
+const skills = [
+  { label: "Seedance 2.0 Video Creation", icon: Video, tone: "purple" },
+  { label: "One-shot Video", icon: Video, tone: "purple" },
+  { label: "Instagram Post", icon: Sparkles, tone: "blue" },
+  { label: "Cross-Platform Repurposer", icon: Sparkles, tone: "blue" },
+  { label: "Logo Design", icon: Store, tone: "orange" },
+  { label: "UGC: Lifestyle Try-on", icon: Store, tone: "pink" },
+  { label: "AI Stylist: High-Conversion Looks", icon: Store, tone: "pink" },
+  { label: "All Skills", icon: BookOpen, tone: "slate" },
+] as const;
+
+export default function EditorRightPanel({ draft, onDraftChange, onClose, onToast }: EditorRightPanelProps) {
   const [messages, setMessages] = useState<Array<{ id: string; role: "user" | "assistant"; content: string }>>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const [showJump, setShowJump] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [agentOpen, setAgentOpen] = useState(false);
   const [agent, setAgent] = useState<"Agent" | "Planner" | "Designer">("Agent");
+  const [promoVisible, setPromoVisible] = useState(true);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
 
-  const canSend = useMemo(() => draft.trim().length > 0, [draft]);
-  const title = useMemo(() => {
-    const t = (messages.findLast?.((m) => m.role === "user")?.content ?? "Start with an idea").trim();
-    return t.length > 36 ? `${t.slice(0, 36)}...` : t;
-  }, [messages]);
+  const canSend = useMemo(() => draft.trim().length > 0 || attachments.length > 0, [attachments.length, draft]);
 
   const autosize = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
   };
 
   useEffect(() => autosize(), [draft]);
 
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      setShowJump(distance > 240);
-    };
-
-    onScroll();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
 
-  const clear = () => {
+  const addAttachments = (files: File[] | FileList) => {
+    const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    setAttachments((prev) => [
+      ...prev,
+      ...imageFiles.map((file) => ({
+        id: `att_${Date.now()}_${file.name || "pasted"}`,
+        name: file.name || "Pasted image",
+        url: URL.createObjectURL(file),
+      })),
+    ]);
+    onToast(`${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"} attached`);
+  };
+
+  const handlePromptPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files: File[] = [];
+    Array.from(event.clipboardData.items).forEach((item) => {
+      if (!item.type.startsWith("image/")) return;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    });
+    if (files.length === 0) return;
+    event.preventDefault();
+    addAttachments(files);
+  };
+
+  const clearChat = () => {
     setMessages([]);
+    setAttachments([]);
     onDraftChange("");
+    onToast("New chat started");
   };
 
   const send = () => {
     const content = draft.trim();
-    if (!content) return;
+    if (!content && attachments.length === 0) return;
     const id = `m_${Date.now()}`;
+    const attachmentText =
+      attachments.length > 0 ? `\n\n${attachments.length} image attachment${attachments.length === 1 ? "" : "s"}` : "";
+
     setMessages((prev) => [
       ...prev,
-      { id, role: "user", content },
+      { id, role: "user", content: `${content || "Image prompt"}${attachmentText}` },
       {
         id: `${id}_a`,
         role: "assistant",
-        content:
-          "Ok. Mo ta ro hon ban muon thay doi gi tren canvas (doi tuong, vi tri, kich thuoc, mau sac, phong cach).",
+        content: "Mình đã nhận ý tưởng. Hãy thêm ảnh mặt bằng hoặc mô tả khu vực để Carver dựng concept chính xác hơn.",
       },
     ]);
     onDraftChange("");
+    setAttachments([]);
   };
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-[#E5E7EB] bg-white">
-      <div className="flex h-12 items-center justify-between border-b border-[#E5E7EB] px-3">
-        <p className="min-w-0 flex-1 truncate text-sm font-bold text-[#0A0A0A]" title={title}>
-          {title}
-        </p>
-        <div className="flex items-center gap-1 pl-2">
-          <IconButton label="New" onClick={clear} icon={Plus} />
-          <IconButton label="More" onClick={() => {}} icon={ChevronDown} />
-          <IconButton label="Share" onClick={() => {}} icon={Share2} />
-          <IconButton label="Pop out" onClick={() => {}} icon={ArrowRightFromLine} />
+    <aside className="flex h-full w-[420px] shrink-0 flex-col border-l border-[#E9E9E9] bg-white text-[#1F1F1F]">
+      <div className="flex h-[56px] items-center justify-between px-4">
+        <h2 className="text-base font-semibold tracking-[-0.02em]">New chat</h2>
+        <div className="flex items-center gap-3 text-[#A5A5A5]">
+          <IconButton label="New chat" icon={Plus} onClick={clearChat} />
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          <IconButton label="Share" icon={Share2} onClick={() => onToast("Share link copied")} />
+          <IconButton label="Close chat" icon={ArrowRight} onClick={onClose} />
         </div>
       </div>
 
-      <div ref={scrollerRef} className="relative flex-1 overflow-y-auto bg-white px-4 py-4">
+      <div className="relative flex-1 overflow-y-auto px-5 pb-[190px] pt-7">
         {messages.length === 0 ? (
-          <div className="text-sm font-medium leading-6 text-[#667085]">
-            Start with an idea, or type &quot;@&quot; to mention
+          <div className="grid h-full place-items-center">
+            <div className="w-full max-w-[360px] text-center">
+              <h3 className="mb-7 text-base font-semibold tracking-[-0.01em]">Try these Carver Skills</h3>
+              <div className="flex flex-wrap justify-center gap-2">
+                {skills.map((skill) => (
+                  <SkillPill
+                    key={skill.label}
+                    {...skill}
+                    onClick={() => {
+                      onDraftChange(skill.label);
+                      textareaRef.current?.focus();
+                      onToast(`${skill.label} selected`);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="grid gap-6 pb-8">
-            {messages.map((m, idx) => (
-              <div key={m.id} className="text-[15px] leading-7 text-[#101828]">
-                {idx === 0 ? (
-                  <div className="mb-3 text-xs font-semibold text-[#98A2B3]">Today</div>
-                ) : null}
-                {m.role === "assistant" ? (
-                  <div className="whitespace-pre-wrap">{m.content}</div>
-                ) : (
-                  <div className="whitespace-pre-wrap font-semibold">{m.content}</div>
-                )}
+          <div className="grid gap-6">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={[
+                  "max-w-[86%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm leading-6",
+                  message.role === "user"
+                    ? "ml-auto bg-[#F3F4F6] font-medium text-[#111827]"
+                    : "mr-auto bg-white text-[#344054]",
+                ].join(" ")}
+              >
+                {message.content}
               </div>
             ))}
             <div ref={endRef} />
           </div>
         )}
-
-        {showJump ? (
-          <button
-            type="button"
-            onClick={() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })}
-            className="absolute bottom-5 right-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#667085] shadow-sm hover:bg-[#F7F8FA]"
-            title="Jump to bottom"
-          >
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
-          </button>
-        ) : null}
       </div>
 
-      <div className="border-t border-[#E5E7EB] bg-white p-3">
-        <div className="rounded-3xl border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            placeholder="Start with an idea, or type '@' to mention"
-            rows={1}
-            className="w-full resize-none bg-transparent text-sm font-medium leading-6 text-[#101828] outline-none placeholder:text-[#98A2B3]"
-          />
-
-          <div className="mt-3 flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <DockButton label="Attach" icon={Plus} onClick={() => {}} />
-              <DockButton label="Library" icon={BookOpen} onClick={() => {}} />
-              <div className="relative">
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center gap-2 rounded-xl px-2 text-sm font-medium text-[#101828] hover:bg-[#F7F8FA]"
-                  onClick={() => setAgentOpen((v) => !v)}
-                  title="Agent"
-                >
-                  <span className="text-xs font-semibold text-[#101828]">{agent}</span>
-                  <ChevronDown className="h-4 w-4 text-[#667085]" aria-hidden="true" />
-                </button>
-                {agentOpen ? (
-                  <div className="absolute bottom-11 left-0 z-50 w-44 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-lg">
-                    {(["Agent", "Planner", "Designer"] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        className={[
-                          "flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[#F7F8FA]",
-                          agent === opt ? "font-semibold text-[#101828]" : "font-medium text-[#344054]",
-                        ].join(" ")}
-                        onClick={() => {
-                          setAgent(opt);
-                          setAgentOpen(false);
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <DockButton label="Ideas" icon={Lightbulb} onClick={() => {}} />
-              <DockButton label="Objects" icon={Box} onClick={() => {}} />
-              <DockButton label="Voice" icon={Mic} onClick={() => {}} />
+      <div className="px-3 pb-3" data-prompt-composer>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            if (event.target.files) addAttachments(event.target.files);
+            event.target.value = "";
+          }}
+        />
+        <div className="overflow-hidden rounded-[24px] bg-[#F4F4F4] shadow-[0_2px_18px_rgba(0,0,0,0.10)]">
+          {promoVisible ? (
+            <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-black">
+              <CircleDollarSign className="h-4 w-4 fill-[#DFFF27] text-black" aria-hidden="true" />
+              <span>Limited Time: Upgrade now&amp;save up to 45% OFF!</span>
               <button
                 type="button"
-                onClick={send}
-                disabled={!canSend}
-                className={[
-                  "inline-flex h-9 items-center justify-center rounded-xl px-3 text-sm font-semibold",
-                  canSend ? "bg-[#111827] text-white hover:bg-[#0B1220]" : "bg-[#F2F4F7] text-[#98A2B3]",
-                ].join(" ")}
-                title="Send"
+                onClick={() => setPromoVisible(false)}
+                className="ml-auto text-lg leading-none text-[#333]"
+                title="Dismiss"
               >
-                <CornerDownLeft className="h-4 w-4" aria-hidden="true" />
+                ×
               </button>
+            </div>
+          ) : null}
+
+          <div className="rounded-[22px] border border-[#E1E1E1] bg-white px-4 py-3">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+              onPaste={handlePromptPaste}
+              placeholder={'Start with an idea, or type "@" to mention'}
+              rows={3}
+              className="min-h-[72px] w-full resize-none bg-transparent text-base font-medium leading-6 text-[#111827] outline-none placeholder:text-[#A8A8A8]"
+            />
+
+            {attachments.length > 0 ? (
+              <div className="mb-3 flex gap-2 overflow-x-auto">
+                {attachments.map((attachment) => (
+                  <div key={attachment.id} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-[#E5E7EB] bg-[#F7F7F7]">
+                    <Image src={attachment.url} alt={attachment.name} fill sizes="64px" className="object-cover" unoptimized />
+                    <button
+                      type="button"
+                      onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/70 text-white"
+                      title="Remove image"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="mt-1 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#333]">
+                <ComposerIcon label="Attach image" icon={Plus} onClick={() => fileInputRef.current?.click()} />
+                <ComposerIcon label="Library" icon={BookOpen} onClick={() => onToast("Library opened")} />
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-sm font-semibold hover:bg-[#F7F7F7]"
+                    onClick={() => setAgentOpen((value) => !value)}
+                  >
+                    <Bot className="h-5 w-5" aria-hidden="true" />
+                    {agent}
+                    <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  {agentOpen ? (
+                    <div className="absolute bottom-12 left-0 z-50 w-44 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-xl">
+                      {(["Agent", "Planner", "Designer"] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className="block w-full px-4 py-3 text-left text-sm font-semibold hover:bg-[#F7F7F7]"
+                          onClick={() => {
+                            setAgent(option);
+                            setAgentOpen(false);
+                            onToast(`${option} selected`);
+                          }}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-[#333]">
+                <ComposerIcon
+                  label="Ideas"
+                  icon={Lightbulb}
+                  onClick={() => {
+                    onDraftChange(draft || "Thiết kế sân vườn biệt thự hiện đại với hồ koi");
+                    textareaRef.current?.focus();
+                  }}
+                />
+                <ComposerIcon label="Objects" icon={Box} onClick={() => onToast("Object picker opened")} />
+                <button
+                  type="button"
+                  onClick={send}
+                  disabled={!canSend}
+                  className={[
+                    "grid h-10 w-10 place-items-center rounded-full transition",
+                    canSend ? "bg-[#262626] text-white" : "bg-[#262626] text-white opacity-70",
+                  ].join(" ")}
+                  title="Send"
+                >
+                  <Mic className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -217,43 +311,67 @@ export default function EditorRightPanel({ draft, onDraftChange }: EditorRightPa
   );
 }
 
+function SkillPill({
+  label,
+  icon: Icon,
+  tone,
+  onClick,
+}: {
+  label: string;
+  icon: LucideIcon;
+  tone: "purple" | "blue" | "orange" | "pink" | "slate";
+  onClick: () => void;
+}) {
+  const color =
+    tone === "purple"
+      ? "text-[#8B5CF6]"
+      : tone === "blue"
+        ? "text-[#2563EB]"
+        : tone === "orange"
+          ? "text-[#F97316]"
+          : tone === "pink"
+            ? "text-[#EC4899]"
+            : "text-[#98A2B3]";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E8E8] bg-white px-3 py-1.5 text-sm font-medium text-[#292929] shadow-[0_1px_0_rgba(0,0,0,0.02)] transition hover:border-[#D5D5D5]"
+    >
+      <Icon className={`h-4 w-4 ${color}`} aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
+
 function IconButton({
   icon: Icon,
   label,
   onClick,
 }: {
-  icon: typeof Trash2;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#667085] hover:bg-[#F7F8FA]"
-      title={label}
-      onClick={onClick}
-    >
+    <button type="button" className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#F5F5F5]" title={label} onClick={onClick}>
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
   );
 }
 
-function DockButton({
+function ComposerIcon({
   icon: Icon,
   label,
   onClick,
 }: {
-  icon: typeof Trash2;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-[#667085] hover:bg-[#F7F8FA]"
-      title={label}
-      onClick={onClick}
-    >
+    <button type="button" className="grid h-9 w-9 place-items-center rounded-full hover:bg-[#F7F7F7]" title={label} onClick={onClick}>
       <Icon className="h-5 w-5" aria-hidden="true" />
     </button>
   );

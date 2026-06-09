@@ -8,12 +8,13 @@
 "use client";
 
 import React from "react";
-import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem } from "./CanvasWorkspace";
+import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
 import { ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "./ContextualToolbar";
 import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";
 import RegionOverlay from "./RegionOverlay";
+import SketchLayer from "./SketchLayer";
 
 type CanvasNodeCardProps = {
   node: CanvasNode;
@@ -23,9 +24,15 @@ type CanvasNodeCardProps = {
   markers: Marker[];
   regions: Region[];
   addedObjects: AddedObject[];
+  sketchLines: SketchLine[];
+  sketchGroups: SketchGroup[];
+  selectedSketchLineIds: string[];
   activeNodeId: string;
   onSelect: (id: string, event?: React.MouseEvent) => void;
   onSelectOverlay: (item: SelectedItem) => void;
+  onAddSketchLine: (line: SketchLine) => void;
+  onSelectSketchLine: (id: string, additive: boolean) => void;
+  onSelectSketchGroup: (id: string) => void;
   onSelectContextMenu: (id: string, x: number, y: number) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
   onHandlePointerDown: (id: string, e: React.PointerEvent) => void;
@@ -37,6 +44,7 @@ type CanvasNodeCardProps = {
   onRealityCheck: () => void;
   onToast: (message: string) => void;
   onSetActiveNode: (id: string) => void;
+  onDelete: (id: string) => void;
 };
 
 export default function CanvasNodeCard({
@@ -47,9 +55,15 @@ export default function CanvasNodeCard({
   markers,
   regions,
   addedObjects,
+  sketchLines,
+  sketchGroups,
+  selectedSketchLineIds,
   activeNodeId,
   onSelect,
   onSelectOverlay,
+  onAddSketchLine,
+  onSelectSketchLine,
+  onSelectSketchGroup,
   onSelectContextMenu,
   onDragStart,
   onHandlePointerDown,
@@ -61,6 +75,7 @@ export default function CanvasNodeCard({
   onRealityCheck,
   onToast,
   onSetActiveNode,
+  onDelete,
 }: CanvasNodeCardProps) {
   const isOutput = node.role === "output";
   const isActiveNode = node.id === activeNodeId;
@@ -187,6 +202,16 @@ export default function CanvasNodeCard({
                   onSelect={() => onSelectOverlay({ type: "object", id: object.id })} 
                 />
               ))}
+              <SketchLayer
+                activeTool={activeTool}
+                selectedItem={selectedItem}
+                sketchLines={sketchLines}
+                sketchGroups={sketchGroups}
+                selectedSketchLineIds={selectedSketchLineIds}
+                onAddLine={onAddSketchLine}
+                onSelectLine={onSelectSketchLine}
+                onSelectGroup={onSelectSketchGroup}
+              />
             </div>
           )}
         </div>
@@ -233,7 +258,7 @@ export default function CanvasNodeCard({
       {/* Context Menu */}
       {selected && selectedItem.type === "node" && selectedItem.menu ? (
         <div onPointerDown={(e) => e.stopPropagation()}>
-          <ContextMenu x={selectedItem.menu.x} y={selectedItem.menu.y} onToast={onToast} />
+          <ContextMenu x={selectedItem.menu.x} y={selectedItem.menu.y} onToast={onToast} onDelete={() => onDelete(node.id)} />
         </div>
       ) : null}
     </div>
@@ -276,7 +301,7 @@ function ObjectBox({ object, selected, onSelect }: { object: AddedObject; select
   );
 }
 
-function ContextMenu({ x, y, onToast }: { x: number; y: number; onToast: (message: string) => void }) {
+function ContextMenu({ x, y, onToast, onDelete }: { x: number; y: number; onToast: (message: string) => void; onDelete: () => void }) {
   const items = [
     ["Duplicate", Copy],
     ["Replace image", ImagePlus],
@@ -293,6 +318,10 @@ function ContextMenu({ x, y, onToast }: { x: number; y: number; onToast: (messag
           key={label}
           onClick={(event) => {
             event.stopPropagation();
+            if (label === "Remove") {
+              onDelete();
+              return;
+            }
             onToast(`${label} mock`);
           }}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold text-[#111827] hover:bg-[#F7F8FA]"

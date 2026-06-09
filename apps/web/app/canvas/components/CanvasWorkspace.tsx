@@ -8,18 +8,20 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageSquare, PanelLeftOpen } from "lucide-react";
 import { gsap, useGSAP } from "../../components/gsapSetup";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import EditorLeftSidebar from "./EditorLeftSidebar";
 import EditorRightPanel from "./EditorRightPanel";
+import GroupNameTagModal from "./GroupNameTagModal";
 import MultiAngleModal from "./MultiAngleModal";
 import QuickEditModal from "./QuickEditModal";
 import RealityCheckPanel from "./RealityCheckPanel";
 
 export type EditorTool =
   | "select"
+  | "pen"
   | "mark-position"
   | "add-source"
   | "grid"
@@ -39,6 +41,9 @@ export type SelectedItem =
   | { type: "marker"; id: string }
   | { type: "region"; id: string }
   | { type: "object"; id: string }
+  | { type: "sketchLine"; id: string }
+  | { type: "sketchGroup"; id: string }
+  | { type: "libraryAsset"; id: string }
   | { type: "node"; id: string; menu?: { x: number; y: number } }
   | { type: "edge"; id: string };
 
@@ -57,6 +62,7 @@ export type Region = {
   h: number;
   label: string;
   kind: "editable" | "locked";
+  selectedAssetIds?: string[];
 };
 
 export type AddedObject = {
@@ -67,6 +73,46 @@ export type AddedObject = {
   h: number;
   rotation: number;
   label: string;
+  selectedAssetIds?: string[];
+};
+
+export type SketchPoint = {
+  x: number;
+  y: number;
+};
+
+export type SketchLine = {
+  id: string;
+  points: SketchPoint[];
+  color: string;
+  width: number;
+  groupId?: string;
+};
+
+export type LibraryAssetCategory = "plant" | "stone" | "rockery" | "water" | "hardscape" | "unknown";
+
+export type LibraryAsset = {
+  id: string;
+  name: string;
+  category: LibraryAssetCategory;
+  tags: string[];
+  imageUrl: string;
+  sourceType: "project" | "saved";
+  savedAt: string;
+};
+
+export type SketchGroup = {
+  id: string;
+  nameTag: string;
+  objectType: LibraryAssetCategory;
+  lineIds: string[];
+  bounds: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
+  selectedAssetIds: string[];
 };
 
 export type CanvasNode = {
@@ -96,47 +142,72 @@ const initialRegions: Region[] = [
   { id: "region-edit-1", x: 48, y: 58, w: 34, h: 21, label: "Editable Zone", kind: "editable" },
 ];
 
-const initialNodes: CanvasNode[] = [
+const initialNodes: CanvasNode[] = [];
+const initialEdges: CanvasEdge[] = [];
+
+const initialLibraryAssets: LibraryAsset[] = [
   {
-    id: "node-1",
-    x: -400,
-    y: -200,
-    width: 320,
-    height: 240,
+    id: "asset-tung-la-han",
+    name: "Tung la han",
+    category: "plant",
+    tags: ["bonsai", "formal", "evergreen"],
     imageUrl: "/assets/garden_3d_render.png",
-    title: "Site Photo",
-    prompt: null,
-    role: "layout",
+    sourceType: "saved",
+    savedAt: "2026-06-09T00:00:00.000Z",
   },
   {
-    id: "node-2",
-    x: -400,
-    y: 100,
-    width: 240,
-    height: 180,
-    imageUrl: "https://images.unsplash.com/photo-1660232370139-d38f527522fe?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-    title: "Pasted Image",
-    prompt: null,
-    role: "style",
+    id: "asset-fern-cluster",
+    name: "Fern cluster",
+    category: "plant",
+    tags: ["shade", "pond edge", "soft"],
+    imageUrl: "/assets/mark_generation.png",
+    sourceType: "project",
+    savedAt: "2026-06-09T00:00:00.000Z",
   },
   {
-    id: "node-3",
-    x: 100,
-    y: -50,
-    width: 480,
-    height: 360,
-    imageUrl: "https://images.unsplash.com/photo-1779778642242-183108a8222f?q=80&w=2080&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // reusing for demo
-    title: "Flux Kontext",
-    prompt: "A beautiful villa garden with a koi pond, realistic rendering, natural lighting",
-    role: "output",
-    model: "Flux Kontext",
+    id: "asset-co-thach",
+    name: "Da co thach",
+    category: "stone",
+    tags: ["limestone", "pond edge", "natural"],
+    imageUrl: "/assets/canvas_texture.png",
+    sourceType: "saved",
+    savedAt: "2026-06-09T00:00:00.000Z",
+  },
+  {
+    id: "asset-rockery-waterfall",
+    name: "Hon non bo waterfall",
+    category: "rockery",
+    tags: ["waterfall", "vertical rock", "moss"],
+    imageUrl: "/assets/mark_generation.png",
+    sourceType: "project",
+    savedAt: "2026-06-09T00:00:00.000Z",
+  },
+  {
+    id: "asset-stepping-stone",
+    name: "Stepping stone path",
+    category: "hardscape",
+    tags: ["path", "courtyard", "stone"],
+    imageUrl: "/assets/canvas_texture.png",
+    sourceType: "project",
+    savedAt: "2026-06-09T00:00:00.000Z",
   },
 ];
 
-const initialEdges: CanvasEdge[] = [
-  { id: "edge-1", sourceId: "node-1", targetId: "node-3", label: "layout" },
-  { id: "edge-2", sourceId: "node-2", targetId: "node-3", label: "style" },
-];
+export function inferObjectTypeFromTag(nameTag: string): LibraryAssetCategory {
+  const normalized = nameTag
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+
+  if (/(cay|tung|truc|bonsai|co|fern|plant|tree|shrub|palm)/.test(normalized)) return "plant";
+  if (/(da|stone|rock|co thach|limestone)/.test(normalized)) return "stone";
+  if (/(hon non bo|non bo|rockery|thac|waterfall)/.test(normalized)) return "rockery";
+  if (/(nuoc|water|pond|ho koi|koi)/.test(normalized)) return "water";
+  if (/(san|gach|path|paving|hardscape|wall|fence)/.test(normalized)) return "hardscape";
+
+  return "unknown";
+}
 
 export default function CanvasWorkspace() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -152,6 +223,11 @@ export default function CanvasWorkspace() {
   const [addedObjects, setAddedObjects] = useState<AddedObject[]>([
     { id: "object-1", x: 62, y: 58, w: 17, h: 10, rotation: -5, label: "Koi Pond" },
   ]);
+  const [sketchLines, setSketchLines] = useState<SketchLine[]>([]);
+  const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
+  const [selectedSketchLineIds, setSelectedSketchLineIds] = useState<string[]>([]);
+  const [showGroupNameModal, setShowGroupNameModal] = useState(false);
+  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>(initialLibraryAssets);
   const [nodes, setNodes] = useState<CanvasNode[]>(initialNodes);
   const [edges, setEdges] = useState<CanvasEdge[]>(initialEdges);
   const [promptText, setPromptText] = useState("");
@@ -160,6 +236,7 @@ export default function CanvasWorkspace() {
   const [toast, setToast] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
   useGSAP(
     () => {
@@ -183,6 +260,13 @@ export default function CanvasWorkspace() {
   const handleTool = (tool: EditorTool) => {
     setActiveTool(tool);
     if (tool === "add-object") setShowAddObjectMenu(true);
+  };
+
+  const handleSelectItem = (item: SelectedItem) => {
+    setSelectedItem(item);
+    if (item.type !== "sketchLine") {
+      setSelectedSketchLineIds([]);
+    }
   };
 
   const handleImageAction = (x: number, y: number) => {
@@ -232,8 +316,145 @@ export default function CanvasWorkspace() {
     animateIn(".added-object");
   };
 
+  const addSketchLine = (line: SketchLine) => {
+    setSketchLines((items) => [...items, line]);
+    setSelectedSketchLineIds([line.id]);
+    setSelectedItem({ type: "sketchLine", id: line.id });
+  };
+
+  const selectSketchLine = (id: string, additive: boolean) => {
+    setSelectedSketchLineIds((items) => {
+      const next = additive ? (items.includes(id) ? items.filter((item) => item !== id) : [...items, id]) : [id];
+      return next;
+    });
+    setSelectedItem({ type: "sketchLine", id });
+  };
+
+  const groupSelectedSketchLines = (nameTag: string) => {
+    const lineIds = selectedSketchLineIds.filter((id) => sketchLines.some((line) => line.id === id));
+    if (lineIds.length === 0) return;
+
+    const selectedLines = sketchLines.filter((line) => lineIds.includes(line.id));
+    const points = selectedLines.flatMap((line) => line.points);
+    const minX = Math.min(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const groupId = `sketch-group-${Date.now()}`;
+    const objectType = inferObjectTypeFromTag(nameTag);
+
+    const group: SketchGroup = {
+      id: groupId,
+      nameTag,
+      objectType,
+      lineIds,
+      bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+      selectedAssetIds: [],
+    };
+
+    setSketchLines((items) => items.map((line) => (lineIds.includes(line.id) ? { ...line, groupId } : line)));
+    setSketchGroups((items) => [...items, group]);
+    setSelectedSketchLineIds([]);
+    setSelectedItem({ type: "sketchGroup", id: groupId });
+    setShowGroupNameModal(false);
+    showToast(`${nameTag} group created`);
+  };
+
+  const attachAssetToSelection = (assetId: string) => {
+    if (selectedItem.type === "region") {
+      setRegions((items) =>
+        items.map((region) =>
+          region.id === selectedItem.id
+            ? { ...region, selectedAssetIds: Array.from(new Set([...(region.selectedAssetIds ?? []), assetId])) }
+            : region,
+        ),
+      );
+      showToast("Asset attached to region");
+    }
+
+    if (selectedItem.type === "sketchGroup") {
+      setSketchGroups((items) =>
+        items.map((group) =>
+          group.id === selectedItem.id
+            ? { ...group, selectedAssetIds: Array.from(new Set([...group.selectedAssetIds, assetId])) }
+            : group,
+        ),
+      );
+      showToast("Asset attached to sketch group");
+    }
+
+    if (selectedItem.type === "object") {
+      setAddedObjects((items) =>
+        items.map((object) =>
+          object.id === selectedItem.id
+            ? { ...object, selectedAssetIds: Array.from(new Set([...(object.selectedAssetIds ?? []), assetId])) }
+            : object,
+        ),
+      );
+      showToast("Asset attached to object");
+    }
+  };
+
+  const saveLibraryAsset = (assetId: string) => {
+    setLibraryAssets((items) => items.map((asset) => (asset.id === assetId ? { ...asset, sourceType: "saved" } : asset)));
+    showToast("Asset saved");
+  };
+
+  const removeLibraryAsset = (assetId: string) => {
+    setLibraryAssets((items) => items.filter((asset) => asset.id !== assetId));
+    setRegions((items) => items.map((region) => ({ ...region, selectedAssetIds: region.selectedAssetIds?.filter((id) => id !== assetId) })));
+    setSketchGroups((items) => items.map((group) => ({ ...group, selectedAssetIds: group.selectedAssetIds.filter((id) => id !== assetId) })));
+    setAddedObjects((items) => items.map((object) => ({ ...object, selectedAssetIds: object.selectedAssetIds?.filter((id) => id !== assetId) })));
+    showToast("Asset removed");
+  };
+
+  const buildGenerationContext = () => {
+    const selectedRegion = selectedItem.type === "region" ? regions.find((region) => region.id === selectedItem.id) : undefined;
+    const selectedGroup = selectedItem.type === "sketchGroup" ? sketchGroups.find((group) => group.id === selectedItem.id) : undefined;
+    const selectedObject = selectedItem.type === "object" ? addedObjects.find((object) => object.id === selectedItem.id) : undefined;
+    const selectedTarget = selectedRegion ?? selectedGroup ?? selectedObject;
+    const assetIds =
+      selectedRegion?.selectedAssetIds ??
+      selectedGroup?.selectedAssetIds ??
+      selectedObject?.selectedAssetIds ??
+      [];
+    const assets = libraryAssets.filter((asset) => assetIds.includes(asset.id));
+
+    if (!selectedTarget) {
+      return {
+        targetSummary: "No explicit region or sketch group selected.",
+        referenceSummary: "No local library references selected.",
+      };
+    }
+
+    const targetSummary =
+      "nameTag" in selectedTarget
+        ? `Target group: ${selectedTarget.nameTag}; object type: ${selectedTarget.objectType}; bounds: ${JSON.stringify(selectedTarget.bounds)}.`
+        : "kind" in selectedTarget
+          ? `Target region: ${selectedTarget.label}; kind: ${selectedTarget.kind}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`
+          : `Target object: ${selectedTarget.label}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`;
+
+    const referenceSummary =
+      assets.length > 0
+        ? `Use local library references: ${assets.map((asset) => `${asset.name} (${asset.tags.join(", ")})`).join("; ")}.`
+        : "No local library references selected.";
+
+    return { targetSummary, referenceSummary };
+  };
+
   const generateConcept = () => {
+    const generationContext = buildGenerationContext();
     setMockConcepts([]);
+    setNodes((items) =>
+      items.map((node) =>
+        node.role === "output"
+          ? {
+              ...node,
+              prompt: [promptText || "Canvas generation request", generationContext.targetSummary, generationContext.referenceSummary].join("\n"),
+            }
+          : node,
+      ),
+    );
     window.setTimeout(() => {
       setMockConcepts(["Concept A", "Concept B", "Concept C"]);
       animateIn(".output-thumb");
@@ -256,39 +477,30 @@ export default function CanvasWorkspace() {
     <div ref={rootRef} className="min-h-screen bg-white text-[#0A0A0A]">
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-white xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
-          <div
-            className={[
-              "relative h-full overflow-hidden transition-[width] duration-300 ease-out",
-              leftSidebarOpen ? "w-[292px]" : "w-0",
-            ].join(" ")}
-          >
-            <div
-              className={[
-                "h-full transition-[transform,opacity] duration-300 ease-out",
-                leftSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0",
-              ].join(" ")}
-              aria-hidden={!leftSidebarOpen}
+          {leftSidebarOpen ? (
+            <EditorLeftSidebar
+              selectedItem={selectedItem}
+              regions={regions}
+              addedObjects={addedObjects}
+              sketchGroups={sketchGroups}
+              libraryAssets={libraryAssets}
+              onSelectReference={() => handleSelectItem({ type: "reference", id: "reference-1" })}
+              onUseAsset={attachAssetToSelection}
+              onSaveAsset={saveLibraryAsset}
+              onRemoveAsset={removeLibraryAsset}
+              onToast={showToast}
+              onClose={() => setLeftSidebarOpen(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setLeftSidebarOpen(true)}
+              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10"
+              title="Open layers"
             >
-              <EditorLeftSidebar selectedItem={selectedItem} onSelectReference={() => setSelectedItem({ type: "reference", id: "reference-1" })} onToast={showToast} />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setLeftSidebarOpen((value) => !value)}
-            className={[
-              "absolute top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10 transition-[left,transform] duration-300 ease-out",
-              leftSidebarOpen ? "left-[276px]" : "left-3",
-            ].join(" ")}
-            title={leftSidebarOpen ? "Hide sources" : "Show sources"}
-            aria-pressed={leftSidebarOpen}
-            aria-label={leftSidebarOpen ? "Hide sources panel" : "Show sources panel"}
-          >
-            {leftSidebarOpen ? (
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
+              <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
+            </button>
+          )}
           <CanvasBoard
             selectedItem={selectedItem}
             activeTool={activeTool}
@@ -300,8 +512,14 @@ export default function CanvasWorkspace() {
             edges={edges}
             mockConcepts={mockConcepts}
             angleResults={outputAngles}
-            onSelect={setSelectedItem}
+            onSelect={handleSelectItem}
             onImageAction={handleImageAction}
+            sketchLines={sketchLines}
+            sketchGroups={sketchGroups}
+            selectedSketchLineIds={selectedSketchLineIds}
+            onAddSketchLine={addSketchLine}
+            onSelectSketchLine={selectSketchLine}
+            onSelectSketchGroup={(id) => handleSelectItem({ type: "sketchGroup", id })}
             onTool={handleTool}
             onToggleGrid={() => setGridVisible((value) => !value)}
             onQuickEdit={() => setShowQuickEditModal(true)}
@@ -315,12 +533,43 @@ export default function CanvasWorkspace() {
             activeNodeId={activeNodeId}
             onSetActiveNode={setActiveNodeId}
           />
-          <EditorRightPanel
-            draft={promptText}
-            onDraftChange={setPromptText}
-          />
+          {rightPanelOpen ? (
+            <EditorRightPanel
+              draft={promptText}
+              onDraftChange={setPromptText}
+              onClose={() => setRightPanelOpen(false)}
+              onToast={showToast}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRightPanelOpen(true)}
+              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10"
+              title="Open chat"
+            >
+              <MessageSquare className="h-5 w-5" aria-hidden="true" />
+            </button>
+          )}
         </div>
         <QuickEditModal open={showQuickEditModal} promptText={promptText} onPromptChange={setPromptText} onClose={() => setShowQuickEditModal(false)} onApply={applyQuickEdit} />
+        {selectedSketchLineIds.length > 0 ? (
+          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-2xl shadow-black/15 backdrop-blur">
+            <span className="text-xs font-black text-[#667085]">{selectedSketchLineIds.length} sketch line{selectedSketchLineIds.length === 1 ? "" : "s"} selected</span>
+            <button
+              type="button"
+              onClick={() => setShowGroupNameModal(true)}
+              className="rounded-xl bg-[#111827] px-3 py-2 text-xs font-black text-white shadow-lg shadow-black/15"
+            >
+              Group + Name Tag
+            </button>
+          </div>
+        ) : null}
+        <GroupNameTagModal
+          open={showGroupNameModal}
+          lineCount={selectedSketchLineIds.length}
+          onClose={() => setShowGroupNameModal(false)}
+          onCreate={groupSelectedSketchLines}
+        />
         <MultiAngleModal open={showMultiAngleModal} onClose={() => setShowMultiAngleModal(false)} onGenerate={generateAngles} />
         <AddObjectMenu open={showAddObjectMenu} onClose={() => setShowAddObjectMenu(false)} onAdd={addObject} />
         <RealityCheckPanel open={showRealityCheckPanel} onClose={() => setShowRealityCheckPanel(false)} />
