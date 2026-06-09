@@ -1,3 +1,10 @@
+/*
+ * Flow: Defines static canvas UI data.
+ * 1. Export tool, prompt, or preset definitions.
+ * 2. Keep canvas components data-driven.
+ * 3. Avoid embedding repeated labels inside UI code.
+ */
+
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,

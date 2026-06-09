@@ -1,3 +1,10 @@
+/*
+ * Flow: Renders one interactive canvas workspace component.
+ * 1. Receive canvas state and callbacks from the workspace.
+ * 2. Render the focused control, overlay, or board UI.
+ * 3. Send user actions back up through typed handlers.
+ */
+
 "use client";
 
 import { SourceMix, SourceRole } from "../data/canvasData";

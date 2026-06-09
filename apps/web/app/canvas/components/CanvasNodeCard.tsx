@@ -1,8 +1,15 @@
+/*
+ * Flow: Renders one interactive canvas workspace component.
+ * 1. Receive canvas state and callbacks from the workspace.
+ * 2. Render the focused control, overlay, or board UI.
+ * 3. Send user actions back up through typed handlers.
+ */
+
 "use client";
 
 import React from "react";
 import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem } from "./CanvasWorkspace";
-import { ImagePlus, Copy, Trash2, Edit2, RefreshCw, Sparkles } from "lucide-react";
+import { ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "./ContextualToolbar";
 import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";

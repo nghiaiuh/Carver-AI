@@ -1,3 +1,10 @@
+/*
+ * Flow: Defines AI graph state and routing.
+ * 1. Receive prompt/session state.
+ * 2. Classify or transform the AI workflow state.
+ * 3. Return state for downstream graph nodes.
+ */
+
 import type { CarverState } from "../state";
 
 const classifyPrompt = (prompt: string | undefined): CarverState["intent"] => {

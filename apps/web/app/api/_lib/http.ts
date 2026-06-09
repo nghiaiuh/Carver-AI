@@ -1,3 +1,10 @@
+/*
+ * Flow: Provides shared API-route helpers.
+ * 1. Normalize request/auth inputs.
+ * 2. Expose small utilities used by server routes.
+ * 3. Keep API handlers concise and consistent.
+ */
+
 import { NextResponse } from "next/server";
 
 export const readJsonObject = async (

@@ -1,3 +1,10 @@
+/*
+ * Flow: Starts worker-side background processing.
+ * 1. Load worker runtime dependencies.
+ * 2. Register async job handlers.
+ * 3. Process queued AI/design work outside the web request.
+ */
+
 import { Worker } from "bullmq";
 import { defaultQueueOptions } from "@carver/queue";
 

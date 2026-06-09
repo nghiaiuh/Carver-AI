@@ -1,3 +1,10 @@
+/*
+ * Flow: Defines gallery content data.
+ * 1. Export project and creator records.
+ * 2. Feed listing and detail pages.
+ * 3. Keep demo content separate from rendering code.
+ */
+
 import {
   BadgeCheck,
   Droplets,

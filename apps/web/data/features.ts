@@ -1,3 +1,10 @@
+/*
+ * Flow: Provides a typed module for the Carver AI app.
+ * 1. Define local data, helpers, or UI.
+ * 2. Export the public function/component/types.
+ * 3. Support the surrounding feature with focused logic.
+ */
+
 export const features = [
   {
     title: "Photo / Floorplan Redesign",

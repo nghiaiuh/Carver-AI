@@ -1,3 +1,10 @@
+/*
+ * Flow: Renders one interactive canvas workspace component.
+ * 1. Receive canvas state and callbacks from the workspace.
+ * 2. Render the focused control, overlay, or board UI.
+ * 3. Send user actions back up through typed handlers.
+ */
+
 "use client";
 
 import { Layers, Lock, Maximize } from "lucide-react";
@@ -9,7 +16,7 @@ type MiniMapProps = {
   onResetZoom: () => void;
 };
 
-export default function MiniMap({ zoom, onZoomIn, onZoomOut, onResetZoom }: MiniMapProps) {
+export default function MiniMap({ zoom, onZoomOut, onResetZoom }: MiniMapProps) {
   return (
     <div className="absolute bottom-7 left-7 z-40 w-52 rounded-3xl border border-[#E5E7EB] bg-white/95 p-3 shadow-2xl shadow-black/10 backdrop-blur">
       <div className="relative h-28 overflow-hidden rounded-2xl bg-[#F7F8FA]">

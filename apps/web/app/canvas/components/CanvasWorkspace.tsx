@@ -1,7 +1,14 @@
+/*
+ * Flow: Renders one interactive canvas workspace component.
+ * 1. Receive canvas state and callbacks from the workspace.
+ * 2. Render the focused control, overlay, or board UI.
+ * 3. Send user actions back up through typed handlers.
+ */
+
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { gsap, useGSAP } from "../../components/gsapSetup";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
@@ -151,16 +158,8 @@ export default function CanvasWorkspace() {
   const [mockConcepts, setMockConcepts] = useState<string[]>([]);
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const [status, setStatus] = useState("Ready");
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-
-  // Sync activeNodeId when selectedItem changes to a node
-  useEffect(() => {
-    if (selectedItem.type === "node") {
-      setActiveNodeId(selectedItem.id);
-    }
-  }, [selectedItem]);
 
   useGSAP(
     () => {
@@ -234,10 +233,8 @@ export default function CanvasWorkspace() {
   };
 
   const generateConcept = () => {
-    setStatus("Generating concept...");
     setMockConcepts([]);
     window.setTimeout(() => {
-      setStatus("Concept created");
       setMockConcepts(["Concept A", "Concept B", "Concept C"]);
       animateIn(".output-thumb");
     }, 850);

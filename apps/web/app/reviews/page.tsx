@@ -1,3 +1,10 @@
+/*
+ * Flow: Renders a Next.js App Router page.
+ * 1. Compose page-level layout and content.
+ * 2. Pull reusable UI/data modules as needed.
+ * 3. Return the route UI for users.
+ */
+
 import { MessageCircle, Scale, ShieldCheck } from "lucide-react";
 import { EditorialHero, ReviewPanel, WaterFlowDivider } from "../gallery/components/GalleryComponents";
 import { GalleryShell } from "../gallery/components/GalleryShell";

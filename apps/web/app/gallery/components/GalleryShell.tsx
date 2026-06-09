@@ -1,3 +1,10 @@
+/*
+ * Flow: Provides reusable gallery presentation components.
+ * 1. Receive display props from pages.
+ * 2. Render editorial cards, shells, and sections.
+ * 3. Keep gallery pages visually consistent.
+ */
+
 "use client";
 
 import Link from "next/link";

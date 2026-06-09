@@ -1,3 +1,10 @@
+/*
+ * Flow: Renders one interactive canvas workspace component.
+ * 1. Receive canvas state and callbacks from the workspace.
+ * 2. Render the focused control, overlay, or board UI.
+ * 3. Send user actions back up through typed handlers.
+ */
+
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -78,6 +85,7 @@ export default function CanvasBoard({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectName, setProjectName] = useState("Project");
   const [editingProjectName, setEditingProjectName] = useState(false);
@@ -161,6 +169,7 @@ export default function CanvasBoard({
       if (!isMiddle && !isSpace) return;
       event.preventDefault();
       isPanning.current = true;
+      setIsPanningCanvas(true);
       panStart.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
     },
     [pan],
@@ -228,6 +237,7 @@ export default function CanvasBoard({
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
     isPanning.current = false;
+    setIsPanningCanvas(false);
     panStart.current = null;
     setDraggingNodeId(null);
     dragStart.current = null;
@@ -325,7 +335,7 @@ export default function CanvasBoard({
     <section
       ref={containerRef}
       className="relative h-full flex-1 overflow-hidden bg-[#F5F5F4] touch-none"
-      style={{ cursor: isPanning.current ? "grabbing" : "default" }}
+      style={{ cursor: isPanningCanvas ? "grabbing" : "default" }}
       onClick={(e) => {
         // Only deselect if clicking on the background
         if (e.target === e.currentTarget) {
@@ -430,7 +440,7 @@ export default function CanvasBoard({
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: "center center",
           willChange: "transform",
-          transition: isPanning.current || draggingNodeId || draftEdge ? "none" : "transform 0.05s linear",
+          transition: isPanningCanvas || draggingNodeId || draftEdge ? "none" : "transform 0.05s linear",
         }}
       >
         <CanvasEdges 
@@ -455,7 +465,7 @@ export default function CanvasBoard({
             regions={regions}
             addedObjects={addedObjects}
             activeNodeId={activeNodeId}
-            onSelect={(id, e) => onSelect({ type: "node", id })}
+            onSelect={(id) => onSelect({ type: "node", id })}
             onSelectOverlay={(item) => onSelect(item)}
             onSelectContextMenu={(id, x, y) => onSelect({ type: "node", id, menu: { x, y } })}
             onDragStart={handleNodePointerDown}

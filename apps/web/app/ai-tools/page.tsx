@@ -1,3 +1,10 @@
+/*
+ * Flow: Renders a Next.js App Router page.
+ * 1. Compose page-level layout and content.
+ * 2. Pull reusable UI/data modules as needed.
+ * 3. Return the route UI for users.
+ */
+
 import { EditorialHero, ToolCard, WaterFlowDivider } from "../gallery/components/GalleryComponents";
 import { GalleryShell } from "../gallery/components/GalleryShell";
 import { projects } from "../gallery/data/galleryData";

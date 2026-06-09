@@ -1,3 +1,10 @@
+/*
+ * Flow: Provides database access utilities.
+ * 1. Read environment/client configuration.
+ * 2. Create Supabase or Prisma helpers.
+ * 3. Export shared DB primitives to apps.
+ */
+
 type EnvSource = Record<string, string | undefined>;
 
 const readRequired = (env: EnvSource, key: string): string => {

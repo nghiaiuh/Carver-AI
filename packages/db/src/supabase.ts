@@ -1,3 +1,10 @@
+/*
+ * Flow: Provides database access utilities.
+ * 1. Read environment/client configuration.
+ * 2. Create Supabase or Prisma helpers.
+ * 3. Export shared DB primitives to apps.
+ */
+
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSupabasePublicEnv } from "./env";
 import type { Database } from "./types";
