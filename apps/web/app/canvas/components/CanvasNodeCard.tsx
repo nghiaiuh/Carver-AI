@@ -7,7 +7,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
 import { ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "./ContextualToolbar";
@@ -15,6 +15,46 @@ import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";
 import RegionOverlay from "./RegionOverlay";
 import SketchLayer from "./SketchLayer";
+
+const DEFAULT_DEVICE_PIXEL_RATIO = 1;
+
+function getDevicePixelRatio() {
+  if (typeof window === "undefined") return DEFAULT_DEVICE_PIXEL_RATIO;
+  return Math.max(window.devicePixelRatio || DEFAULT_DEVICE_PIXEL_RATIO, DEFAULT_DEVICE_PIXEL_RATIO);
+}
+
+function getContainedRect({
+  sourceWidth,
+  sourceHeight,
+  targetWidth,
+  targetHeight,
+}: {
+  sourceWidth: number;
+  sourceHeight: number;
+  targetWidth: number;
+  targetHeight: number;
+}) {
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = targetWidth / targetHeight;
+
+  if (sourceRatio > targetRatio) {
+    const height = targetWidth / sourceRatio;
+    return {
+      x: 0,
+      y: (targetHeight - height) / 2,
+      width: targetWidth,
+      height,
+    };
+  }
+
+  const width = targetHeight * sourceRatio;
+  return {
+    x: (targetWidth - width) / 2,
+    y: 0,
+    width,
+    height: targetHeight,
+  };
+}
 
 type CanvasNodeCardProps = {
   node: CanvasNode;
@@ -80,6 +120,9 @@ export default function CanvasNodeCard({
   const isOutput = node.role === "output";
   const isActiveNode = node.id === activeNodeId;
   const uiScale = 1 / viewportZoom;
+  const objectScale = node.scale ?? 1;
+  const displayWidth = node.width * objectScale;
+  const displayHeight = node.height * objectScale;
 
   return (
     <div
@@ -87,7 +130,7 @@ export default function CanvasNodeCard({
       style={{
         left: node.x,
         top: node.y,
-        width: node.width,
+        width: displayWidth,
         zIndex: selected ? 80 : 10,
       }}
       onPointerDown={(e) => {
@@ -112,7 +155,7 @@ export default function CanvasNodeCard({
             "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
             selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-transparent",
           ].join(" ")}
-          style={{ height: node.height }}
+          style={{ height: displayHeight }}
           onClick={(e) => {
             if (activeTool === "mark-position" || activeTool === "draw-region" || activeTool === "lock-area") {
               e.stopPropagation();
@@ -125,8 +168,13 @@ export default function CanvasNodeCard({
           }}
         >
           {node.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={node.imageUrl} alt={node.title} className="h-full w-full select-none object-cover pointer-events-none" draggable={false} />
+            <AdaptiveImageRenderer
+              imageUrl={node.sourceImage?.url ?? node.imageUrl}
+              title={node.title}
+              displayWidth={displayWidth}
+              displayHeight={displayHeight}
+              viewportZoom={viewportZoom}
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-[#9CA3AF]">
               <ImagePlus className="w-8 h-8 opacity-50" />
@@ -177,7 +225,7 @@ export default function CanvasNodeCard({
               />
             </div>
           )}
-          {selected ? <SelectionChrome label={node.role === "output" ? "Image" : "Reference"} size={`${node.width} × ${node.height}`} viewportZoom={viewportZoom} /> : null}
+          {selected ? <SelectionChrome label={node.role === "output" ? "Image" : "Reference"} size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`} viewportZoom={viewportZoom} /> : null}
         </div>
         
         <div
@@ -188,16 +236,16 @@ export default function CanvasNodeCard({
             transformOrigin: "top center",
           }}
         >
-          <h3 className="text-sm font-black text-[#111827]">{node.title}</h3>
+          <h3 className="text-sm font-black text-[var(--canvas-theme-text)]">{node.title}</h3>
           {isOutput ? (
             <div className="mt-1">
-              <p className="line-clamp-2 text-center text-xs leading-snug text-[#6B7280]" title={node.prompt || ""}>
+              <p className="line-clamp-2 text-center text-xs leading-snug text-[var(--canvas-theme-text-muted)]" title={node.prompt || ""}>
                 {node.prompt || "No prompt provided."}
               </p>
             </div>
           ) : (
             <div className="mt-1">
-              <p className="text-center text-xs italic text-[#9CA3AF]">
+              <p className="text-center text-xs italic text-[var(--canvas-theme-text-muted)]">
                 {node.prompt ? node.prompt : "No prompt yet"}
               </p>
             </div>
@@ -239,6 +287,90 @@ export default function CanvasNodeCard({
   );
 }
 
+function AdaptiveImageRenderer({
+  imageUrl,
+  title,
+  displayWidth,
+  displayHeight,
+  viewportZoom,
+}: {
+  imageUrl: string;
+  title: string;
+  displayWidth: number;
+  displayHeight: number;
+  viewportZoom: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
+  const ready = renderedUrl === imageUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const image = new window.Image();
+    image.decoding = "async";
+    image.onload = () => {
+      if (cancelled) return;
+      imageRef.current = image;
+      setRenderedUrl(imageUrl);
+    };
+    image.onerror = () => {
+      if (cancelled) return;
+      imageRef.current = null;
+    };
+    image.src = imageUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const image = imageRef.current;
+    if (!canvas || !image || !ready || displayWidth <= 0 || displayHeight <= 0) return;
+
+    const rasterScale = Math.max(viewportZoom * getDevicePixelRatio(), DEFAULT_DEVICE_PIXEL_RATIO);
+    const rasterWidth = Math.max(1, Math.ceil(displayWidth * rasterScale));
+    const rasterHeight = Math.max(1, Math.ceil(displayHeight * rasterScale));
+
+    if (canvas.width !== rasterWidth) canvas.width = rasterWidth;
+    if (canvas.height !== rasterHeight) canvas.height = rasterHeight;
+
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) return;
+
+    context.clearRect(0, 0, rasterWidth, rasterHeight);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+
+    const rect = getContainedRect({
+      sourceWidth: image.naturalWidth,
+      sourceHeight: image.naturalHeight,
+      targetWidth: rasterWidth,
+      targetHeight: rasterHeight,
+    });
+
+    context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+  }, [displayHeight, displayWidth, ready, viewportZoom]);
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full select-none pointer-events-none"
+        aria-label={title}
+        role="img"
+      />
+      {!ready ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt={title} className="absolute inset-0 h-full w-full select-none object-contain pointer-events-none" draggable={false} decoding="async" />
+      ) : null}
+    </>
+  );
+}
+
 function SelectionChrome({ label, size, viewportZoom }: { label: string; size: string; viewportZoom: number }) {
   const uiScale = 1 / viewportZoom;
 
@@ -251,7 +383,7 @@ function SelectionChrome({ label, size, viewportZoom }: { label: string; size: s
         {label}
       </div>
       <div
-        className="absolute z-30 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-black text-[#667085] shadow-sm"
+        className="absolute z-30 rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-xs font-black text-[var(--canvas-theme-text-muted)] shadow-sm"
         style={{ right: `${-4 * uiScale}px`, bottom: `${-32 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "bottom right" }}
       >
         {size}
@@ -294,7 +426,7 @@ function ContextMenu({ x, y, onToast, onDelete }: { x: number; y: number; onToas
   ] as const;
 
   return (
-    <div className="fixed z-[90] w-56 rounded-2xl border border-[#E5E7EB] bg-white p-2 shadow-2xl shadow-black/20" style={{ left: x, top: y }}>
+    <div className="fixed z-[90] w-56 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-2 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" style={{ left: x, top: y }}>
       {items.map(([label, Icon]) => (
         <button
           key={label}
@@ -306,9 +438,9 @@ function ContextMenu({ x, y, onToast, onDelete }: { x: number; y: number; onToas
             }
             onToast(`${label} mock`);
           }}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold text-[#111827] hover:bg-[#F7F8FA]"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]"
         >
-          <Icon className="h-4 w-4 text-[#667085]" aria-hidden="true" />
+          <Icon className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
           {label}
         </button>
       ))}

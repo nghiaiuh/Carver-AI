@@ -10,16 +10,14 @@
 import { useMemo, useState } from "react";
 import {
   Box,
-  Layers,
   Grid3X3,
-  Image,
   ImagePlus,
   Library,
   Map,
   MapPin,
   MousePointer2,
+  Palette,
   Pencil,
-  SlidersHorizontal,
   Square,
   Type,
   WandSparkles,
@@ -40,8 +38,8 @@ type BottomToolDockProps = {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
-  canvasBackgroundColor: string;
-  onCanvasBackgroundChange: (color: string) => void;
+  canvasThemeColor: string;
+  onCanvasThemeChange: (color: string) => void;
 };
 
 const tools = [
@@ -66,27 +64,27 @@ export default function BottomToolDock({
   onGenerate,
   onToast,
   onResetZoom,
-  canvasBackgroundColor,
-  onCanvasBackgroundChange,
+  canvasThemeColor,
+  onCanvasThemeChange,
 }: BottomToolDockProps) {
   const zoomLabel = `${Math.round(zoom * 100)}%`;
-  const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
-  const backgroundSwatches = useMemo(() => ["#F5F5F5", "#000000", "#FFFFFF", "#00F014", "#A855F7", "#DDD0F5"], []);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const themeSwatches = useMemo(() => ["#F5F5F5", "#000000", "#FFFFFF", "#14532D", "#1E1B4B", "#DDD0F5"], []);
 
   return (
     <>
-      {backgroundPickerOpen ? (
-        <div className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[#E5E5E5] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
-          <div className="flex h-14 items-center justify-between border-b border-[#ECECEC] px-5">
-            <h2 className="text-base font-semibold tracking-[-0.02em] text-[#222]">Canvas Background</h2>
+      {themePickerOpen ? (
+        <div className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
+          <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-5">
+            <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">Theme</h2>
             <button
               type="button"
-              title="Close canvas background"
+              title="Close theme picker"
               onClick={(event) => {
                 event.stopPropagation();
-                setBackgroundPickerOpen(false);
+                setThemePickerOpen(false);
               }}
-              className="grid h-8 w-8 place-items-center rounded-full text-[#111] hover:bg-[#F5F5F5]"
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-icon)] hover:bg-[var(--canvas-theme-hover)]"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -102,10 +100,10 @@ export default function BottomToolDock({
             >
               <input
                 type="color"
-                value={canvasBackgroundColor}
-                onChange={(event) => onCanvasBackgroundChange(event.target.value.toUpperCase())}
+                value={canvasThemeColor}
+                onChange={(event) => onCanvasThemeChange(event.target.value.toUpperCase())}
                 className="absolute inset-0 h-full w-full cursor-crosshair opacity-0"
-                aria-label="Pick canvas background color"
+                aria-label="Pick canvas theme color"
               />
               <span className="absolute left-0 top-1 h-5 w-5 rounded-full border-2 border-white bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.18)]" />
             </label>
@@ -113,25 +111,25 @@ export default function BottomToolDock({
             <label className="relative block h-4 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]">
               <input
                 type="color"
-                value={canvasBackgroundColor}
-                onChange={(event) => onCanvasBackgroundChange(event.target.value.toUpperCase())}
+                value={canvasThemeColor}
+                onChange={(event) => onCanvasThemeChange(event.target.value.toUpperCase())}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                aria-label="Adjust canvas background hue"
+                aria-label="Adjust theme hue"
               />
               <span className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border-2 border-white bg-[#FF1D00] shadow-[0_0_0_1px_rgba(0,0,0,0.16)]" />
             </label>
 
             <div className="flex items-center gap-4">
-              {backgroundSwatches.map((color) => {
-                const selected = canvasBackgroundColor.toUpperCase() === color;
+              {themeSwatches.map((color) => {
+                const selected = canvasThemeColor.toUpperCase() === color;
                 return (
                   <button
                     key={color}
                     type="button"
-                    title={`Set background ${color}`}
+                    title={`Set theme ${color}`}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onCanvasBackgroundChange(color);
+                      onCanvasThemeChange(color);
                     }}
                     className={[
                       "h-9 w-9 rounded-full border transition",
@@ -143,29 +141,29 @@ export default function BottomToolDock({
               })}
             </div>
 
-            <div className="flex h-9 items-center gap-2 rounded-lg bg-[#F5F5F5] px-3 text-sm text-[#555]">
-              <span className="text-[#777]">#</span>
+            <div className="flex h-9 items-center gap-2 rounded-lg bg-[var(--canvas-theme-surface-soft)] px-3 text-sm text-[var(--canvas-theme-text-muted)]">
+              <span className="text-[var(--canvas-theme-text-muted)]">#</span>
               <input
-                value={canvasBackgroundColor.replace("#", "")}
+                value={canvasThemeColor.replace("#", "")}
                 onChange={(event) => {
                   const value = event.target.value.replace(/[^0-9a-f]/gi, "").slice(0, 6).toUpperCase();
-                  if (value.length === 6) onCanvasBackgroundChange(`#${value}`);
+                  if (value.length === 6) onCanvasThemeChange(`#${value}`);
                 }}
                 className="w-full bg-transparent font-mono uppercase outline-none"
-                aria-label="Canvas background hex color"
+                aria-label="Theme hex color"
               />
             </div>
           </div>
         </div>
       ) : null}
 
-      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[#F5F5F5] text-[#666]">
+      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]">
         <div className="flex h-8 items-center gap-2 px-2">
-          <DockIcon label="Canvas background" icon={Image} onClick={() => setBackgroundPickerOpen((value) => !value)} />
+          <DockIcon label="Theme" icon={Palette} onClick={() => setThemePickerOpen((value) => !value)} />
           <DockIcon label="Library" icon={Library} onClick={() => onToast("Layers")} />
           <DockIcon label="Mini map" icon={Map} onClick={() => onToast("Synced")} />
         </div>
-        <span className="h-5 w-px bg-[#E6E6E6]" aria-hidden="true" />
+        <span className="h-5 w-px bg-[var(--canvas-theme-border-strong)]" aria-hidden="true" />
         <button
           type="button"
           title="Reset zoom"
@@ -173,20 +171,20 @@ export default function BottomToolDock({
             event.stopPropagation();
             onResetZoom();
           }}
-          className="rounded-full px-2 text-xs font-medium tabular-nums text-[#666] hover:bg-[#F5F5F5]"
+          className="rounded-full px-2 text-xs font-medium tabular-nums text-[var(--canvas-theme-text-muted)] hover:bg-[var(--canvas-theme-hover)]"
         >
           {zoomLabel}
         </button>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[#E5E7EB] bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.07)]">
+      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-[0_2px_10px_var(--canvas-theme-shadow)] backdrop-blur">
         {tools.map((tool, index) => {
           const Icon = tool.icon;
           const selected = activeTool === tool.id || (tool.id === "grid" && gridVisible);
           const needsDivider = index === 5 || index === 6;
           return (
             <div key={tool.id} className="flex items-center">
-              {needsDivider ? <span className="mx-1 h-5 w-px bg-[#ECECEC]" aria-hidden="true" /> : null}
+              {needsDivider ? <span className="mx-1 h-5 w-px bg-[var(--canvas-theme-border)]" aria-hidden="true" /> : null}
               <button
                 type="button"
                 title={tool.label}
@@ -200,7 +198,7 @@ export default function BottomToolDock({
                 }}
                 className={[
                   "grid h-8 w-8 place-items-center rounded-lg transition",
-                  selected ? "bg-[#232323] text-white" : "text-[#3D3D3D] hover:bg-[#F5F5F5]",
+                  selected ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]" : "text-[var(--canvas-theme-icon)] hover:bg-[var(--canvas-theme-hover)]",
                 ].join(" ")}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -230,7 +228,7 @@ function DockIcon({
         event.stopPropagation();
         onClick();
       }}
-      className="grid h-7 w-7 place-items-center rounded-lg text-[#666] transition hover:bg-[#F5F5F5] hover:text-[#111]"
+      className="grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>

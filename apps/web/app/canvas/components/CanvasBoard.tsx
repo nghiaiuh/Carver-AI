@@ -46,8 +46,8 @@ type CanvasBoardProps = {
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
   activeNodeId: string;
   onSetActiveNode: (id: string) => void;
-  canvasBackgroundColor: string;
-  onCanvasBackgroundChange: (color: string) => void;
+  canvasThemeColor: string;
+  onCanvasThemeChange: (color: string) => void;
 };
 
 type DeletedNodeSnapshot = {
@@ -60,6 +60,12 @@ type Point = {
   y: number;
 };
 
+type ImageSourceMetadata = {
+  mimeType?: string;
+  sizeBytes?: number;
+  name?: string;
+};
+
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
@@ -68,6 +74,7 @@ const MAX_PASTED_IMAGE_WIDTH = 420;
 const MAX_PASTED_IMAGE_HEIGHT = 320;
 const FALLBACK_PASTED_IMAGE_WIDTH = 240;
 const FALLBACK_PASTED_IMAGE_HEIGHT = 180;
+const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -134,13 +141,19 @@ function loadImageDimensions(imageUrl: string): Promise<{ width: number; height:
   });
 }
 
+function getDevicePixelRatio() {
+  if (typeof window === "undefined") return DEFAULT_DEVICE_PIXEL_RATIO;
+  return Math.max(window.devicePixelRatio || DEFAULT_DEVICE_PIXEL_RATIO, DEFAULT_DEVICE_PIXEL_RATIO);
+}
+
 function getPastedImageNodeSize(dimensions: { width: number; height: number } | null) {
   if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
     return { width: FALLBACK_PASTED_IMAGE_WIDTH, height: FALLBACK_PASTED_IMAGE_HEIGHT };
   }
 
-  const maxCrispWidthAtWorldScale = dimensions.width / MAX_ZOOM;
-  const maxCrispHeightAtWorldScale = dimensions.height / MAX_ZOOM;
+  const maxViewportScale = MAX_ZOOM * getDevicePixelRatio();
+  const maxCrispWidthAtWorldScale = dimensions.width / maxViewportScale;
+  const maxCrispHeightAtWorldScale = dimensions.height / maxViewportScale;
   const fitScale = Math.min(
     MAX_PASTED_IMAGE_WIDTH / maxCrispWidthAtWorldScale,
     MAX_PASTED_IMAGE_HEIGHT / maxCrispHeightAtWorldScale,
@@ -184,8 +197,8 @@ export default function CanvasBoard({
   onEdgesChange,
   activeNodeId,
   onSetActiveNode,
-  canvasBackgroundColor,
-  onCanvasBackgroundChange,
+  canvasThemeColor,
+  onCanvasThemeChange,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -216,7 +229,7 @@ export default function CanvasBoard({
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
 
   const addImageNode = useCallback(
-    async (imageUrl: string, title = "Pasted Image") => {
+    async (imageUrl: string, title = "Pasted Image", sourceMetadata: ImageSourceMetadata = {}) => {
       const pastePan = pan;
       const pasteZoom = zoom;
       const dimensions = await loadImageDimensions(imageUrl);
@@ -226,13 +239,23 @@ export default function CanvasBoard({
         const rect = containerRef.current?.getBoundingClientRect();
         const viewportCenterX = rect ? rect.width / 2 : 0;
         const viewportCenterY = rect ? rect.height / 2 : 0;
+        const pasteWorldCenterX = (viewportCenterX - pastePan.x) / pasteZoom;
+        const pasteWorldCenterY = (viewportCenterY - pastePan.y) / pasteZoom;
         const newNode: CanvasNode = {
           id: `node-${Date.now()}-${prev.length}`,
-          x: (viewportCenterX - pastePan.x) / pasteZoom - nodeWidth / 2,
-          y: (viewportCenterY - pastePan.y) / pasteZoom - nodeHeight / 2,
+          x: pasteWorldCenterX - nodeWidth / 2,
+          y: pasteWorldCenterY - nodeHeight / 2,
           width: nodeWidth,
           height: nodeHeight,
+          scale: 1,
           imageUrl,
+          sourceImage: {
+            url: imageUrl,
+            width: dimensions?.width ?? null,
+            height: dimensions?.height ?? null,
+            quality: "original",
+            ...sourceMetadata,
+          },
           title: isFirst ? "Site Photo" : title,
           prompt: null,
           role: isFirst ? "layout" : "reference",
@@ -241,7 +264,7 @@ export default function CanvasBoard({
       });
       onToast("Image added to canvas");
     },
-    [onNodesChange, onToast, pan.x, pan.y, zoom],
+    [onNodesChange, onToast, pan, zoom],
   );
 
   useEffect(() => {
@@ -257,7 +280,10 @@ export default function CanvasBoard({
           const blob = items[i].getAsFile();
           if (blob) {
             e.preventDefault();
-            addImageNode(URL.createObjectURL(blob));
+            addImageNode(URL.createObjectURL(blob), "Pasted Image", {
+              mimeType: blob.type,
+              sizeBytes: blob.size,
+            });
           }
           break;
         }
@@ -335,24 +361,6 @@ export default function CanvasBoard({
   };
 
   // ── Edge Draft logic ──────────────────────────────────────────────────────
-  const handleEdgePointerDown = (sourceId: string, event: React.PointerEvent) => {
-    event.stopPropagation();
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const target = getWorldPointFromPointer({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      container,
-      pan,
-      zoom,
-    });
-
-    setDraftEdge({ sourceId, targetX: target.x, targetY: target.y });
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (isPanning.current && panStart.current) {
       const start = panStart.current;
@@ -412,11 +420,16 @@ export default function CanvasBoard({
         });
 
         // Check if drop is inside any node
-        const targetNode = nodes.find(n => 
-          n.id !== draftEdge.sourceId &&
-          drop.x >= n.x && drop.x <= n.x + n.width &&
-          drop.y >= n.y && drop.y <= n.y + n.height
-        );
+        const targetNode = nodes.find((node) => {
+          const scale = node.scale ?? 1;
+          return (
+            node.id !== draftEdge.sourceId &&
+            drop.x >= node.x &&
+            drop.x <= node.x + node.width * scale &&
+            drop.y >= node.y &&
+            drop.y <= node.y + node.height * scale
+          );
+        });
 
         if (targetNode) {
           const newEdge: CanvasEdge = {
@@ -491,7 +504,13 @@ export default function CanvasBoard({
     if (!files?.length) return;
     Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
-      .forEach((file) => addImageNode(URL.createObjectURL(file), file.name));
+      .forEach((file) =>
+        addImageNode(URL.createObjectURL(file), file.name, {
+          mimeType: file.type,
+          name: file.name,
+          sizeBytes: file.size,
+        }),
+      );
     if (importImagesInputRef.current) importImagesInputRef.current.value = "";
   };
 
@@ -565,7 +584,7 @@ export default function CanvasBoard({
     <section
       ref={containerRef}
       className="relative h-full flex-1 touch-none overflow-hidden"
-      style={{ backgroundColor: canvasBackgroundColor, cursor: isPanningCanvas ? "grabbing" : "default" }}
+      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : "default" }}
       onClick={(e) => {
         // Only deselect if clicking on the background
         if (e.target === e.currentTarget) {
@@ -586,11 +605,11 @@ export default function CanvasBoard({
         onChange={(event) => importImages(event.target.files)}
       />
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50">
-        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[#F5F5F5] px-3 text-[#3F454E]">
+        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-[var(--canvas-theme-text-soft)]">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
-            className="grid h-8 w-8 place-items-center rounded-full bg-[#2D2D2D] text-white"
+            className="grid h-8 w-8 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
             title={projectMenuOpen ? "Close menu" : "Open menu"}
             aria-haspopup="menu"
             aria-expanded={projectMenuOpen}
@@ -608,14 +627,14 @@ export default function CanvasBoard({
                 if (e.key === "Enter") commitProjectName();
                 if (e.key === "Escape") cancelProjectName();
               }}
-              className="w-24 bg-transparent text-base font-semibold tracking-[-0.02em] text-[#3F454E] outline-none"
+              className="w-24 bg-transparent text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)] outline-none"
               aria-label="Project name"
             />
           ) : (
             <button
               type="button"
               onClick={startEditingProjectName}
-              className="max-w-[120px] truncate text-base font-semibold tracking-[-0.02em] text-[#3F454E]"
+              className="max-w-[120px] truncate text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)]"
               title="Edit project name"
             >
               {projectName}
@@ -623,24 +642,24 @@ export default function CanvasBoard({
           )}
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-full text-[#707780] hover:bg-white"
+            className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-icon-muted)] hover:bg-[var(--canvas-theme-hover)]"
             title="Project mode"
             onClick={(event) => {
               event.stopPropagation();
               onToast("Project mode");
             }}
           >
-            <span className="relative grid h-5 w-5 place-items-center rounded-full border border-[#8B9097] text-[10px] font-semibold">
+            <span className="relative grid h-5 w-5 place-items-center rounded-full border border-[var(--canvas-theme-border-strong)] text-[10px] font-semibold">
               ◒
             </span>
           </button>
-          <ChevronDown className="h-4 w-4 text-[#7D838B]" aria-hidden="true" />
+          <ChevronDown className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
         </div>
 
         {projectMenuOpen ? (
           <div
             role="menu"
-            className="mt-3 w-64 overflow-hidden rounded-3xl border border-[#E5E7EB] bg-white/95 shadow-2xl shadow-black/20 backdrop-blur"
+            className="mt-3 w-64 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
           >
             <MenuSection
               items={[
@@ -701,8 +720,8 @@ export default function CanvasBoard({
         ) : null}
       </div>
 
-      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[#F4F4F4] px-3 text-xs font-semibold text-[#5D636C]">
-        <Zap className="h-4 w-4 fill-[#2D2D2D] text-[#2D2D2D]" aria-hidden="true" />
+      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)]">
+        <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <span>30</span>
         <button
           type="button"
@@ -774,8 +793,8 @@ export default function CanvasBoard({
         ))}
       </div>
 
-      <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[#ECECEC] bg-white">
-        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[#E5E5E5]" style={{ backgroundColor: canvasBackgroundColor }} />
+      <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
+        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[var(--canvas-theme-border-strong)]" style={{ backgroundColor: "var(--canvas-theme-canvas)" }} />
       </div>
       <BottomToolDock
         activeTool={activeTool}
@@ -789,16 +808,16 @@ export default function CanvasBoard({
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetZoom}
-        canvasBackgroundColor={canvasBackgroundColor}
-        onCanvasBackgroundChange={onCanvasBackgroundChange}
+        canvasThemeColor={canvasThemeColor}
+        onCanvasThemeChange={onCanvasThemeChange}
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (
-        <div className="output-tray absolute bottom-7 right-7 z-40 flex max-w-[440px] gap-3 overflow-x-auto rounded-3xl border border-[#E5E7EB] bg-white/95 p-3 shadow-2xl shadow-black/12 backdrop-blur">
+        <div className="output-tray absolute bottom-7 right-7 z-40 flex max-w-[440px] gap-3 overflow-x-auto rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur">
           {[...mockConcepts, ...angleResults].map((item, index) => (
-            <div key={`${item}-${index}`} className="output-thumb w-28 shrink-0 overflow-hidden rounded-2xl border border-[#E5E7EB] bg-[#F7F8FA]">
+            <div key={`${item}-${index}`} className="output-thumb w-28 shrink-0 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
               <div className="h-20 bg-[linear-gradient(135deg,rgba(109,93,251,.22),#fff_54%,rgba(34,197,94,.16))]" />
-              <p className="px-3 py-2 text-xs font-black text-[#111827]">{item}</p>
+              <p className="px-3 py-2 text-xs font-black text-[var(--canvas-theme-text)]">{item}</p>
             </div>
           ))}
         </div>
@@ -825,7 +844,7 @@ function MenuSection({
   noDivider?: boolean;
 }) {
   return (
-    <div className={noDivider ? "" : "border-b border-[#EFEFF1]"}>
+    <div className={noDivider ? "" : "border-b border-[var(--canvas-theme-border)]"}>
       <div className="py-1">
         {items.map((item) => (
           <button
@@ -836,14 +855,14 @@ function MenuSection({
             className={[
               "flex w-full items-center justify-between gap-4 px-5 py-2.5 text-left text-sm",
               item.disabled
-                ? "cursor-not-allowed text-[#D0D5DD]"
-                : "text-[#111827] hover:bg-[#F7F8FA]",
+                ? "cursor-not-allowed text-[var(--canvas-theme-text-muted)] opacity-45"
+                : "text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]",
               item.tone === "danger" && !item.disabled ? "text-[#B42318]" : "",
             ].join(" ")}
           >
             <span className="font-medium">{item.label}</span>
             {item.shortcut ? (
-              <span className="text-xs font-semibold text-[#98A2B3]">{item.shortcut}</span>
+              <span className="text-xs font-semibold text-[var(--canvas-theme-text-muted)]">{item.shortcut}</span>
             ) : null}
           </button>
         ))}

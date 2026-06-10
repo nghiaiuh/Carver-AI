@@ -59,14 +59,14 @@ export default function ContextualToolbar({
 
   return (
     <div
-      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-0.5 rounded-xl border border-[#E5E7EB] bg-white/95 p-1 shadow-xl shadow-black/10 backdrop-blur"
+      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
       style={{
         top: `${-62 * uiScale}px`,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
     >
-      <span className="mr-0.5 rounded-lg bg-[#111827] px-2.5 py-1.5 text-[11px] font-black text-white">{itemLabel}</span>
+      <span className="mr-0.5 rounded-lg bg-[var(--canvas-theme-active)] px-2.5 py-1.5 text-[11px] font-black text-[var(--canvas-theme-active-text)]">{itemLabel}</span>
       {tools.map((tool) => {
         const Icon = tool.icon;
         return (
@@ -82,7 +82,7 @@ export default function ContextualToolbar({
               if ("action" in tool && tool.action === "export") onToast("Export mock");
               if ("tool" in tool) onTool(tool.tool);
             }}
-            className="grid h-7 w-7 place-items-center rounded-lg text-[#667085] transition hover:bg-[#F7F8FA] hover:text-[#111827]"
+            className="grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
           </button>

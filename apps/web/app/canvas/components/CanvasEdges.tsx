@@ -30,9 +30,10 @@ export default function CanvasEdges({
   const getNodeCenter = (nodeId: string) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
+    const scale = node.scale ?? 1;
     return {
-      x: node.x + node.width / 2,
-      y: node.y + node.height / 2 + 16, // approximate center taking into account padding
+      x: node.x + (node.width * scale) / 2,
+      y: node.y + (node.height * scale) / 2 + 16, // approximate center taking into account padding
     };
   };
 

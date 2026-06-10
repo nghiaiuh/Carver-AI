@@ -12,6 +12,7 @@ import { MessageSquare, PanelLeftOpen } from "lucide-react";
 import { gsap, useGSAP } from "../../components/gsapSetup";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
+import { buildCanvasThemeStyle } from "./canvasTheme";
 import EditorLeftSidebar from "./EditorLeftSidebar";
 import EditorRightPanel from "./EditorRightPanel";
 import GroupNameTagModal from "./GroupNameTagModal";
@@ -121,7 +122,17 @@ export type CanvasNode = {
   y: number;
   width: number;
   height: number;
+  scale?: number;
   imageUrl: string;
+  sourceImage?: {
+    url: string;
+    width: number | null;
+    height: number | null;
+    mimeType?: string;
+    sizeBytes?: number;
+    name?: string;
+    quality: "original";
+  };
   title: string;
   prompt: string | null;
   role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output";
@@ -144,7 +155,7 @@ const initialRegions: Region[] = [
 
 const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
-const DEFAULT_CANVAS_BACKGROUND = "#F5F5F5";
+const DEFAULT_CANVAS_THEME = "#F5F5F5";
 
 const initialLibraryAssets: LibraryAsset[] = [
   {
@@ -238,7 +249,8 @@ export default function CanvasWorkspace() {
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(DEFAULT_CANVAS_BACKGROUND);
+  const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
+  const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
 
   useGSAP(
     () => {
@@ -476,8 +488,8 @@ export default function CanvasWorkspace() {
   };
 
   return (
-    <div ref={rootRef} className="min-h-screen bg-white text-[#0A0A0A]">
-      <div className="hidden h-screen w-screen flex-col overflow-hidden bg-white xl:flex">
+    <div ref={rootRef} className="min-h-screen bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]" style={canvasThemeStyle}>
+      <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
           {leftSidebarOpen ? (
             <EditorLeftSidebar
@@ -497,7 +509,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={() => setLeftSidebarOpen(true)}
-              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10"
+              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
               title="Open layers"
             >
               <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
@@ -534,8 +546,8 @@ export default function CanvasWorkspace() {
             onEdgesChange={setEdges}
             activeNodeId={activeNodeId}
             onSetActiveNode={setActiveNodeId}
-            canvasBackgroundColor={canvasBackgroundColor}
-            onCanvasBackgroundChange={setCanvasBackgroundColor}
+            canvasThemeColor={canvasThemeColor}
+            onCanvasThemeChange={setCanvasThemeColor}
           />
           {rightPanelOpen ? (
             <EditorRightPanel
@@ -548,7 +560,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={() => setRightPanelOpen(true)}
-              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[#E5E7EB] bg-white text-[#111827] shadow-lg shadow-black/10"
+              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
               title="Open chat"
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
@@ -557,12 +569,12 @@ export default function CanvasWorkspace() {
         </div>
         <QuickEditModal open={showQuickEditModal} promptText={promptText} onPromptChange={setPromptText} onClose={() => setShowQuickEditModal(false)} onApply={applyQuickEdit} />
         {selectedSketchLineIds.length > 0 ? (
-          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-2xl shadow-black/15 backdrop-blur">
-            <span className="text-xs font-black text-[#667085]">{selectedSketchLineIds.length} sketch line{selectedSketchLineIds.length === 1 ? "" : "s"} selected</span>
+          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur">
+            <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">{selectedSketchLineIds.length} sketch line{selectedSketchLineIds.length === 1 ? "" : "s"} selected</span>
             <button
               type="button"
               onClick={() => setShowGroupNameModal(true)}
-              className="rounded-xl bg-[#111827] px-3 py-2 text-xs font-black text-white shadow-lg shadow-black/15"
+              className="rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-black text-[var(--canvas-theme-active-text)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
             >
               Group + Name Tag
             </button>
@@ -578,7 +590,7 @@ export default function CanvasWorkspace() {
         <AddObjectMenu open={showAddObjectMenu} onClose={() => setShowAddObjectMenu(false)} onAdd={addObject} />
         <RealityCheckPanel open={showRealityCheckPanel} onClose={() => setShowRealityCheckPanel(false)} />
         {toast ? (
-          <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-black text-[#111827] shadow-2xl shadow-black/12">
+          <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-black text-[var(--canvas-theme-text)] shadow-2xl shadow-[var(--canvas-theme-shadow)]">
             {toast}
           </div>
         ) : null}

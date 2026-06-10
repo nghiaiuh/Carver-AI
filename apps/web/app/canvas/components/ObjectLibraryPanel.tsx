@@ -54,16 +54,16 @@ export default function ObjectLibraryPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-[#E5E7EB] p-4">
-        <p className="text-sm font-black text-[#0A0A0A]">Object Library</p>
-        <p className="mt-1 text-xs font-semibold text-[#667085]">Local plants, stones, and references for this target.</p>
-        <div className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-[#E5E7EB] bg-[#F7F8FA] px-3">
-          <Search className="h-4 w-4 text-[#98A2B3]" aria-hidden="true" />
+      <div className="border-b border-[var(--canvas-theme-border)] p-4">
+        <p className="text-sm font-black text-[var(--canvas-theme-text)]">Object Library</p>
+        <p className="mt-1 text-xs font-semibold text-[var(--canvas-theme-text-muted)]">Local plants, stones, and references for this target.</p>
+        <div className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-3">
+          <Search className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search local library"
-            className="min-w-0 flex-1 bg-transparent text-sm font-bold text-[#111827] outline-none placeholder:text-[#98A2B3]"
+            className="min-w-0 flex-1 bg-transparent text-sm font-bold text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
           />
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -73,7 +73,7 @@ export default function ObjectLibraryPanel({
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={`rounded-full px-3 py-1.5 text-[11px] font-black transition ${
-                activeTab === tab.id ? "bg-[#111827] text-white" : "bg-[#F2F4F7] text-[#667085] hover:bg-[#E5E7EB]"
+                activeTab === tab.id ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]" : "bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)] hover:bg-[var(--canvas-theme-hover)]"
               }`}
             >
               {tab.label}
@@ -87,7 +87,7 @@ export default function ObjectLibraryPanel({
           {filteredAssets.map((asset) => {
             const used = selectedAssetIds.includes(asset.id);
             return (
-              <div key={asset.id} className={`rounded-2xl border bg-white p-3 shadow-sm ${used ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/10" : "border-[#E5E7EB]"}`}>
+              <div key={asset.id} className={`rounded-2xl border bg-[var(--canvas-theme-surface-panel)] p-3 shadow-sm ${used ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/10" : "border-[var(--canvas-theme-border)]"}`}>
                 <div className="flex gap-3">
                   <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-xl bg-[#F7F8FA]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -95,11 +95,11 @@ export default function ObjectLibraryPanel({
                     <ImagePlus className="absolute left-2 top-2 h-4 w-4 text-white drop-shadow" aria-hidden="true" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-black text-[#111827]">{asset.name}</p>
-                    <p className="mt-1 text-xs font-bold capitalize text-[#667085]">{asset.category}</p>
+                    <p className="truncate text-sm font-black text-[var(--canvas-theme-text)]">{asset.name}</p>
+                    <p className="mt-1 text-xs font-bold capitalize text-[var(--canvas-theme-text-muted)]">{asset.category}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {asset.tags.slice(0, 3).map((tag) => (
-                        <span key={tag} className="rounded-full bg-[#F2F4F7] px-2 py-1 text-[10px] font-black text-[#667085]">
+                        <span key={tag} className="rounded-full bg-[var(--canvas-theme-surface-muted)] px-2 py-1 text-[10px] font-black text-[var(--canvas-theme-text-muted)]">
                           {tag}
                         </span>
                       ))}
@@ -111,12 +111,12 @@ export default function ObjectLibraryPanel({
                     type="button"
                     onClick={() => onUseAsset(asset.id)}
                     className={`rounded-xl px-3 py-2 text-xs font-black transition ${
-                      used ? "bg-[#DBEAFE] text-[#1D4ED8]" : "bg-[#111827] text-white hover:bg-black"
+                      used ? "bg-[#DBEAFE] text-[#1D4ED8]" : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] hover:opacity-90"
                     }`}
                   >
                     {used ? "Using" : "Use for this area"}
                   </button>
-                  <button type="button" onClick={() => onSaveAsset(asset.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-[#F7F8FA] text-[#667085] hover:bg-[#E5E7EB]" title="Save">
+                  <button type="button" onClick={() => onSaveAsset(asset.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon-muted)] hover:bg-[var(--canvas-theme-hover)]" title="Save">
                     <Bookmark className="h-4 w-4" aria-hidden="true" />
                   </button>
                   <button type="button" onClick={() => onRemoveAsset(asset.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-[#FEF2F2] text-[#B42318] hover:bg-[#FEE4E2]" title="Remove">
@@ -128,7 +128,7 @@ export default function ObjectLibraryPanel({
           })}
         </div>
         {filteredAssets.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#D0D5DD] bg-[#F7F8FA] p-5 text-center text-xs font-bold text-[#667085]">
+          <div className="rounded-2xl border border-dashed border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] p-5 text-center text-xs font-bold text-[var(--canvas-theme-text-muted)]">
             No local assets match this filter.
           </div>
         ) : null}

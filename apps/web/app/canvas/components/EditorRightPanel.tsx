@@ -131,10 +131,10 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
   };
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-[#E9E9E9] bg-white text-[#1F1F1F]">
+    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <div className="flex h-12 items-center justify-between px-3">
         <h2 className="text-sm font-semibold tracking-[-0.02em]">New chat</h2>
-        <div className="flex items-center gap-2 text-[#A5A5A5]">
+        <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
           <IconButton label="New chat" icon={Plus} onClick={clearChat} />
           <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
           <IconButton label="Share" icon={Share2} onClick={() => onToast("Share link copied")} />
@@ -170,8 +170,8 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
                 className={[
                   "max-w-[86%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-5",
                   message.role === "user"
-                    ? "ml-auto bg-[#F3F4F6] font-medium text-[#111827]"
-                    : "mr-auto bg-white text-[#344054]",
+                    ? "ml-auto bg-[var(--canvas-theme-surface-soft)] font-medium text-[var(--canvas-theme-text)]"
+                    : "mr-auto bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
                 ].join(" ")}
               >
                 {message.content}
@@ -194,15 +194,15 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
             event.target.value = "";
           }}
         />
-        <div className="overflow-hidden rounded-[20px] bg-[#F4F4F4] shadow-[0_2px_14px_rgba(0,0,0,0.09)]">
+        <div className="overflow-hidden rounded-[20px] bg-[var(--canvas-theme-surface-soft)] shadow-[0_2px_14px_var(--canvas-theme-shadow)]">
           {promoVisible ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-black">
-              <CircleDollarSign className="h-3.5 w-3.5 fill-[#DFFF27] text-black" aria-hidden="true" />
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-[var(--canvas-theme-text)]">
+              <CircleDollarSign className="h-3.5 w-3.5 fill-[#DFFF27] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
               <span>Limited Time: Upgrade now&amp;save up to 45% OFF!</span>
               <button
                 type="button"
                 onClick={() => setPromoVisible(false)}
-                className="ml-auto text-base leading-none text-[#333]"
+                className="ml-auto text-base leading-none text-[var(--canvas-theme-icon)]"
                 title="Dismiss"
               >
                 ×
@@ -210,7 +210,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
             </div>
           ) : null}
 
-          <div className="rounded-[18px] border border-[#E1E1E1] bg-white px-3 py-2.5">
+          <div className="rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2.5">
             <textarea
               ref={textareaRef}
               value={draft}
@@ -224,13 +224,13 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
               onPaste={handlePromptPaste}
               placeholder={'Start with an idea, or type "@" to mention'}
               rows={3}
-              className="min-h-[60px] w-full resize-none bg-transparent text-sm font-medium leading-5 text-[#111827] outline-none placeholder:text-[#A8A8A8]"
+              className="min-h-[60px] w-full resize-none bg-transparent text-sm font-medium leading-5 text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
             />
 
             {attachments.length > 0 ? (
               <div className="mb-2.5 flex gap-1.5 overflow-x-auto">
                 {attachments.map((attachment) => (
-                  <div key={attachment.id} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F7F7F7]">
+                  <div key={attachment.id} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
                     <Image src={attachment.url} alt={attachment.name} fill sizes="64px" className="object-cover" unoptimized />
                     <button
                       type="button"
@@ -246,13 +246,13 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
             ) : null}
 
             <div className="mt-1 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[#333]">
+              <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
                 <ComposerIcon label="Attach image" icon={Plus} onClick={() => fileInputRef.current?.click()} />
                 <ComposerIcon label="Library" icon={BookOpen} onClick={() => onToast("Library opened")} />
                 <div className="relative">
                   <button
                     type="button"
-                    className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold hover:bg-[#F7F7F7]"
+                    className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold hover:bg-[var(--canvas-theme-hover)]"
                     onClick={() => setAgentOpen((value) => !value)}
                   >
                     <Bot className="h-4 w-4" aria-hidden="true" />
@@ -260,12 +260,12 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
                     <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                   {agentOpen ? (
-                    <div className="absolute bottom-10 left-0 z-50 w-36 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+                    <div className="absolute bottom-10 left-0 z-50 w-36 overflow-hidden rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-xl shadow-[var(--canvas-theme-shadow)]">
                       {(["Agent", "Planner", "Designer"] as const).map((option) => (
                         <button
                           key={option}
                           type="button"
-                          className="block w-full px-3 py-2 text-left text-xs font-semibold hover:bg-[#F7F7F7]"
+                          className="block w-full px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--canvas-theme-hover)]"
                           onClick={() => {
                             setAgent(option);
                             setAgentOpen(false);
@@ -280,7 +280,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 text-[#333]">
+              <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
                 <ComposerIcon
                   label="Ideas"
                   icon={Lightbulb}
@@ -296,7 +296,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
                   disabled={!canSend}
                   className={[
                     "grid h-8 w-8 place-items-center rounded-full transition",
-                    canSend ? "bg-[#262626] text-white" : "bg-[#262626] text-white opacity-70",
+                    canSend ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]" : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] opacity-70",
                   ].join(" ")}
                   title="Send"
                 >
@@ -337,7 +337,7 @@ function SkillPill({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-full border border-[#E8E8E8] bg-white px-2.5 py-1 text-xs font-medium text-[#292929] shadow-[0_1px_0_rgba(0,0,0,0.02)] transition hover:border-[#D5D5D5]"
+      className="inline-flex items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-xs font-medium text-[var(--canvas-theme-text)] shadow-[0_1px_0_var(--canvas-theme-shadow)] transition hover:border-[var(--canvas-theme-border-strong)]"
     >
       <Icon className={`h-3.5 w-3.5 ${color}`} aria-hidden="true" />
       {label}
@@ -355,7 +355,7 @@ function IconButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="grid h-7 w-7 place-items-center rounded-full hover:bg-[#F5F5F5]" title={label} onClick={onClick}>
+    <button type="button" className="grid h-7 w-7 place-items-center rounded-full hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
     </button>
   );
@@ -371,7 +371,7 @@ function ComposerIcon({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#F7F7F7]" title={label} onClick={onClick}>
+    <button type="button" className="grid h-8 w-8 place-items-center rounded-full hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
   );
