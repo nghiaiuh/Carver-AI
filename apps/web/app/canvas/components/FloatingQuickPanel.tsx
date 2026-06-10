@@ -47,7 +47,7 @@ export default function FloatingQuickPanel({ viewportZoom = 1, onTool, onMultiAn
 
   return (
     <aside
-      className="floating-quick-panel absolute z-40 w-44 rounded-2xl border border-[#E5E7EB] bg-white/95 p-2 shadow-xl shadow-black/10 backdrop-blur"
+      className="floating-quick-panel absolute z-[100] w-44 rounded-2xl border border-[#E5E7EB] bg-white/95 p-2 shadow-xl shadow-black/10 backdrop-blur"
       style={{
         right: `${-PANEL_WIDTH - PANEL_GAP * uiScale}px`,
         top: `${PANEL_TOP_OFFSET * uiScale}px`,

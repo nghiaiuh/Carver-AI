@@ -59,7 +59,7 @@ export default function ContextualToolbar({
 
   return (
     <div
-      className="contextual-toolbar absolute left-1/2 z-40 flex items-center gap-0.5 rounded-xl border border-[#E5E7EB] bg-white/95 p-1 shadow-xl shadow-black/10 backdrop-blur"
+      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-0.5 rounded-xl border border-[#E5E7EB] bg-white/95 p-1 shadow-xl shadow-black/10 backdrop-blur"
       style={{
         top: `${-62 * uiScale}px`,
         transform: `translateX(-50%) scale(${uiScale})`,

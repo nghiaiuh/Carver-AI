@@ -83,11 +83,12 @@ export default function CanvasNodeCard({
 
   return (
     <div
-      className="absolute z-10 select-none bg-transparent group"
+      className="absolute select-none bg-transparent group"
       style={{
         left: node.x,
         top: node.y,
         width: node.width,
+        zIndex: selected ? 80 : 10,
       }}
       onPointerDown={(e) => {
         // Prevent pan behavior on canvas when clicking node
@@ -206,7 +207,8 @@ export default function CanvasNodeCard({
 
       {/* Selection Chrome & Toolbars (Show only when this node card is selected) */}
       {selected ? (
-        <div onPointerDown={(e) => e.stopPropagation()}>
+        <div className="absolute inset-0 z-[120] pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="pointer-events-auto">
           <ContextualToolbar
             itemLabel={node.role === "output" ? "Image" : node.role === "reference" ? "Reference" : "Object"}
             viewportZoom={viewportZoom}
@@ -223,6 +225,7 @@ export default function CanvasNodeCard({
             onRealityCheck={onRealityCheck} 
             onToast={onToast} 
           />
+          </div>
         </div>
       ) : null}
 

@@ -144,7 +144,7 @@ const initialRegions: Region[] = [
 
 const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
-const DEFAULT_CANVAS_BACKGROUND = "#F0EFEE";
+const DEFAULT_CANVAS_BACKGROUND = "#F5F5F5";
 
 const initialLibraryAssets: LibraryAsset[] = [
   {
