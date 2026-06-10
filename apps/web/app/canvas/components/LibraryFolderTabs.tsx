@@ -23,7 +23,7 @@ export default function LibraryFolderTabs({
   const activeFolder = folders.find((folder) => folder.id === activeFolderId) ?? null;
 
   return (
-    <div className="border-b border-white/10 px-4 pb-3 pt-2">
+    <div className="border-b border-[var(--canvas-theme-border)] px-4 pb-3 pt-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
           {folders.map((folder) => {
@@ -35,7 +35,9 @@ export default function LibraryFolderTabs({
                 onClick={() => onSelectFolder(folder.id)}
                 className={[
                   "shrink-0 border-b px-1 py-2 text-sm font-semibold transition",
-                  active ? "border-sky-300 text-slate-900" : "border-transparent text-slate-600 hover:text-slate-900",
+                  active
+                    ? "border-[var(--canvas-theme-active)] text-[var(--canvas-theme-text)]"
+                    : "border-transparent text-[var(--canvas-theme-text-muted)] hover:text-[var(--canvas-theme-text)]",
                 ].join(" ")}
                 title={folder.title}
               >
@@ -47,7 +49,7 @@ export default function LibraryFolderTabs({
         <button
           type="button"
           onClick={onCreateFolder}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-xs font-semibold text-slate-800 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           Folder
@@ -59,7 +61,7 @@ export default function LibraryFolderTabs({
           type="button"
           onClick={onRenameFolder}
           disabled={!activeFolder}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-xs font-semibold text-slate-800 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
           Rename
@@ -68,7 +70,7 @@ export default function LibraryFolderTabs({
           type="button"
           onClick={onDeleteFolder}
           disabled={!activeFolder}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-400/20 bg-rose-400/10 px-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 text-xs font-semibold text-[#B42318] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           Delete
