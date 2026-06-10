@@ -64,6 +64,10 @@ const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
 const WHEEL_ZOOM_SENSITIVITY = 0.0035;
+const MAX_PASTED_IMAGE_WIDTH = 420;
+const MAX_PASTED_IMAGE_HEIGHT = 320;
+const FALLBACK_PASTED_IMAGE_WIDTH = 240;
+const FALLBACK_PASTED_IMAGE_HEIGHT = 180;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -118,6 +122,34 @@ function getWorldPointFromPointer({
   return {
     x: (clientX - rect.left - pan.x) / zoom,
     y: (clientY - rect.top - pan.y) / zoom,
+  };
+}
+
+function loadImageDimensions(imageUrl: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const image = new window.Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve(null);
+    image.src = imageUrl;
+  });
+}
+
+function getPastedImageNodeSize(dimensions: { width: number; height: number } | null) {
+  if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
+    return { width: FALLBACK_PASTED_IMAGE_WIDTH, height: FALLBACK_PASTED_IMAGE_HEIGHT };
+  }
+
+  const maxCrispWidthAtWorldScale = dimensions.width / MAX_ZOOM;
+  const maxCrispHeightAtWorldScale = dimensions.height / MAX_ZOOM;
+  const fitScale = Math.min(
+    MAX_PASTED_IMAGE_WIDTH / maxCrispWidthAtWorldScale,
+    MAX_PASTED_IMAGE_HEIGHT / maxCrispHeightAtWorldScale,
+    1,
+  );
+
+  return {
+    width: Math.max(1, Math.round(maxCrispWidthAtWorldScale * fitScale)),
+    height: Math.max(1, Math.round(maxCrispHeightAtWorldScale * fitScale)),
   };
 }
 
@@ -184,18 +216,20 @@ export default function CanvasBoard({
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
 
   const addImageNode = useCallback(
-    (imageUrl: string, title = "Pasted Image") => {
+    async (imageUrl: string, title = "Pasted Image") => {
+      const pastePan = pan;
+      const pasteZoom = zoom;
+      const dimensions = await loadImageDimensions(imageUrl);
       onNodesChange((prev) => {
         const isFirst = prev.length === 0;
-        const nodeWidth = 240;
-        const nodeHeight = 180;
+        const { width: nodeWidth, height: nodeHeight } = getPastedImageNodeSize(dimensions);
         const rect = containerRef.current?.getBoundingClientRect();
         const viewportCenterX = rect ? rect.width / 2 : 0;
         const viewportCenterY = rect ? rect.height / 2 : 0;
         const newNode: CanvasNode = {
           id: `node-${Date.now()}-${prev.length}`,
-          x: (viewportCenterX - pan.x) / zoom - nodeWidth / 2,
-          y: (viewportCenterY - pan.y) / zoom - nodeHeight / 2,
+          x: (viewportCenterX - pastePan.x) / pasteZoom - nodeWidth / 2,
+          y: (viewportCenterY - pastePan.y) / pasteZoom - nodeHeight / 2,
           width: nodeWidth,
           height: nodeHeight,
           imageUrl,

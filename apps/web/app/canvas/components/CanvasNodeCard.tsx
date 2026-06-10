@@ -125,7 +125,7 @@ export default function CanvasNodeCard({
         >
           {node.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={node.imageUrl} alt={node.title} className="w-full h-full object-cover pointer-events-none" draggable={false} />
+            <img src={node.imageUrl} alt={node.title} className="h-full w-full select-none object-cover pointer-events-none" draggable={false} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-[#9CA3AF]">
               <ImagePlus className="w-8 h-8 opacity-50" />
