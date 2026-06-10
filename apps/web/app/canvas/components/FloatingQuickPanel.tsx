@@ -20,6 +20,7 @@ import {
 import type { EditorTool } from "./CanvasWorkspace";
 
 type FloatingQuickPanelProps = {
+  viewportZoom?: number;
   onTool: (tool: EditorTool) => void;
   onMultiAngle: () => void;
   onRealityCheck: () => void;
@@ -37,11 +38,25 @@ const actions = [
   { label: "Customize Toolbar", icon: SlidersHorizontal, action: "customize" },
 ] as const;
 
-export default function FloatingQuickPanel({ onTool, onMultiAngle, onRealityCheck, onToast }: FloatingQuickPanelProps) {
+const PANEL_WIDTH = 176;
+const PANEL_GAP = 18;
+const PANEL_TOP_OFFSET = 32;
+
+export default function FloatingQuickPanel({ viewportZoom = 1, onTool, onMultiAngle, onRealityCheck, onToast }: FloatingQuickPanelProps) {
+  const uiScale = 1 / viewportZoom;
+
   return (
-    <aside className="floating-quick-panel absolute -right-[236px] top-8 z-40 w-[210px] rounded-3xl border border-[#E5E7EB] bg-white/95 p-3 shadow-2xl shadow-black/12 backdrop-blur">
-      <p className="px-2 pb-2 text-xs font-black uppercase tracking-[0.18em] text-[#98A2B3]">Quick Panel</p>
-      <div className="grid gap-1">
+    <aside
+      className="floating-quick-panel absolute z-40 w-44 rounded-2xl border border-[#E5E7EB] bg-white/95 p-2 shadow-xl shadow-black/10 backdrop-blur"
+      style={{
+        right: `${-PANEL_WIDTH - PANEL_GAP * uiScale}px`,
+        top: `${PANEL_TOP_OFFSET * uiScale}px`,
+        transform: `scale(${uiScale})`,
+        transformOrigin: "top left",
+      }}
+    >
+      <p className="px-2 pb-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#98A2B3]">Quick Panel</p>
+      <div className="grid gap-0.5">
         {actions.map((action) => {
           const Icon = action.icon;
           return (
@@ -54,9 +69,9 @@ export default function FloatingQuickPanel({ onTool, onMultiAngle, onRealityChec
               if ("action" in action && action.action === "reality") onRealityCheck();
               if ("action" in action && ["expand", "style", "crop", "rotate", "customize"].includes(action.action)) onToast(`${action.label} applied`);
             }}
-              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-bold text-[#111827] transition hover:bg-[#F7F8FA]"
+              className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-bold text-[#111827] transition hover:bg-[#F7F8FA]"
             >
-              <Icon className="h-4 w-4 text-[#667085]" aria-hidden="true" />
+              <Icon className="h-3.5 w-3.5 text-[#667085]" aria-hidden="true" />
               {action.label}
             </button>
           );

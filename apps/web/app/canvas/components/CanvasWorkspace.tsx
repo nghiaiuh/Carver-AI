@@ -144,6 +144,7 @@ const initialRegions: Region[] = [
 
 const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
+const DEFAULT_CANVAS_BACKGROUND = "#F0EFEE";
 
 const initialLibraryAssets: LibraryAsset[] = [
   {
@@ -237,6 +238,7 @@ export default function CanvasWorkspace() {
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(DEFAULT_CANVAS_BACKGROUND);
 
   useGSAP(
     () => {
@@ -532,6 +534,8 @@ export default function CanvasWorkspace() {
             onEdgesChange={setEdges}
             activeNodeId={activeNodeId}
             onSetActiveNode={setActiveNodeId}
+            canvasBackgroundColor={canvasBackgroundColor}
+            onCanvasBackgroundChange={setCanvasBackgroundColor}
           />
           {rightPanelOpen ? (
             <EditorRightPanel

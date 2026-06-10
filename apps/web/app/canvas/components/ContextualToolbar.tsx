@@ -24,6 +24,7 @@ import type { EditorTool } from "./CanvasWorkspace";
 
 type ContextualToolbarProps = {
   itemLabel: "Image" | "Reference" | "Object";
+  viewportZoom?: number;
   onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
@@ -47,15 +48,25 @@ const tools = [
 
 export default function ContextualToolbar({
   itemLabel,
+  viewportZoom = 1,
   onQuickEdit,
   onMultiAngle,
   onAddObject,
   onTool,
   onToast,
 }: ContextualToolbarProps) {
+  const uiScale = 1 / viewportZoom;
+
   return (
-    <div className="contextual-toolbar absolute left-1/2 top-[-62px] z-40 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-[#E5E7EB] bg-white/95 p-1.5 shadow-2xl shadow-black/12 backdrop-blur">
-      <span className="mr-1 rounded-xl bg-[#111827] px-3 py-2 text-xs font-black text-white">{itemLabel}</span>
+    <div
+      className="contextual-toolbar absolute left-1/2 z-40 flex items-center gap-0.5 rounded-xl border border-[#E5E7EB] bg-white/95 p-1 shadow-xl shadow-black/10 backdrop-blur"
+      style={{
+        top: `${-62 * uiScale}px`,
+        transform: `translateX(-50%) scale(${uiScale})`,
+        transformOrigin: "top center",
+      }}
+    >
+      <span className="mr-0.5 rounded-lg bg-[#111827] px-2.5 py-1.5 text-[11px] font-black text-white">{itemLabel}</span>
       {tools.map((tool) => {
         const Icon = tool.icon;
         return (
@@ -71,9 +82,9 @@ export default function ContextualToolbar({
               if ("action" in tool && tool.action === "export") onToast("Export mock");
               if ("tool" in tool) onTool(tool.tool);
             }}
-            className="grid h-9 w-9 place-items-center rounded-xl text-[#667085] transition hover:bg-[#F7F8FA] hover:text-[#111827]"
+            className="grid h-7 w-7 place-items-center rounded-lg text-[#667085] transition hover:bg-[#F7F8FA] hover:text-[#111827]"
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         );
       })}

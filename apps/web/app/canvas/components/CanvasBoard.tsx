@@ -46,6 +46,8 @@ type CanvasBoardProps = {
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
   activeNodeId: string;
   onSetActiveNode: (id: string) => void;
+  canvasBackgroundColor: string;
+  onCanvasBackgroundChange: (color: string) => void;
 };
 
 type DeletedNodeSnapshot = {
@@ -53,13 +55,70 @@ type DeletedNodeSnapshot = {
   edges: CanvasEdge[];
 };
 
+type Point = {
+  x: number;
+  y: number;
+};
+
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
-const ZOOM_STEP = 0.05;
-const WHEEL_ZOOM_SENSITIVITY = 0.0025;
+const ZOOM_STEP = 0.1;
+const WHEEL_ZOOM_SENSITIVITY = 0.0035;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLElement): Point {
+  const rect = container.getBoundingClientRect();
+
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function getNextPanForCursorZoom({
+  cursorX,
+  cursorY,
+  prevPan,
+  prevZoom,
+  nextZoom,
+}: {
+  cursorX: number;
+  cursorY: number;
+  prevPan: Point;
+  prevZoom: number;
+  nextZoom: number;
+}): Point {
+  const worldX = (cursorX - prevPan.x) / prevZoom;
+  const worldY = (cursorY - prevPan.y) / prevZoom;
+
+  return {
+    x: cursorX - worldX * nextZoom,
+    y: cursorY - worldY * nextZoom,
+  };
+}
+
+function getWorldPointFromPointer({
+  clientX,
+  clientY,
+  container,
+  pan,
+  zoom,
+}: {
+  clientX: number;
+  clientY: number;
+  container: HTMLElement;
+  pan: Point;
+  zoom: number;
+}): Point {
+  const rect = container.getBoundingClientRect();
+
+  return {
+    x: (clientX - rect.left - pan.x) / zoom,
+    y: (clientY - rect.top - pan.y) / zoom,
+  };
 }
 
 export default function CanvasBoard({
@@ -93,17 +152,24 @@ export default function CanvasBoard({
   onEdgesChange,
   activeNodeId,
   onSetActiveNode,
+  canvasBackgroundColor,
+  onCanvasBackgroundChange,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const projectNameInputRef = useRef<HTMLInputElement>(null);
   const importImagesInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [viewport, setViewport] = useState<{ zoom: number; pan: Point }>({
+    zoom: 1,
+    pan: { x: 0, y: 0 },
+  });
+  const { zoom, pan } = viewport;
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const [isWheelZooming, setIsWheelZooming] = useState(false);
+  const wheelZoomTimeout = useRef<number | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectName, setProjectName] = useState("Untitled");
   const [editingProjectName, setEditingProjectName] = useState(false);
@@ -121,12 +187,17 @@ export default function CanvasBoard({
     (imageUrl: string, title = "Pasted Image") => {
       onNodesChange((prev) => {
         const isFirst = prev.length === 0;
+        const nodeWidth = 240;
+        const nodeHeight = 180;
+        const rect = containerRef.current?.getBoundingClientRect();
+        const viewportCenterX = rect ? rect.width / 2 : 0;
+        const viewportCenterY = rect ? rect.height / 2 : 0;
         const newNode: CanvasNode = {
           id: `node-${Date.now()}-${prev.length}`,
-          x: -pan.x / zoom,
-          y: -pan.y / zoom,
-          width: 240,
-          height: 180,
+          x: (viewportCenterX - pan.x) / zoom - nodeWidth / 2,
+          y: (viewportCenterY - pan.y) / zoom - nodeHeight / 2,
+          width: nodeWidth,
+          height: nodeHeight,
           imageUrl,
           title: isFirst ? "Site Photo" : title,
           prompt: null,
@@ -165,36 +236,41 @@ export default function CanvasBoard({
 
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
-  const PAN_DAMPING = 0.3;
-
   const handleWheel = useCallback((event: WheelEvent) => {
     event.preventDefault();
 
     const container = containerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
 
-    if (event.ctrlKey || event.metaKey) {
-      const cursorX = (event.clientX - rect.left - rect.width / 2) * PAN_DAMPING;
-      const cursorY = (event.clientY - rect.top - rect.height / 2) * PAN_DAMPING;
+    setIsWheelZooming(true);
 
-      setZoom((prev) => {
-        const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
-        const next = clamp(prev + delta, MIN_ZOOM, MAX_ZOOM);
-        const ratio = next / prev - 1;
-        setPan((p) => ({
-          x: p.x - cursorX * ratio,
-          y: p.y - cursorY * ratio,
-        }));
-        return next;
-      });
-      return;
+    if (wheelZoomTimeout.current) {
+      window.clearTimeout(wheelZoomTimeout.current);
     }
 
-    setPan((prev) => ({
-      x: prev.x - event.deltaX,
-      y: prev.y - event.deltaY,
-    }));
+    wheelZoomTimeout.current = window.setTimeout(() => {
+      setIsWheelZooming(false);
+    }, 90);
+
+    const cursor = getCursorPointRelativeToContainer(event, container);
+
+    setViewport((prev) => {
+      const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
+      const nextZoom = clamp(prev.zoom + delta, MIN_ZOOM, MAX_ZOOM);
+
+      if (nextZoom === prev.zoom) return prev;
+
+      return {
+        zoom: nextZoom,
+        pan: getNextPanForCursorZoom({
+          cursorX: cursor.x,
+          cursorY: cursor.y,
+          prevPan: prev.pan,
+          prevZoom: prev.zoom,
+          nextZoom,
+        }),
+      };
+    });
   }, []);
 
   const handleMouseDown = useCallback(
@@ -230,21 +306,25 @@ export default function CanvasBoard({
     const container = containerRef.current;
     if (!container) return;
     
-    // Calculate position in canvas space
-    const rect = container.getBoundingClientRect();
-    const targetX = (event.clientX - rect.left - pan.x - rect.width / 2) / zoom;
-    const targetY = (event.clientY - rect.top - pan.y - rect.height / 2) / zoom;
+    const target = getWorldPointFromPointer({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      container,
+      pan,
+      zoom,
+    });
 
-    setDraftEdge({ sourceId, targetX, targetY });
+    setDraftEdge({ sourceId, targetX: target.x, targetY: target.y });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (isPanning.current && panStart.current) {
-      const dx = event.clientX - panStart.current.x;
-      const dy = event.clientY - panStart.current.y;
-      setPan({ x: panStart.current.panX + dx, y: panStart.current.panY + dy });
+      const start = panStart.current;
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      setViewport((prev) => ({ ...prev, pan: { x: start.panX + dx, y: start.panY + dy } }));
       return;
     }
 
@@ -261,11 +341,15 @@ export default function CanvasBoard({
     if (draftEdge) {
       const container = containerRef.current;
       if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const targetX = (event.clientX - rect.left - pan.x - rect.width / 2) / zoom;
-      const targetY = (event.clientY - rect.top - pan.y - rect.height / 2) / zoom;
+      const target = getWorldPointFromPointer({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        container,
+        pan,
+        zoom,
+      });
       
-      setDraftEdge(prev => prev ? { ...prev, targetX, targetY } : null);
+      setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
     }
 
   }, [zoom, pan, draggingNodeId, draftEdge, onNodesChange]);
@@ -285,15 +369,19 @@ export default function CanvasBoard({
       // Alternatively, we calculate intersection
       const container = containerRef.current;
       if (container) {
-        const rect = container.getBoundingClientRect();
-        const dropX = (event.clientX - rect.left - pan.x - rect.width / 2) / zoom;
-        const dropY = (event.clientY - rect.top - pan.y - rect.height / 2) / zoom;
+        const drop = getWorldPointFromPointer({
+          clientX: event.clientX,
+          clientY: event.clientY,
+          container,
+          pan,
+          zoom,
+        });
 
         // Check if drop is inside any node
         const targetNode = nodes.find(n => 
           n.id !== draftEdge.sourceId &&
-          dropX >= n.x && dropX <= n.x + n.width &&
-          dropY >= n.y && dropY <= n.y + n.height
+          drop.x >= n.x && drop.x <= n.x + n.width &&
+          drop.y >= n.y && drop.y <= n.y + n.height
         );
 
         if (targetNode) {
@@ -318,6 +406,12 @@ export default function CanvasBoard({
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
+
+  useEffect(() => {
+    return () => {
+      if (wheelZoomTimeout.current) window.clearTimeout(wheelZoomTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -427,18 +521,17 @@ export default function CanvasBoard({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [deleteNode, selectedItem, undoDeleteNode]);
 
-  const zoomIn = () => setZoom((prev) => clamp(parseFloat((prev + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
-  const zoomOut = () => setZoom((prev) => clamp(parseFloat((prev - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
+  const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
+  const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const resetZoom = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    setViewport({ zoom: 1, pan: { x: 0, y: 0 } });
   };
 
   return (
     <section
       ref={containerRef}
-      className="relative h-full flex-1 overflow-hidden bg-white touch-none"
-      style={{ cursor: isPanningCanvas ? "grabbing" : "default" }}
+      className="relative h-full flex-1 touch-none overflow-hidden"
+      style={{ backgroundColor: canvasBackgroundColor, cursor: isPanningCanvas ? "grabbing" : "default" }}
       onClick={(e) => {
         // Only deselect if clicking on the background
         if (e.target === e.currentTarget) {
@@ -459,7 +552,7 @@ export default function CanvasBoard({
         onChange={(event) => importImages(event.target.files)}
       />
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50">
-        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[#F4F4F4] px-3 text-[#3F454E]">
+        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[#F5F5F5] px-3 text-[#3F454E]">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
@@ -593,12 +686,12 @@ export default function CanvasBoard({
 
       {/* Zoomable + pannable canvas layer */}
       <div
-        className="absolute inset-0 flex items-center justify-center"
+        className="absolute inset-0"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: "center center",
+          transformOrigin: "0 0",
           willChange: "transform",
-          transition: isPanningCanvas || draggingNodeId || draftEdge ? "none" : "transform 0.05s linear",
+          transition: isWheelZooming || isPanningCanvas || draggingNodeId || draftEdge ? "none" : "transform 0.05s linear",
         }}
       >
         <CanvasEdges 
@@ -626,6 +719,7 @@ export default function CanvasBoard({
             sketchGroups={sketchGroups}
             selectedSketchLineIds={selectedSketchLineIds}
             activeNodeId={activeNodeId}
+            viewportZoom={zoom}
             onSelect={(id) => onSelect({ type: "node", id })}
             onSelectOverlay={(item) => onSelect(item)}
             onAddSketchLine={onAddSketchLine}
@@ -648,7 +742,7 @@ export default function CanvasBoard({
       </div>
 
       <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[#ECECEC] bg-white">
-        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[#E5E5E5] bg-white" />
+        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[#E5E5E5]" style={{ backgroundColor: canvasBackgroundColor }} />
       </div>
       <BottomToolDock
         activeTool={activeTool}
@@ -662,6 +756,8 @@ export default function CanvasBoard({
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetZoom}
+        canvasBackgroundColor={canvasBackgroundColor}
+        onCanvasBackgroundChange={onCanvasBackgroundChange}
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (

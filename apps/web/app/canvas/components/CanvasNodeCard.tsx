@@ -28,6 +28,7 @@ type CanvasNodeCardProps = {
   sketchGroups: SketchGroup[];
   selectedSketchLineIds: string[];
   activeNodeId: string;
+  viewportZoom: number;
   onSelect: (id: string, event?: React.MouseEvent) => void;
   onSelectOverlay: (item: SelectedItem) => void;
   onAddSketchLine: (line: SketchLine) => void;
@@ -59,6 +60,7 @@ export default function CanvasNodeCard({
   sketchGroups,
   selectedSketchLineIds,
   activeNodeId,
+  viewportZoom,
   onSelect,
   onSelectOverlay,
   onAddSketchLine,
@@ -79,12 +81,11 @@ export default function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const isOutput = node.role === "output";
   const isActiveNode = node.id === activeNodeId;
+  const uiScale = 1 / viewportZoom;
 
   return (
     <div
-      className={`absolute z-10 select-none bg-white rounded-2xl shadow-xl shadow-black/5 border transition-colors group ${
-        selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-[#E5E7EB] hover:border-[#D1D5DB]"
-      }`}
+      className="absolute z-10 select-none bg-transparent group"
       style={{
         left: node.x,
         top: node.y,
@@ -139,16 +140,12 @@ export default function CanvasNodeCard({
         }}
       />
 
-      {/* Role Badge */}
-      <div className="absolute -top-2.5 -left-2.5 z-20">
-        <div className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-white shadow-sm ${isOutput ? "bg-[#8B5CF6]" : "bg-[#10B981]"}`}>
-          {node.role}
-        </div>
-      </div>
-
-      <div className="p-2">
+      <div>
         <div 
-          className="relative overflow-hidden rounded-xl bg-[#F7F8FA] border border-[#F3F4F6]"
+          className={[
+            "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
+            selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-transparent",
+          ].join(" ")}
           style={{ height: node.height }}
           onClick={(e) => {
             if (activeTool === "mark-position" || activeTool === "draw-region" || activeTool === "lock-area") {
@@ -214,19 +211,27 @@ export default function CanvasNodeCard({
               />
             </div>
           )}
+          {selected ? <SelectionChrome label={node.role === "output" ? "Image" : "Reference"} size={`${node.width} × ${node.height}`} viewportZoom={viewportZoom} /> : null}
         </div>
         
-        <div className="mt-3 px-1 pb-1">
+        <div
+          className="px-1 pb-1 text-center"
+          style={{
+            marginTop: `${12 * uiScale}px`,
+            transform: `scale(${uiScale})`,
+            transformOrigin: "top center",
+          }}
+        >
           <h3 className="text-sm font-black text-[#111827]">{node.title}</h3>
           {isOutput ? (
             <div className="mt-1">
-              <p className="text-xs text-[#6B7280] leading-snug line-clamp-2" title={node.prompt || ""}>
+              <p className="line-clamp-2 text-center text-xs leading-snug text-[#6B7280]" title={node.prompt || ""}>
                 {node.prompt || "No prompt provided."}
               </p>
             </div>
           ) : (
             <div className="mt-1">
-              <p className="text-xs text-[#9CA3AF] italic">
+              <p className="text-center text-xs italic text-[#9CA3AF]">
                 {node.prompt ? node.prompt : "No prompt yet"}
               </p>
             </div>
@@ -239,6 +244,7 @@ export default function CanvasNodeCard({
         <div onPointerDown={(e) => e.stopPropagation()}>
           <ContextualToolbar
             itemLabel={node.role === "output" ? "Image" : node.role === "reference" ? "Reference" : "Object"}
+            viewportZoom={viewportZoom}
             onQuickEdit={onQuickEdit}
             onMultiAngle={onMultiAngle}
             onAddObject={onAddObject}
@@ -246,12 +252,12 @@ export default function CanvasNodeCard({
             onToast={onToast}
           />
           <FloatingQuickPanel 
+            viewportZoom={viewportZoom}
             onTool={onTool} 
             onMultiAngle={onMultiAngle} 
             onRealityCheck={onRealityCheck} 
             onToast={onToast} 
           />
-          <SelectionChrome label={node.role === "output" ? "Image" : "Reference"} size={`${node.width} × ${node.height}`} />
         </div>
       ) : null}
 
@@ -265,15 +271,33 @@ export default function CanvasNodeCard({
   );
 }
 
-function SelectionChrome({ label, size }: { label: string; size: string }) {
+function SelectionChrome({ label, size, viewportZoom }: { label: string; size: string; viewportZoom: number }) {
+  const uiScale = 1 / viewportZoom;
+  const handleStyle = {
+    width: `${16 * uiScale}px`,
+    height: `${16 * uiScale}px`,
+    borderWidth: `${2 * uiScale}px`,
+    borderRadius: `${4 * uiScale}px`,
+  };
+
   return (
     <>
-      <span className="absolute -left-1.5 -top-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white z-30" />
-      <span className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white z-30" />
-      <span className="absolute -bottom-1.5 -left-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white z-30" />
-      <span className="absolute -bottom-1.5 -right-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white z-30" />
-      <div className="absolute -left-1 top-[-34px] rounded-lg bg-[#3B82F6] px-2.5 py-1 text-xs font-black text-white z-30">{label}</div>
-      <div className="absolute -right-1 bottom-[-32px] rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-black text-[#667085] shadow-sm z-30">{size}</div>
+      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, left: `${-6 * uiScale}px`, top: `${-6 * uiScale}px` }} />
+      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, right: `${-6 * uiScale}px`, top: `${-6 * uiScale}px` }} />
+      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, bottom: `${-6 * uiScale}px`, left: `${-6 * uiScale}px` }} />
+      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, right: `${-6 * uiScale}px`, bottom: `${-6 * uiScale}px` }} />
+      <div
+        className="absolute z-30 rounded-lg bg-[#3B82F6] px-2.5 py-1 text-xs font-black text-white"
+        style={{ left: `${-4 * uiScale}px`, top: `${-34 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "top left" }}
+      >
+        {label}
+      </div>
+      <div
+        className="absolute z-30 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-black text-[#667085] shadow-sm"
+        style={{ right: `${-4 * uiScale}px`, bottom: `${-32 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "bottom right" }}
+      >
+        {size}
+      </div>
     </>
   );
 }
