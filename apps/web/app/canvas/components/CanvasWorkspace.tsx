@@ -10,6 +10,8 @@
 import { useRef, useState } from "react";
 import { MessageSquare, PanelLeftOpen } from "lucide-react";
 import { gsap, useGSAP } from "../../components/gsapSetup";
+import { useCanvasLibrary } from "../hooks/useCanvasLibrary";
+import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
 import AddObjectMenu from "./AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import { buildCanvasThemeStyle } from "./canvasTheme";
@@ -157,54 +159,6 @@ const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
 const DEFAULT_CANVAS_THEME = "#F5F5F5";
 
-const initialLibraryAssets: LibraryAsset[] = [
-  {
-    id: "asset-tung-la-han",
-    name: "Tung la han",
-    category: "plant",
-    tags: ["bonsai", "formal", "evergreen"],
-    imageUrl: "/assets/garden_3d_render.png",
-    sourceType: "saved",
-    savedAt: "2026-06-09T00:00:00.000Z",
-  },
-  {
-    id: "asset-fern-cluster",
-    name: "Fern cluster",
-    category: "plant",
-    tags: ["shade", "pond edge", "soft"],
-    imageUrl: "/assets/mark_generation.png",
-    sourceType: "project",
-    savedAt: "2026-06-09T00:00:00.000Z",
-  },
-  {
-    id: "asset-co-thach",
-    name: "Da co thach",
-    category: "stone",
-    tags: ["limestone", "pond edge", "natural"],
-    imageUrl: "/assets/canvas_texture.png",
-    sourceType: "saved",
-    savedAt: "2026-06-09T00:00:00.000Z",
-  },
-  {
-    id: "asset-rockery-waterfall",
-    name: "Hon non bo waterfall",
-    category: "rockery",
-    tags: ["waterfall", "vertical rock", "moss"],
-    imageUrl: "/assets/mark_generation.png",
-    sourceType: "project",
-    savedAt: "2026-06-09T00:00:00.000Z",
-  },
-  {
-    id: "asset-stepping-stone",
-    name: "Stepping stone path",
-    category: "hardscape",
-    tags: ["path", "courtyard", "stone"],
-    imageUrl: "/assets/canvas_texture.png",
-    sourceType: "project",
-    savedAt: "2026-06-09T00:00:00.000Z",
-  },
-];
-
 export function inferObjectTypeFromTag(nameTag: string): LibraryAssetCategory {
   const normalized = nameTag
     .toLowerCase()
@@ -239,7 +193,6 @@ export default function CanvasWorkspace() {
   const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
   const [selectedSketchLineIds, setSelectedSketchLineIds] = useState<string[]>([]);
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
-  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>(initialLibraryAssets);
   const [nodes, setNodes] = useState<CanvasNode[]>(initialNodes);
   const [edges, setEdges] = useState<CanvasEdge[]>(initialEdges);
   const [promptText, setPromptText] = useState("");
@@ -250,6 +203,10 @@ export default function CanvasWorkspace() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
+  const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
+  const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] = useState<CanvasLibraryAsset | null>(null);
+  const library = useCanvasLibrary();
+  const allLibraryAssets = library.allAssets;
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
 
   useGSAP(
@@ -330,6 +287,28 @@ export default function CanvasWorkspace() {
     animateIn(".added-object");
   };
 
+  const uploadAssetsToFolder = (folderId: string, files: FileList | File[]) => {
+    Array.from(files)
+      .filter((file) => file.type.startsWith("image/"))
+      .forEach((file) => {
+        const objectUrl = URL.createObjectURL(file);
+        library.addAssetToFolder(folderId, {
+          id: `asset_${Date.now()}_${file.name}`,
+          src: objectUrl,
+          thumbnailSrc: objectUrl,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          source: "upload",
+          createdAt: new Date().toISOString(),
+          metadata: {
+            originalWidth: undefined,
+            originalHeight: undefined,
+          },
+        });
+      });
+
+    showToast("Images added to Library");
+  };
+
   const addSketchLine = (line: SketchLine) => {
     setSketchLines((items) => [...items, line]);
     setSelectedSketchLineIds([line.id]);
@@ -374,54 +353,6 @@ export default function CanvasWorkspace() {
     showToast(`${nameTag} group created`);
   };
 
-  const attachAssetToSelection = (assetId: string) => {
-    if (selectedItem.type === "region") {
-      setRegions((items) =>
-        items.map((region) =>
-          region.id === selectedItem.id
-            ? { ...region, selectedAssetIds: Array.from(new Set([...(region.selectedAssetIds ?? []), assetId])) }
-            : region,
-        ),
-      );
-      showToast("Asset attached to region");
-    }
-
-    if (selectedItem.type === "sketchGroup") {
-      setSketchGroups((items) =>
-        items.map((group) =>
-          group.id === selectedItem.id
-            ? { ...group, selectedAssetIds: Array.from(new Set([...group.selectedAssetIds, assetId])) }
-            : group,
-        ),
-      );
-      showToast("Asset attached to sketch group");
-    }
-
-    if (selectedItem.type === "object") {
-      setAddedObjects((items) =>
-        items.map((object) =>
-          object.id === selectedItem.id
-            ? { ...object, selectedAssetIds: Array.from(new Set([...(object.selectedAssetIds ?? []), assetId])) }
-            : object,
-        ),
-      );
-      showToast("Asset attached to object");
-    }
-  };
-
-  const saveLibraryAsset = (assetId: string) => {
-    setLibraryAssets((items) => items.map((asset) => (asset.id === assetId ? { ...asset, sourceType: "saved" } : asset)));
-    showToast("Asset saved");
-  };
-
-  const removeLibraryAsset = (assetId: string) => {
-    setLibraryAssets((items) => items.filter((asset) => asset.id !== assetId));
-    setRegions((items) => items.map((region) => ({ ...region, selectedAssetIds: region.selectedAssetIds?.filter((id) => id !== assetId) })));
-    setSketchGroups((items) => items.map((group) => ({ ...group, selectedAssetIds: group.selectedAssetIds.filter((id) => id !== assetId) })));
-    setAddedObjects((items) => items.map((object) => ({ ...object, selectedAssetIds: object.selectedAssetIds?.filter((id) => id !== assetId) })));
-    showToast("Asset removed");
-  };
-
   const buildGenerationContext = () => {
     const selectedRegion = selectedItem.type === "region" ? regions.find((region) => region.id === selectedItem.id) : undefined;
     const selectedGroup = selectedItem.type === "sketchGroup" ? sketchGroups.find((group) => group.id === selectedItem.id) : undefined;
@@ -432,7 +363,7 @@ export default function CanvasWorkspace() {
       selectedGroup?.selectedAssetIds ??
       selectedObject?.selectedAssetIds ??
       [];
-    const assets = libraryAssets.filter((asset) => assetIds.includes(asset.id));
+    const assets = allLibraryAssets.filter((asset) => assetIds.includes(asset.id));
 
     if (!selectedTarget) {
       return {
@@ -450,7 +381,7 @@ export default function CanvasWorkspace() {
 
     const referenceSummary =
       assets.length > 0
-        ? `Use local library references: ${assets.map((asset) => `${asset.name} (${asset.tags.join(", ")})`).join("; ")}.`
+        ? `Use local library references: ${assets.map((asset) => `${asset.title ?? "Untitled"} (${asset.metadata?.categoryHint ?? "asset"})`).join("; ")}.`
         : "No local library references selected.";
 
     return { targetSummary, referenceSummary };
@@ -493,15 +424,20 @@ export default function CanvasWorkspace() {
         <div data-enter className="relative flex min-h-0 flex-1">
           {leftSidebarOpen ? (
             <EditorLeftSidebar
-              selectedItem={selectedItem}
-              regions={regions}
-              addedObjects={addedObjects}
-              sketchGroups={sketchGroups}
-              libraryAssets={libraryAssets}
-              onSelectReference={() => handleSelectItem({ type: "reference", id: "reference-1" })}
-              onUseAsset={attachAssetToSelection}
-              onSaveAsset={saveLibraryAsset}
-              onRemoveAsset={removeLibraryAsset}
+              folders={library.folders}
+              activeFolderId={library.activeFolderId}
+              selectedAssetId={selectedLibraryAssetId}
+              onSelectFolder={library.setActiveFolderId}
+              onSelectAsset={setSelectedLibraryAssetId}
+              onCreateFolder={library.createFolder}
+              onRenameFolder={library.renameFolder}
+              onDeleteFolder={library.deleteFolder}
+              onDeleteAsset={library.removeAssetFromFolder}
+              onAddAssetToCanvas={(asset) => {
+                setSelectedLibraryAssetId(asset.id);
+                setPendingLibraryInsertAsset(asset);
+              }}
+              onUploadAssets={uploadAssetsToFolder}
               onToast={showToast}
               onClose={() => setLeftSidebarOpen(false)}
             />
@@ -548,6 +484,8 @@ export default function CanvasWorkspace() {
             onSetActiveNode={setActiveNodeId}
             canvasThemeColor={canvasThemeColor}
             onCanvasThemeChange={setCanvasThemeColor}
+            pendingLibraryInsertAsset={pendingLibraryInsertAsset}
+            onConsumePendingLibraryInsert={() => setPendingLibraryInsertAsset(null)}
           />
           {rightPanelOpen ? (
             <EditorRightPanel
@@ -555,6 +493,11 @@ export default function CanvasWorkspace() {
               onDraftChange={setPromptText}
               onClose={() => setRightPanelOpen(false)}
               onToast={showToast}
+              onAddAiResultToLibrary={(params) => {
+                const asset = library.addAiResultToLibrary(params);
+                setSelectedLibraryAssetId(asset.id);
+                setLeftSidebarOpen(true);
+              }}
             />
           ) : (
             <button

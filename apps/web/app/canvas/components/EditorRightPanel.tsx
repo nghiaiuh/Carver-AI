@@ -26,18 +26,42 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { LibraryAsset } from "../types/library";
 
 type EditorRightPanelProps = {
   draft: string;
   onDraftChange: (value: string) => void;
   onClose: () => void;
   onToast: (message: string) => void;
+  onAddAiResultToLibrary: (params: {
+    imageUrl: string;
+    prompt?: string;
+    suggestedFolderTitle?: string;
+    title?: string;
+    metadata?: LibraryAsset["metadata"];
+  }) => void;
 };
 
 type PromptAttachment = {
   id: string;
   name: string;
   url: string;
+};
+
+type AiResultItem = {
+  id: string;
+  imageUrl: string;
+  title: string;
+  suggestedFolderTitle?: string;
+  prompt?: string;
+  metadata?: LibraryAsset["metadata"];
+};
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  results?: AiResultItem[];
 };
 
 const skills = [
@@ -51,8 +75,41 @@ const skills = [
   { label: "All Skills", icon: BookOpen, tone: "slate" },
 ] as const;
 
-export default function EditorRightPanel({ draft, onDraftChange, onClose, onToast }: EditorRightPanelProps) {
-  const [messages, setMessages] = useState<Array<{ id: string; role: "user" | "assistant"; content: string }>>([]);
+const aiResultImagePool = ["/assets/garden_3d_render.png", "/assets/mark_generation.png", "/assets/canvas_texture.png"] as const;
+
+function inferSuggestedFolderTitle(prompt: string) {
+  const normalized = prompt
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (/(penjing|bonsai)/.test(normalized)) return "Penjing";
+  if (/(stone|rock|da)/.test(normalized)) return "Stone";
+  if (/(tree|cay|palm|tropical)/.test(normalized)) return "Tree";
+  return "Uncategorized";
+}
+
+function buildMockAiResults(prompt: string, attachmentCount: number) {
+  const baseTitle = inferSuggestedFolderTitle(prompt);
+  const description = prompt.trim() || "Landscape reference";
+
+  return aiResultImagePool.map((imageUrl, index) => ({
+    id: `ai_result_${Date.now()}_${index}`,
+    imageUrl,
+    title: `${baseTitle} ${index + 1}`,
+    suggestedFolderTitle: baseTitle,
+    prompt: description,
+    metadata: {
+      categoryHint: baseTitle,
+      model: attachmentCount > 0 ? "Carver Vision Search" : "Carver Moodboard Search",
+      originalWidth: 1522,
+      originalHeight: 1146,
+    },
+  }));
+}
+
+export default function EditorRightPanel({ draft, onDraftChange, onClose, onToast, onAddAiResultToLibrary }: EditorRightPanelProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +117,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
   const [agent, setAgent] = useState<"Agent" | "Planner" | "Designer">("Agent");
   const [promoVisible, setPromoVisible] = useState(true);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const [dismissedAiResultIds, setDismissedAiResultIds] = useState<string[]>([]);
 
   const canSend = useMemo(() => draft.trim().length > 0 || attachments.length > 0, [attachments.length, draft]);
 
@@ -106,6 +164,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
   const clearChat = () => {
     setMessages([]);
     setAttachments([]);
+    setDismissedAiResultIds([]);
     onDraftChange("");
     onToast("New chat started");
   };
@@ -116,6 +175,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
     const id = `m_${Date.now()}`;
     const attachmentText =
       attachments.length > 0 ? `\n\n${attachments.length} image attachment${attachments.length === 1 ? "" : "s"}` : "";
+    const aiResults = buildMockAiResults(content || "Landscape reference", attachments.length);
 
     setMessages((prev) => [
       ...prev,
@@ -123,7 +183,8 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
       {
         id: `${id}_a`,
         role: "assistant",
-        content: "Mình đã nhận ý tưởng. Hãy thêm ảnh mặt bằng hoặc mô tả khu vực để Carver dựng concept chính xác hơn.",
+        content: "Mình đã gom vài asset tham chiếu phù hợp. Bạn có thể thêm từng ảnh vào Library để kéo thả tiếp trên canvas.",
+        results: aiResults,
       },
     ]);
     onDraftChange("");
@@ -165,16 +226,69 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
         ) : (
           <div className="grid gap-4">
             {messages.map((message) => (
-              <div
-                key={message.id}
-                className={[
-                  "max-w-[86%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-5",
-                  message.role === "user"
-                    ? "ml-auto bg-[var(--canvas-theme-surface-soft)] font-medium text-[var(--canvas-theme-text)]"
-                    : "mr-auto bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
-                ].join(" ")}
-              >
-                {message.content}
+              <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
+                <div
+                  className={[
+                    "whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-5",
+                    message.role === "user"
+                      ? "bg-[var(--canvas-theme-surface-soft)] font-medium text-[var(--canvas-theme-text)]"
+                      : "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
+                  ].join(" ")}
+                >
+                  {message.content}
+                </div>
+                {message.role === "assistant" && message.results?.length ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {message.results
+                      .filter((result) => !dismissedAiResultIds.includes(result.id))
+                      .map((result) => (
+                        <div
+                          key={result.id}
+                          className="overflow-hidden rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]"
+                        >
+                          <div className="relative aspect-[4/3] overflow-hidden bg-[var(--canvas-theme-surface-muted)]">
+                            <Image src={result.imageUrl} alt={result.title} fill sizes="140px" className="object-cover" />
+                          </div>
+                          <div className="space-y-2 p-2.5">
+                            <div>
+                              <p className="truncate text-xs font-semibold text-[var(--canvas-theme-text)]">{result.title}</p>
+                              <p className="truncate text-[11px] text-[var(--canvas-theme-text-muted)]">
+                                {result.suggestedFolderTitle ?? "Uncategorized"}
+                              </p>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onAddAiResultToLibrary({
+                                    imageUrl: result.imageUrl,
+                                    prompt: result.prompt,
+                                    suggestedFolderTitle: result.suggestedFolderTitle,
+                                    title: result.title,
+                                    metadata: result.metadata,
+                                  });
+                                  onToast(`Added "${result.title}" to Library`);
+                                }}
+                                className="flex-1 rounded-full bg-[var(--canvas-theme-active)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--canvas-theme-active-text)]"
+                              >
+                                Add to Library
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDismissedAiResultIds((prev) => [...prev, result.id]);
+                                  onToast(`Skipped "${result.title}"`);
+                                }}
+                                className="rounded-full border border-[var(--canvas-theme-border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--canvas-theme-text-soft)]"
+                              >
+                                Skip
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
               </div>
             ))}
             <div ref={endRef} />

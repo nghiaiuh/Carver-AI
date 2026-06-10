@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, CircleDot, Menu, Zap } from "lucide-react";
 import type { AddedObject, CanvasNode, CanvasEdge, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
+import type { LibraryAsset } from "../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";
@@ -48,6 +49,8 @@ type CanvasBoardProps = {
   onSetActiveNode: (id: string) => void;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
+  pendingLibraryInsertAsset: LibraryAsset | null;
+  onConsumePendingLibraryInsert: () => void;
 };
 
 type DeletedNodeSnapshot = {
@@ -64,6 +67,8 @@ type ImageSourceMetadata = {
   mimeType?: string;
   sizeBytes?: number;
   name?: string;
+  role?: CanvasNode["role"];
+  preserveTitle?: boolean;
 };
 
 const MIN_ZOOM = 0.2;
@@ -199,6 +204,8 @@ export default function CanvasBoard({
   onSetActiveNode,
   canvasThemeColor,
   onCanvasThemeChange,
+  pendingLibraryInsertAsset,
+  onConsumePendingLibraryInsert,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -241,6 +248,7 @@ export default function CanvasBoard({
         const viewportCenterY = rect ? rect.height / 2 : 0;
         const pasteWorldCenterX = (viewportCenterX - pastePan.x) / pasteZoom;
         const pasteWorldCenterY = (viewportCenterY - pastePan.y) / pasteZoom;
+        const nodeRole = sourceMetadata.role ?? (isFirst ? "layout" : "reference");
         const newNode: CanvasNode = {
           id: `node-${Date.now()}-${prev.length}`,
           x: pasteWorldCenterX - nodeWidth / 2,
@@ -256,9 +264,9 @@ export default function CanvasBoard({
             quality: "original",
             ...sourceMetadata,
           },
-          title: isFirst ? "Site Photo" : title,
+          title: sourceMetadata.preserveTitle || !isFirst ? title : "Site Photo",
           prompt: null,
-          role: isFirst ? "layout" : "reference",
+          role: nodeRole,
         };
         return [...prev, newNode];
       });
@@ -293,6 +301,18 @@ export default function CanvasBoard({
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [addImageNode]);
+
+  useEffect(() => {
+    if (!pendingLibraryInsertAsset) return;
+
+    void addImageNode(pendingLibraryInsertAsset.src, pendingLibraryInsertAsset.title ?? "Library Asset", {
+      name: pendingLibraryInsertAsset.title,
+      role: "reference",
+      preserveTitle: true,
+    }).finally(() => {
+      onConsumePendingLibraryInsert();
+    });
+  }, [addImageNode, onConsumePendingLibraryInsert, pendingLibraryInsertAsset]);
 
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
