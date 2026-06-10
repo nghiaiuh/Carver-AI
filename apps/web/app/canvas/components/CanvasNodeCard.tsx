@@ -36,7 +36,6 @@ type CanvasNodeCardProps = {
   onSelectSketchGroup: (id: string) => void;
   onSelectContextMenu: (id: string, x: number, y: number) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
-  onHandlePointerDown: (id: string, e: React.PointerEvent) => void;
   onImageAction: (xPercent: number, yPercent: number) => void;
   onQuickEdit: () => void;
   onMultiAngle: () => void;
@@ -68,7 +67,6 @@ export default function CanvasNodeCard({
   onSelectSketchGroup,
   onSelectContextMenu,
   onDragStart,
-  onHandlePointerDown,
   onImageAction,
   onQuickEdit,
   onMultiAngle,
@@ -107,39 +105,6 @@ export default function CanvasNodeCard({
         onSelectContextMenu(node.id, event.clientX, event.clientY);
       }}
     >
-      {/* Top connection handles */}
-      <div
-        className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-white bg-[#D1D5DB] hover:bg-[#3B82F6] hover:scale-125 transition-transform cursor-crosshair opacity-0 group-hover:opacity-100 z-30"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onHandlePointerDown(node.id, e);
-        }}
-      />
-      {/* Right connection handles */}
-      <div
-        className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white bg-[#D1D5DB] hover:bg-[#3B82F6] hover:scale-125 transition-transform cursor-crosshair opacity-0 group-hover:opacity-100 z-30"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onHandlePointerDown(node.id, e);
-        }}
-      />
-      {/* Bottom connection handles */}
-      <div
-        className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-white bg-[#D1D5DB] hover:bg-[#3B82F6] hover:scale-125 transition-transform cursor-crosshair opacity-0 group-hover:opacity-100 z-30"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onHandlePointerDown(node.id, e);
-        }}
-      />
-      {/* Left connection handles */}
-      <div
-        className="absolute top-1/2 -left-2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white bg-[#D1D5DB] hover:bg-[#3B82F6] hover:scale-125 transition-transform cursor-crosshair opacity-0 group-hover:opacity-100 z-30"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onHandlePointerDown(node.id, e);
-        }}
-      />
-
       <div>
         <div 
           className={[
@@ -273,19 +238,9 @@ export default function CanvasNodeCard({
 
 function SelectionChrome({ label, size, viewportZoom }: { label: string; size: string; viewportZoom: number }) {
   const uiScale = 1 / viewportZoom;
-  const handleStyle = {
-    width: `${16 * uiScale}px`,
-    height: `${16 * uiScale}px`,
-    borderWidth: `${2 * uiScale}px`,
-    borderRadius: `${4 * uiScale}px`,
-  };
 
   return (
     <>
-      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, left: `${-6 * uiScale}px`, top: `${-6 * uiScale}px` }} />
-      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, right: `${-6 * uiScale}px`, top: `${-6 * uiScale}px` }} />
-      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, bottom: `${-6 * uiScale}px`, left: `${-6 * uiScale}px` }} />
-      <span className="absolute z-30 border-[#3B82F6] bg-white" style={{ ...handleStyle, right: `${-6 * uiScale}px`, bottom: `${-6 * uiScale}px` }} />
       <div
         className="absolute z-30 rounded-lg bg-[#3B82F6] px-2.5 py-1 text-xs font-black text-white"
         style={{ left: `${-4 * uiScale}px`, top: `${-34 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "top left" }}

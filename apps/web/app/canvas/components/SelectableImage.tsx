@@ -153,10 +153,6 @@ export default function SelectableImage({
 function SelectionChrome({ label, size }: { label: string; size: string }) {
   return (
     <>
-      <span className="absolute -left-1.5 -top-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white" />
-      <span className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white" />
-      <span className="absolute -bottom-1.5 -left-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white" />
-      <span className="absolute -bottom-1.5 -right-1.5 h-4 w-4 rounded border-2 border-[#3B82F6] bg-white" />
       <div className="absolute -left-1 top-[-34px] rounded-lg bg-[#3B82F6] px-2.5 py-1 text-xs font-black text-white">{label}</div>
       <div className="absolute -right-1 bottom-[-32px] rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-black text-[#667085] shadow-sm">{size}</div>
     </>

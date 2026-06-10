@@ -727,7 +727,6 @@ export default function CanvasBoard({
             onSelectSketchGroup={(id) => onSelectSketchGroup(id)}
             onSelectContextMenu={(id, x, y) => onSelect({ type: "node", id, menu: { x, y } })}
             onDragStart={handleNodePointerDown}
-            onHandlePointerDown={handleEdgePointerDown}
             onImageAction={onImageAction}
             onQuickEdit={onQuickEdit}
             onMultiAngle={onMultiAngle}
