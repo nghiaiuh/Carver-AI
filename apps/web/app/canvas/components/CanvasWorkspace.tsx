@@ -149,6 +149,8 @@ export type CanvasEdge = {
   label: string;
 };
 
+export type LeftSidebarPanelId = "library" | "adjust-render";
+
 const initialMarkers: Marker[] = [{ id: "marker-1", x: 58, y: 56, label: "Place koi pond here" }];
 const initialRegions: Region[] = [
   { id: "region-lock-1", x: 9, y: 10, w: 34, h: 19, label: "Keep unchanged", kind: "locked" },
@@ -158,6 +160,10 @@ const initialRegions: Region[] = [
 const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
 const DEFAULT_CANVAS_THEME = "#F5F5F5";
+const LEFT_SIDEBAR_PANEL_LABELS: Record<LeftSidebarPanelId, string> = {
+  library: "Library",
+  "adjust-render": "Adjust render",
+};
 
 export function inferObjectTypeFromTag(nameTag: string): LibraryAssetCategory {
   const normalized = nameTag
@@ -200,7 +206,11 @@ export default function CanvasWorkspace() {
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [leftSidebar, setLeftSidebar] = useState<{ open: boolean; panel: LeftSidebarPanelId }>({
+    open: true,
+    panel: "library",
+  });
+  const [miniMapOpen, setMiniMapOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
@@ -226,6 +236,21 @@ export default function CanvasWorkspace() {
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 1800);
+  };
+
+  const toggleLeftSidebarPanel = (panel: LeftSidebarPanelId) => {
+    setLeftSidebar((current) =>
+      current.open && current.panel === panel
+        ? { ...current, open: false }
+        : {
+            open: true,
+            panel,
+          },
+    );
+  };
+
+  const openLeftSidebar = () => {
+    setLeftSidebar((current) => ({ ...current, open: true }));
   };
 
   const handleTool = (tool: EditorTool) => {
@@ -422,8 +447,9 @@ export default function CanvasWorkspace() {
     <div ref={rootRef} className="min-h-screen bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]" style={canvasThemeStyle}>
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
-          {leftSidebarOpen ? (
+          {leftSidebar.open ? (
             <EditorLeftSidebar
+              panel={leftSidebar.panel}
               folders={library.folders}
               activeFolderId={library.activeFolderId}
               selectedAssetId={selectedLibraryAssetId}
@@ -439,14 +465,14 @@ export default function CanvasWorkspace() {
               }}
               onUploadAssets={uploadAssetsToFolder}
               onToast={showToast}
-              onClose={() => setLeftSidebarOpen(false)}
+              onClose={() => setLeftSidebar((current) => ({ ...current, open: false }))}
             />
           ) : (
             <button
               type="button"
-              onClick={() => setLeftSidebarOpen(true)}
+              onClick={openLeftSidebar}
               className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
-              title="Open layers"
+              title={`Open ${LEFT_SIDEBAR_PANEL_LABELS[leftSidebar.panel]}`}
             >
               <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -484,6 +510,10 @@ export default function CanvasWorkspace() {
             onSetActiveNode={setActiveNodeId}
             canvasThemeColor={canvasThemeColor}
             onCanvasThemeChange={setCanvasThemeColor}
+            activeLeftSidebarPanel={leftSidebar.open ? leftSidebar.panel : null}
+            onToggleLeftSidebarPanel={toggleLeftSidebarPanel}
+            miniMapOpen={miniMapOpen}
+            onToggleMiniMap={() => setMiniMapOpen((current) => !current)}
             pendingLibraryInsertAsset={pendingLibraryInsertAsset}
             onConsumePendingLibraryInsert={() => setPendingLibraryInsertAsset(null)}
           />
@@ -496,7 +526,7 @@ export default function CanvasWorkspace() {
               onAddAiResultToLibrary={(params) => {
                 const asset = library.addAiResultToLibrary(params);
                 setSelectedLibraryAssetId(asset.id);
-                setLeftSidebarOpen(true);
+                setLeftSidebar({ open: true, panel: "library" });
               }}
             />
           ) : (

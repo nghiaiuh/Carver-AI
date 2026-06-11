@@ -24,14 +24,18 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { EditorTool } from "./CanvasWorkspace";
+import type { EditorTool, LeftSidebarPanelId } from "./CanvasWorkspace";
 
 type BottomToolDockProps = {
   activeTool: EditorTool;
   gridVisible: boolean;
   zoom: number;
+  activeLeftSidebarPanel: LeftSidebarPanelId | null;
+  miniMapOpen: boolean;
   onTool: (tool: EditorTool) => void;
   onToggleGrid: () => void;
+  onToggleLeftSidebarPanel: (panel: LeftSidebarPanelId) => void;
+  onToggleMiniMap: () => void;
   onAddObject: () => void;
   onGenerate: () => void;
   onToast: (message: string) => void;
@@ -58,8 +62,12 @@ export default function BottomToolDock({
   activeTool,
   gridVisible,
   zoom,
+  activeLeftSidebarPanel,
+  miniMapOpen,
   onTool,
   onToggleGrid,
+  onToggleLeftSidebarPanel,
+  onToggleMiniMap,
   onAddObject,
   onGenerate,
   onToast,
@@ -160,8 +168,18 @@ export default function BottomToolDock({
       <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]">
         <div className="flex h-8 items-center gap-2 px-2">
           <DockIcon label="Theme" icon={Palette} onClick={() => setThemePickerOpen((value) => !value)} />
-          <DockIcon label="Library" icon={Library} onClick={() => onToast("Layers")} />
-          <DockIcon label="Mini map" icon={Map} onClick={() => onToast("Synced")} />
+          <DockIcon
+            label="Library"
+            icon={Library}
+            active={activeLeftSidebarPanel === "library"}
+            onClick={() => onToggleLeftSidebarPanel("library")}
+          />
+          <DockIcon
+            label="Mini map"
+            icon={Map}
+            active={miniMapOpen}
+            onClick={onToggleMiniMap}
+          />
         </div>
         <span className="h-5 w-px bg-[var(--canvas-theme-border-strong)]" aria-hidden="true" />
         <button
@@ -214,21 +232,27 @@ export default function BottomToolDock({
 function DockIcon({
   icon: Icon,
   label,
+  active,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
+  active?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       title={label}
+      aria-pressed={active}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
-      className="grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"
+      className={[
+        "grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]",
+        active ? "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-icon)]" : "",
+      ].join(" ")}
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>

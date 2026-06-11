@@ -7,10 +7,21 @@
 
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, CircleDot, Menu, Zap } from "lucide-react";
-import type { AddedObject, CanvasNode, CanvasEdge, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
+import type {
+  AddedObject,
+  CanvasEdge,
+  CanvasNode,
+  EditorTool,
+  LeftSidebarPanelId,
+  Marker,
+  Region,
+  SelectedItem,
+  SketchGroup,
+  SketchLine,
+} from "./CanvasWorkspace";
 import type { LibraryAsset } from "../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
@@ -49,6 +60,10 @@ type CanvasBoardProps = {
   onSetActiveNode: (id: string) => void;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
+  activeLeftSidebarPanel: LeftSidebarPanelId | null;
+  onToggleLeftSidebarPanel: (panel: LeftSidebarPanelId) => void;
+  miniMapOpen: boolean;
+  onToggleMiniMap: () => void;
   pendingLibraryInsertAsset: LibraryAsset | null;
   onConsumePendingLibraryInsert: () => void;
 };
@@ -80,9 +95,21 @@ const MAX_PASTED_IMAGE_HEIGHT = 320;
 const FALLBACK_PASTED_IMAGE_WIDTH = 240;
 const FALLBACK_PASTED_IMAGE_HEIGHT = 180;
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
+const MINIMAP_WORLD_PADDING = 48;
+const MINIMAP_DRAG_SPEED = 0.8;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function getNodeDisplayBounds(node: CanvasNode) {
+  const scale = node.scale ?? 1;
+  return {
+    x: node.x,
+    y: node.y,
+    width: node.width * scale,
+    height: node.height * scale,
+  };
 }
 
 function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLElement): Point {
@@ -204,6 +231,10 @@ export default function CanvasBoard({
   onSetActiveNode,
   canvasThemeColor,
   onCanvasThemeChange,
+  activeLeftSidebarPanel,
+  onToggleLeftSidebarPanel,
+  miniMapOpen,
+  onToggleMiniMap,
   pendingLibraryInsertAsset,
   onConsumePendingLibraryInsert,
 }: CanvasBoardProps) {
@@ -211,6 +242,7 @@ export default function CanvasBoard({
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const projectNameInputRef = useRef<HTMLInputElement>(null);
   const importImagesInputRef = useRef<HTMLInputElement>(null);
+  const miniMapFrameRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [viewport, setViewport] = useState<{ zoom: number; pan: Point }>({
     zoom: 1,
@@ -227,6 +259,11 @@ export default function CanvasBoard({
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("Untitled");
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
+  const [miniMapDragging, setMiniMapDragging] = useState(false);
+  const miniMapDragPointerId = useRef<number | null>(null);
+  const miniMapDragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -475,6 +512,37 @@ export default function CanvasBoard({
   }, [handleWheel]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    const miniMapFrame = miniMapFrameRef.current;
+    if (!container || !miniMapFrame || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      setContainerSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+      setMiniMapFrameSize({
+        width: miniMapFrame.clientWidth,
+        height: miniMapFrame.clientHeight,
+      });
+    });
+
+    observer.observe(container);
+    observer.observe(miniMapFrame);
+
+    setContainerSize({
+      width: container.clientWidth,
+      height: container.clientHeight,
+    });
+    setMiniMapFrameSize({
+      width: miniMapFrame.clientWidth,
+      height: miniMapFrame.clientHeight,
+    });
+
+    return () => observer.disconnect();
+  }, [miniMapOpen]);
+
+  useEffect(() => {
     return () => {
       if (wheelZoomTimeout.current) window.clearTimeout(wheelZoomTimeout.current);
     };
@@ -599,6 +667,112 @@ export default function CanvasBoard({
   const resetZoom = () => {
     setViewport({ zoom: 1, pan: { x: 0, y: 0 } });
   };
+
+  const miniMapModel = useMemo(() => {
+    const viewportWorldWidth = zoom > 0 ? containerSize.width / zoom : 0;
+    const viewportWorldHeight = zoom > 0 ? containerSize.height / zoom : 0;
+    const viewportWorldX = zoom > 0 ? -pan.x / zoom : 0;
+    const viewportWorldY = zoom > 0 ? -pan.y / zoom : 0;
+
+    const worldRects = nodes.map((node) => ({
+      id: node.id,
+      ...getNodeDisplayBounds(node),
+    }));
+
+    const minX = Math.min(viewportWorldX, ...worldRects.map((rect) => rect.x));
+    const minY = Math.min(viewportWorldY, ...worldRects.map((rect) => rect.y));
+    const maxX = Math.max(viewportWorldX + viewportWorldWidth, ...worldRects.map((rect) => rect.x + rect.width));
+    const maxY = Math.max(viewportWorldY + viewportWorldHeight, ...worldRects.map((rect) => rect.y + rect.height));
+
+    const worldWidth = Math.max(maxX - minX, 1);
+    const worldHeight = Math.max(maxY - minY, 1);
+
+    const paddedMinX = minX - MINIMAP_WORLD_PADDING;
+    const paddedMinY = minY - MINIMAP_WORLD_PADDING;
+    const paddedWidth = worldWidth + MINIMAP_WORLD_PADDING * 2;
+    const paddedHeight = worldHeight + MINIMAP_WORLD_PADDING * 2;
+
+    const scale =
+      miniMapFrameSize.width > 0 && miniMapFrameSize.height > 0
+        ? Math.min(miniMapFrameSize.width / paddedWidth, miniMapFrameSize.height / paddedHeight)
+        : 1;
+
+    const offsetX = (miniMapFrameSize.width - paddedWidth * scale) / 2;
+    const offsetY = (miniMapFrameSize.height - paddedHeight * scale) / 2;
+
+    return {
+      world: {
+        minX: paddedMinX,
+        minY: paddedMinY,
+        width: paddedWidth,
+        height: paddedHeight,
+      },
+      scale,
+      offsetX,
+      offsetY,
+      nodes: worldRects.map((rect) => ({
+        ...rect,
+        left: offsetX + (rect.x - paddedMinX) * scale,
+        top: offsetY + (rect.y - paddedMinY) * scale,
+        widthPx: Math.max(rect.width * scale, 6),
+        heightPx: Math.max(rect.height * scale, 6),
+      })),
+      viewportRect: {
+        left: offsetX + (viewportWorldX - paddedMinX) * scale,
+        top: offsetY + (viewportWorldY - paddedMinY) * scale,
+        width: viewportWorldWidth * scale,
+        height: viewportWorldHeight * scale,
+      },
+    };
+  }, [containerSize.height, containerSize.width, miniMapFrameSize.height, miniMapFrameSize.width, nodes, pan.x, pan.y, zoom]);
+
+  const handleMiniMapPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      miniMapDragPointerId.current = event.pointerId;
+      setMiniMapDragging(true);
+      miniMapDragStart.current = {
+        x: event.clientX,
+        y: event.clientY,
+        panX: pan.x,
+        panY: pan.y,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [pan.x, pan.y],
+  );
+
+  const handleMiniMapPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (miniMapDragPointerId.current !== event.pointerId) return;
+      const start = miniMapDragStart.current;
+      if (!start) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const dx = (event.clientX - start.x) * MINIMAP_DRAG_SPEED;
+      const dy = (event.clientY - start.y) * MINIMAP_DRAG_SPEED;
+      setViewport((prev) => ({
+        ...prev,
+        pan: {
+          x: start.panX - dx,
+          y: start.panY - dy,
+        },
+      }));
+    },
+    [],
+  );
+
+  const handleMiniMapPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (miniMapDragPointerId.current !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    miniMapDragPointerId.current = null;
+    setMiniMapDragging(false);
+    miniMapDragStart.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }, []);
 
   return (
     <section
@@ -764,7 +938,7 @@ export default function CanvasBoard({
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: "0 0",
           willChange: "transform",
-          transition: isWheelZooming || isPanningCanvas || draggingNodeId || draftEdge ? "none" : "transform 0.05s linear",
+          transition: "none",
         }}
       >
         <CanvasEdges 
@@ -813,15 +987,42 @@ export default function CanvasBoard({
         ))}
       </div>
 
-      <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
-        <div className="absolute inset-x-5 bottom-4 top-4 border-2 border-[var(--canvas-theme-border-strong)]" style={{ backgroundColor: "var(--canvas-theme-canvas)" }} />
-      </div>
+      {miniMapOpen ? (
+        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]">
+          <div
+            ref={miniMapFrameRef}
+            className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-white/80"
+            onPointerDown={handleMiniMapPointerDown}
+            onPointerMove={handleMiniMapPointerMove}
+            onPointerUp={handleMiniMapPointerUp}
+            onPointerCancel={handleMiniMapPointerUp}
+            style={{ cursor: miniMapDragging ? "grabbing" : "grab" }}
+          >
+            {miniMapModel.nodes.map((node) => (
+              <div
+                key={node.id}
+                className="absolute rounded-[2px] bg-[#D9D9D9]"
+                style={{
+                  left: node.left,
+                  top: node.top,
+                  width: node.widthPx,
+                  height: node.heightPx,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
       <BottomToolDock
         activeTool={activeTool}
         gridVisible={gridVisible}
         zoom={zoom}
+        activeLeftSidebarPanel={activeLeftSidebarPanel}
+        miniMapOpen={miniMapOpen}
         onTool={onTool}
         onToggleGrid={onToggleGrid}
+        onToggleLeftSidebarPanel={onToggleLeftSidebarPanel}
+        onToggleMiniMap={onToggleMiniMap}
         onAddObject={onAddObject}
         onGenerate={onGenerate}
         onToast={onToast}
