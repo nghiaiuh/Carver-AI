@@ -17,7 +17,7 @@ import {
   SlidersHorizontal,
   WandSparkles,
 } from "lucide-react";
-import type { EditorTool } from "./CanvasWorkspace";
+import type { EditorTool } from "../core/CanvasWorkspace";
 
 type FloatingQuickPanelProps = {
   viewportZoom?: number;

@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, Plus, Trash2 } from "lucide-react";
-import type { LibraryAsset } from "../types/library";
+import type { LibraryAsset } from "../../types/library";
 
 type LibraryAssetCardProps = {
   asset: LibraryAsset;

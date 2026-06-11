@@ -8,7 +8,7 @@
 "use client";
 
 import { Lock, PenLine } from "lucide-react";
-import type { Region } from "./CanvasWorkspace";
+import type { Region } from "../core/CanvasWorkspace";
 
 type RegionOverlayProps = {
   region: Region;

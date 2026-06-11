@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LibraryAsset } from "../types/library";
+import type { LibraryAsset } from "../../types/library";
 
 type EditorRightPanelProps = {
   draft: string;

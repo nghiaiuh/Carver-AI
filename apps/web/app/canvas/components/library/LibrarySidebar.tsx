@@ -2,7 +2,7 @@
 
 import { ChevronUp, FolderSearch, Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import type { LibraryAsset, LibraryFolder } from "../types/library";
+import type { LibraryAsset, LibraryFolder } from "../../types/library";
 import LibraryAssetGrid from "./LibraryAssetGrid";
 import LibraryFolderTabs from "./LibraryFolderTabs";
 

@@ -5,7 +5,7 @@
  * 3. Return the route UI for users.
  */
 
-import CanvasWorkspace from "./components/CanvasWorkspace";
+import CanvasWorkspace from "./components/core/CanvasWorkspace";
 
 export default function CanvasPage() {
   return <CanvasWorkspace />;

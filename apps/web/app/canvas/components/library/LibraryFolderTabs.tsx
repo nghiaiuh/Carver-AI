@@ -1,7 +1,7 @@
 "use client";
 
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { LibraryFolder } from "../types/library";
+import type { LibraryFolder } from "../../types/library";
 
 type LibraryFolderTabsProps = {
   folders: LibraryFolder[];

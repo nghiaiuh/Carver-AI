@@ -8,7 +8,7 @@
 "use client";
 
 import { ClipboardList } from "lucide-react";
-import type { AddedObject, LibraryAsset, Region, SketchGroup } from "./CanvasWorkspace";
+import type { AddedObject, LibraryAsset, Region, SketchGroup } from "../core/CanvasWorkspace";
 
 type SelectionBriefPanelProps = {
   target?: Region | SketchGroup | AddedObject;
@@ -64,4 +64,3 @@ export default function SelectionBriefPanel({ target, assets }: SelectionBriefPa
     </div>
   );
 }
-

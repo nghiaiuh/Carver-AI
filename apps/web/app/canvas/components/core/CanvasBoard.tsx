@@ -22,7 +22,7 @@ import type {
   SketchGroup,
   SketchLine,
 } from "./CanvasWorkspace";
-import type { LibraryAsset } from "../types/library";
+import type { LibraryAsset } from "../../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";

@@ -10,7 +10,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { Copy, ImagePlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import type { AddedObject, EditorTool, Marker, Region, SelectedItem } from "./CanvasWorkspace";
+import type { AddedObject, EditorTool, Marker, Region, SelectedItem } from "../core/CanvasWorkspace";
 import ContextualToolbar from "./ContextualToolbar";
 import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";

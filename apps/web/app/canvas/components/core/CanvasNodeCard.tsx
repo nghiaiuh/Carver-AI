@@ -10,11 +10,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
 import { ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
-import ContextualToolbar from "./ContextualToolbar";
-import FloatingQuickPanel from "./FloatingQuickPanel";
-import MarkerPin from "./MarkerPin";
-import RegionOverlay from "./RegionOverlay";
-import SketchLayer from "./SketchLayer";
+import ContextualToolbar from "../widgets/ContextualToolbar";
+import FloatingQuickPanel from "../widgets/FloatingQuickPanel";
+import MarkerPin from "../widgets/MarkerPin";
+import RegionOverlay from "../widgets/RegionOverlay";
+import SketchLayer from "../widgets/SketchLayer";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 

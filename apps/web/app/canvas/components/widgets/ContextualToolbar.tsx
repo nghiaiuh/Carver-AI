@@ -20,7 +20,7 @@ import {
   Sparkles,
   WandSparkles,
 } from "lucide-react";
-import type { EditorTool } from "./CanvasWorkspace";
+import type { EditorTool } from "../core/CanvasWorkspace";
 
 type ContextualToolbarProps = {
   itemLabel: "Image" | "Reference" | "Object";

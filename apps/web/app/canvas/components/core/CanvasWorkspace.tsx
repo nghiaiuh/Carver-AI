@@ -9,18 +9,18 @@
 
 import { useRef, useState } from "react";
 import { MessageSquare, PanelLeftOpen } from "lucide-react";
-import { gsap, useGSAP } from "../../components/gsapSetup";
-import { useCanvasLibrary } from "../hooks/useCanvasLibrary";
-import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
-import AddObjectMenu from "./AddObjectMenu";
+import { gsap, useGSAP } from "../../../components/gsapSetup";
+import { useCanvasLibrary } from "../../hooks/useCanvasLibrary";
+import type { LibraryAsset as CanvasLibraryAsset } from "../../types/library";
+import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import { buildCanvasThemeStyle } from "./canvasTheme";
-import EditorLeftSidebar from "./EditorLeftSidebar";
-import EditorRightPanel from "./EditorRightPanel";
-import GroupNameTagModal from "./GroupNameTagModal";
-import MultiAngleModal from "./MultiAngleModal";
-import QuickEditModal from "./QuickEditModal";
-import RealityCheckPanel from "./RealityCheckPanel";
+import EditorLeftSidebar from "../panels/EditorLeftSidebar";
+import EditorRightPanel from "../panels/EditorRightPanel";
+import GroupNameTagModal from "../panels/GroupNameTagModal";
+import MultiAngleModal from "../panels/MultiAngleModal";
+import QuickEditModal from "../panels/QuickEditModal";
+import RealityCheckPanel from "../panels/RealityCheckPanel";
 
 export type EditorTool =
   | "select"

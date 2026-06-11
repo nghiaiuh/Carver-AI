@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryAsset } from "../types/library";
+import type { LibraryAsset } from "../../types/library";
 import LibraryAssetCard from "./LibraryAssetCard";
 import LibraryEmptyState from "./LibraryEmptyState";
 
