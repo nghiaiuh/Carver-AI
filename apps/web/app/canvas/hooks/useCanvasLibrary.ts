@@ -5,10 +5,11 @@ import type { LibraryAsset, LibraryFolder } from "../types/library";
 
 const seedAssetCatalog = {
   treeA: "/assets/garden_3d_render.png",
-  treeB: "/assets/mark_generation.png",
-  stoneA: "/assets/canvas_texture.png",
-  penjingA: "/assets/garden_3d_render.png",
-  penjingB: "/assets/mark_generation.png",
+  treeB: "/assets/bonsai.png",
+  stoneA: "/assets/co_thach.png",
+  stoneB: "/assets/tai_meo.png",
+  penjingA: "/assets/urban_waterfall.png",
+  penjingB: "/assets/waterfall.png",
 } as const;
 
 function createId(prefix: string) {
@@ -59,25 +60,25 @@ function createSeedLibraryFolders(): LibraryFolder[] {
       createAsset({
         src: seedAssetCatalog.treeB,
         thumbnailSrc: seedAssetCatalog.treeB,
-        title: "Palm cluster",
-        prompt: "Palm cluster for warm courtyard composition",
+        title: "Bonsai",
+        prompt: "Bonsai for warm courtyard composition",
         source: "manual",
-        metadata: { speciesName: "Palm", categoryHint: "Tree", originalWidth: 1522, originalHeight: 1146 },
+        metadata: { speciesName: "Bonsai", categoryHint: "Tree", originalWidth: 1522, originalHeight: 1146 },
       }),
     ]),
     createFolderRecord("Stone", "user", [
       createAsset({
         src: seedAssetCatalog.stoneA,
         thumbnailSrc: seedAssetCatalog.stoneA,
-        title: "Moss stone texture",
+        title: "Đá cổ thạch",
         prompt: "Weathered stone slab with subtle moss cover",
         source: "manual",
         metadata: { categoryHint: "Stone", originalWidth: 1200, originalHeight: 900 },
       }),
       createAsset({
-        src: seedAssetCatalog.treeB,
-        thumbnailSrc: seedAssetCatalog.treeB,
-        title: "Pond edge boulder",
+        src: seedAssetCatalog.stoneB,
+        thumbnailSrc: seedAssetCatalog.stoneB,
+        title: "Đá tai mèo",
         prompt: "Rounded stone for koi pond edge transition",
         source: "manual",
         metadata: { categoryHint: "Stone", originalWidth: 1522, originalHeight: 1146 },

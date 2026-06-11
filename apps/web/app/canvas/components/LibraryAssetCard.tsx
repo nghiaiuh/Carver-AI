@@ -21,12 +21,20 @@ export default function LibraryAssetCard({
   onPreview,
 }: LibraryAssetCardProps) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
       onClick={onSelect}
       onDoubleClick={onAddToCanvas}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       className={[
-        "group relative overflow-hidden rounded-2xl border bg-slate-900/60 text-left transition",
+        "group relative overflow-hidden rounded-2xl border bg-slate-900/60 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
         selected ? "border-sky-300 shadow-[0_0_0_1px_rgba(125,211,252,0.65)]" : "border-white/8 hover:border-white/20",
       ].join(" ")}
     >
@@ -76,6 +84,6 @@ export default function LibraryAssetCard({
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
-    </button>
+    </div>
   );
 }
