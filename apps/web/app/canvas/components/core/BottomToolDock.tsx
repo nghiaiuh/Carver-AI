@@ -82,7 +82,7 @@ export default function BottomToolDock({
   return (
     <>
       {themePickerOpen ? (
-        <div className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
+        <div className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
           <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-5">
             <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">Theme</h2>
             <button
@@ -165,7 +165,7 @@ export default function BottomToolDock({
         </div>
       ) : null}
 
-      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]">
+      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]" data-canvas-ui="true">
         <div className="flex h-8 items-center gap-2 px-2">
           <DockIcon label="Theme" icon={Palette} onClick={() => setThemePickerOpen((value) => !value)} />
           <DockIcon
@@ -195,7 +195,7 @@ export default function BottomToolDock({
         </button>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-[0_2px_10px_var(--canvas-theme-shadow)] backdrop-blur">
+      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-[0_2px_10px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
         {tools.map((tool, index) => {
           const Icon = tool.icon;
           const selected = activeTool === tool.id || (tool.id === "grid" && gridVisible);

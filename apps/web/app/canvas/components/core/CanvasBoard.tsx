@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, CircleDot, Menu, Zap } from "lucide-react";
+import { ChevronDown, CircleDot, Download, Menu, Zap } from "lucide-react";
 import type {
   AddedObject,
   CanvasEdge,
@@ -78,6 +78,20 @@ type Point = {
   y: number;
 };
 
+type SelectionRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type MarqueeSelectionState = {
+  isSelecting: boolean;
+  startPoint: Point | null;
+  currentPoint: Point | null;
+  rect: SelectionRect | null;
+};
+
 type ImageSourceMetadata = {
   mimeType?: string;
   sizeBytes?: number;
@@ -97,6 +111,8 @@ const FALLBACK_PASTED_IMAGE_HEIGHT = 180;
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 const MINIMAP_WORLD_PADDING = 48;
 const MINIMAP_DRAG_SPEED = 0.8;
+const MARQUEE_SELECTION_THRESHOLD = 5;
+const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -112,13 +128,17 @@ function getNodeDisplayBounds(node: CanvasNode) {
   };
 }
 
-function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLElement): Point {
+function getPointerPointInContainer(event: PointerEvent | React.PointerEvent | WheelEvent, container: HTMLElement): Point {
   const rect = container.getBoundingClientRect();
 
   return {
     x: event.clientX - rect.left,
     y: event.clientY - rect.top,
   };
+}
+
+function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLElement): Point {
+  return getPointerPointInContainer(event, container);
 }
 
 function getNextPanForCursorZoom({
@@ -144,24 +164,51 @@ function getNextPanForCursorZoom({
 }
 
 function getWorldPointFromPointer({
-  clientX,
-  clientY,
-  container,
+  point,
   pan,
   zoom,
 }: {
-  clientX: number;
-  clientY: number;
-  container: HTMLElement;
+  point: Point;
   pan: Point;
   zoom: number;
 }): Point {
-  const rect = container.getBoundingClientRect();
-
   return {
-    x: (clientX - rect.left - pan.x) / zoom,
-    y: (clientY - rect.top - pan.y) / zoom,
+    x: (point.x - pan.x) / zoom,
+    y: (point.y - pan.y) / zoom,
   };
+}
+
+function createRectFromPoints(a: Point, b: Point): SelectionRect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(a.x - b.x),
+    height: Math.abs(a.y - b.y),
+  };
+}
+
+function doRectsIntersect(a: SelectionRect, b: SelectionRect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function isCanvasInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+
+  return Boolean(
+    target.closest(
+      [
+        "[data-canvas-ui]",
+        "[data-canvas-node-id]",
+        "[data-canvas-interactive='true']",
+        "button",
+        "input",
+        "textarea",
+        "select",
+        "[contenteditable='true']",
+        "[role='menu']",
+      ].join(","),
+    ),
+  );
 }
 
 function loadImageDimensions(imageUrl: string): Promise<{ width: number; height: number } | null> {
@@ -239,6 +286,7 @@ export default function CanvasBoard({
   onConsumePendingLibraryInsert,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
+  const worldLayerRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const projectNameInputRef = useRef<HTMLInputElement>(null);
   const importImagesInputRef = useRef<HTMLInputElement>(null);
@@ -252,7 +300,6 @@ export default function CanvasBoard({
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
-  const [isWheelZooming, setIsWheelZooming] = useState(false);
   const wheelZoomTimeout = useRef<number | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectName, setProjectName] = useState("Untitled");
@@ -264,6 +311,41 @@ export default function CanvasBoard({
   const [miniMapDragging, setMiniMapDragging] = useState(false);
   const miniMapDragPointerId = useRef<number | null>(null);
   const miniMapDragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const marqueePointerId = useRef<number | null>(null);
+  const suppressCanvasBackgroundClickRef = useRef(false);
+  const [marqueeSelectedNodeIds, setMarqueeSelectedNodeIds] = useState<string[] | null>(null);
+  const [marqueeSelection, setMarqueeSelection] = useState<MarqueeSelectionState>({
+    isSelecting: false,
+    startPoint: null,
+    currentPoint: null,
+    rect: null,
+  });
+  const selectedNodeIds = useMemo(
+    () => marqueeSelectedNodeIds ?? (selectedItem.type === "node" ? [selectedItem.id] : []),
+    [marqueeSelectedNodeIds, selectedItem],
+  );
+  const isMultiNodeSelection = selectedNodeIds.length >= MULTI_SELECT_TOOLBAR_MIN_SELECTION;
+  const multiSelectBounds = useMemo(() => {
+    if (!isMultiNodeSelection) return null;
+
+    const selectedRects = nodes
+      .filter((node) => selectedNodeIds.includes(node.id))
+      .map((node) => getNodeDisplayBounds(node));
+
+    if (selectedRects.length === 0) return null;
+
+    const minX = Math.min(...selectedRects.map((rect) => rect.x));
+    const minY = Math.min(...selectedRects.map((rect) => rect.y));
+    const maxX = Math.max(...selectedRects.map((rect) => rect.x + rect.width));
+    const maxY = Math.max(...selectedRects.map((rect) => rect.y + rect.height));
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }, [isMultiNodeSelection, nodes, selectedNodeIds]);
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -271,6 +353,16 @@ export default function CanvasBoard({
 
   // ── Edge Creation State ───────────────────────────────────────────────────
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
+
+  const clearMarqueeSelection = useCallback(() => {
+    setMarqueeSelection({
+      isSelecting: false,
+      startPoint: null,
+      currentPoint: null,
+      rect: null,
+    });
+    marqueePointerId.current = null;
+  }, []);
 
   const addImageNode = useCallback(
     async (imageUrl: string, title = "Pasted Image", sourceMetadata: ImageSourceMetadata = {}) => {
@@ -283,13 +375,16 @@ export default function CanvasBoard({
         const rect = containerRef.current?.getBoundingClientRect();
         const viewportCenterX = rect ? rect.width / 2 : 0;
         const viewportCenterY = rect ? rect.height / 2 : 0;
-        const pasteWorldCenterX = (viewportCenterX - pastePan.x) / pasteZoom;
-        const pasteWorldCenterY = (viewportCenterY - pastePan.y) / pasteZoom;
+        const pasteWorldCenter = getWorldPointFromPointer({
+          point: { x: viewportCenterX, y: viewportCenterY },
+          pan: pastePan,
+          zoom: pasteZoom,
+        });
         const nodeRole = sourceMetadata.role ?? (isFirst ? "layout" : "reference");
         const newNode: CanvasNode = {
           id: `node-${Date.now()}-${prev.length}`,
-          x: pasteWorldCenterX - nodeWidth / 2,
-          y: pasteWorldCenterY - nodeHeight / 2,
+          x: pasteWorldCenter.x - nodeWidth / 2,
+          y: pasteWorldCenter.y - nodeHeight / 2,
           width: nodeWidth,
           height: nodeHeight,
           scale: 1,
@@ -359,14 +454,12 @@ export default function CanvasBoard({
     const container = containerRef.current;
     if (!container) return;
 
-    setIsWheelZooming(true);
-
     if (wheelZoomTimeout.current) {
       window.clearTimeout(wheelZoomTimeout.current);
     }
 
     wheelZoomTimeout.current = window.setTimeout(() => {
-      setIsWheelZooming(false);
+      wheelZoomTimeout.current = null;
     }, 90);
 
     const cursor = getCursorPointRelativeToContainer(event, container);
@@ -390,23 +483,51 @@ export default function CanvasBoard({
     });
   }, []);
 
-  const handleMouseDown = useCallback(
-    (event: React.MouseEvent<HTMLElement>) => {
+  const handleCanvasPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
       const isMiddle = event.button === 1;
       const isSpace = (event.nativeEvent as unknown as { _spaceHeld?: boolean })._spaceHeld;
-      if (!isMiddle && !isSpace) return;
-      event.preventDefault();
-      isPanning.current = true;
-      setIsPanningCanvas(true);
-      panStart.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+      if (isMiddle || isSpace) {
+        event.preventDefault();
+        isPanning.current = true;
+        setIsPanningCanvas(true);
+        panStart.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+        return;
+      }
+
+      if (event.button !== 0) return;
+      if (activeTool !== "select") return;
+      if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
+      if (isCanvasInteractiveTarget(event.target)) return;
+
+      const container = containerRef.current;
+      if (!container) return;
+
+      const screenPoint = getPointerPointInContainer(event, container);
+      const startPoint = getWorldPointFromPointer({
+        point: screenPoint,
+        pan,
+        zoom,
+      });
+
+      marqueePointerId.current = event.pointerId;
+      setMarqueeSelection({
+        isSelecting: true,
+        startPoint,
+        currentPoint: startPoint,
+        rect: null,
+      });
+      event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [pan],
+    [activeTool, draftEdge, draggingNodeId, miniMapDragging, pan, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
   const handleNodePointerDown = (id: string, event: React.PointerEvent) => {
     const node = nodes.find(n => n.id === id);
     if (!node) return;
+    clearMarqueeSelection();
+    setMarqueeSelectedNodeIds(null);
     setDraggingNodeId(id);
     dragStart.current = {
       x: event.clientX,
@@ -427,6 +548,28 @@ export default function CanvasBoard({
       return;
     }
 
+    if (marqueeSelection.isSelecting && marqueeSelection.startPoint) {
+      const container = containerRef.current;
+      if (!container) return;
+      const screenPoint = getPointerPointInContainer(event, container);
+      const currentPoint = getWorldPointFromPointer({
+        point: screenPoint,
+        pan,
+        zoom,
+      });
+      const hasExceededThreshold =
+        Math.abs(currentPoint.x - marqueeSelection.startPoint.x) > MARQUEE_SELECTION_THRESHOLD / zoom ||
+        Math.abs(currentPoint.y - marqueeSelection.startPoint.y) > MARQUEE_SELECTION_THRESHOLD / zoom;
+
+      setMarqueeSelection({
+        isSelecting: true,
+        startPoint: marqueeSelection.startPoint,
+        currentPoint,
+        rect: hasExceededThreshold ? createRectFromPoints(marqueeSelection.startPoint, currentPoint) : null,
+      });
+      return;
+    }
+
     if (draggingNodeId && dragStart.current) {
       const dx = (event.clientX - dragStart.current.x) / zoom;
       const dy = (event.clientY - dragStart.current.y) / zoom;
@@ -440,10 +583,9 @@ export default function CanvasBoard({
     if (draftEdge) {
       const container = containerRef.current;
       if (!container) return;
+      const screenPoint = getPointerPointInContainer(event, container);
       const target = getWorldPointFromPointer({
-        clientX: event.clientX,
-        clientY: event.clientY,
-        container,
+        point: screenPoint,
         pan,
         zoom,
       });
@@ -451,9 +593,51 @@ export default function CanvasBoard({
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
     }
 
-  }, [zoom, pan, draggingNodeId, draftEdge, onNodesChange]);
+  }, [draftEdge, draggingNodeId, marqueeSelection, onNodesChange, pan, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
+    if (marqueeSelection.isSelecting && marqueeSelection.startPoint) {
+      const container = containerRef.current;
+      if (container) {
+        const screenPoint = getPointerPointInContainer(event, container);
+        const currentPoint = getWorldPointFromPointer({
+          point: screenPoint,
+          pan,
+          zoom,
+        });
+        const hasExceededThreshold =
+          Math.abs(currentPoint.x - marqueeSelection.startPoint.x) > MARQUEE_SELECTION_THRESHOLD / zoom ||
+          Math.abs(currentPoint.y - marqueeSelection.startPoint.y) > MARQUEE_SELECTION_THRESHOLD / zoom;
+
+        if (hasExceededThreshold) {
+          const rect = createRectFromPoints(marqueeSelection.startPoint, currentPoint);
+          const hitNodeIds = nodes
+            .filter((node) => doRectsIntersect(rect, getNodeDisplayBounds(node)))
+            .map((node) => node.id);
+          suppressCanvasBackgroundClickRef.current = true;
+
+          const nextSelectedNodeIds = event.shiftKey
+            ? Array.from(new Set([...selectedNodeIds, ...hitNodeIds]))
+            : hitNodeIds;
+
+          setMarqueeSelectedNodeIds(nextSelectedNodeIds);
+          if (nextSelectedNodeIds.length > 0) {
+            onSelect({ type: "node", id: nextSelectedNodeIds[0] });
+          } else if (!event.shiftKey) {
+            onSelect({ type: "none" });
+          }
+        } else if (!event.shiftKey) {
+          setMarqueeSelectedNodeIds(null);
+        }
+      }
+
+      if (marqueePointerId.current === event.pointerId && event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      clearMarqueeSelection();
+      return;
+    }
+
     isPanning.current = false;
     setIsPanningCanvas(false);
     panStart.current = null;
@@ -468,10 +652,9 @@ export default function CanvasBoard({
       // Alternatively, we calculate intersection
       const container = containerRef.current;
       if (container) {
+        const screenPoint = getPointerPointInContainer(event, container);
         const drop = getWorldPointFromPointer({
-          clientX: event.clientX,
-          clientY: event.clientY,
-          container,
+          point: screenPoint,
           pan,
           zoom,
         });
@@ -496,13 +679,14 @@ export default function CanvasBoard({
             label: "reference", // default role
           };
           onEdgesChange(prev => [...prev, newEdge]);
+          setMarqueeSelectedNodeIds(null);
           onSelect({ type: "edge", id: newEdge.id });
           onToast("Edge created");
         }
       }
       setDraftEdge(null);
     }
-  }, [draftEdge, nodes, zoom, pan, onEdgesChange, onSelect, onToast]);
+  }, [clearMarqueeSelection, draftEdge, marqueeSelection, nodes, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -646,6 +830,12 @@ export default function CanvasBoard({
       const target = event.target as HTMLElement | null;
       if (target?.closest("textarea,input,[contenteditable='true']")) return;
 
+      if (event.key === "Escape" && marqueeSelection.isSelecting) {
+        event.preventDefault();
+        clearMarqueeSelection();
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undoDeleteNode();
@@ -660,7 +850,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [deleteNode, selectedItem, undoDeleteNode]);
+  }, [clearMarqueeSelection, deleteNode, marqueeSelection.isSelecting, selectedItem, undoDeleteNode]);
 
   const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
@@ -778,16 +968,21 @@ export default function CanvasBoard({
     <section
       ref={containerRef}
       className="relative h-full flex-1 touch-none overflow-hidden"
-      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : "default" }}
-      onClick={(e) => {
-        // Only deselect if clicking on the background
-        if (e.target === e.currentTarget) {
-          onSelect({ type: "none" });
+      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : marqueeSelection.isSelecting ? "crosshair" : "default" }}
+      onClick={(event) => {
+        if (suppressCanvasBackgroundClickRef.current) {
+          suppressCanvasBackgroundClickRef.current = false;
+          return;
         }
+
+        if (isCanvasInteractiveTarget(event.target)) return;
+        setMarqueeSelectedNodeIds(null);
+        onSelect({ type: "none" });
       }}
-      onPointerDown={handleMouseDown}
+      onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
       <input
@@ -798,8 +993,8 @@ export default function CanvasBoard({
         className="hidden"
         onChange={(event) => importImages(event.target.files)}
       />
-      <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50">
-        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-[var(--canvas-theme-text-soft)]">
+      <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
+        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-[var(--canvas-theme-text-soft)]" data-canvas-ui="true">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
@@ -914,7 +1109,7 @@ export default function CanvasBoard({
         ) : null}
       </div>
 
-      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)]">
+      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)]" data-canvas-ui="true">
         <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <span>30</span>
         <button
@@ -933,6 +1128,7 @@ export default function CanvasBoard({
 
       {/* Zoomable + pannable canvas layer */}
       <div
+        ref={worldLayerRef}
         className="absolute inset-0"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -940,13 +1136,45 @@ export default function CanvasBoard({
           willChange: "transform",
           transition: "none",
         }}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       >
+        {isMultiNodeSelection && multiSelectBounds ? (
+          <MultiSelectToolbar
+            x={multiSelectBounds.x + multiSelectBounds.width / 2}
+            y={multiSelectBounds.y}
+            viewportZoom={zoom}
+            onAutoLayout={() => onToast("Auto Layout applied")}
+            onGroup={() => onToast("Group action coming soon")}
+            onUngroup={() => onToast("Ungroup action coming soon")}
+            onMerge={() => onToast("Merge action coming soon")}
+            onDownload={() => onToast("Download selection mock")}
+          />
+        ) : null}
+
+        {marqueeSelection.rect ? (
+          <div
+            className="pointer-events-none absolute border border-blue-400/80 bg-blue-400/10"
+            style={{
+              left: marqueeSelection.rect.x,
+              top: marqueeSelection.rect.y,
+              width: marqueeSelection.rect.width,
+              height: marqueeSelection.rect.height,
+              zIndex: 70,
+            }}
+          />
+        ) : null}
+
         <CanvasEdges 
           nodes={nodes} 
           edges={edges} 
           selectedEdgeId={selectedItem.type === "edge" ? selectedItem.id : null}
           onEdgeClick={(id, e) => {
             e.stopPropagation();
+            setMarqueeSelectedNodeIds(null);
             onSelect({ type: "edge", id });
           }}
           draftEdge={draftEdge}
@@ -956,7 +1184,8 @@ export default function CanvasBoard({
           <CanvasNodeCard
             key={node.id}
             node={node}
-            selected={selectedItem.type === "node" && selectedItem.id === node.id}
+            selected={selectedNodeIds.includes(node.id)}
+            showSelectionTools={!isMultiNodeSelection}
             selectedItem={selectedItem}
             activeTool={activeTool}
             markers={markers}
@@ -967,12 +1196,24 @@ export default function CanvasBoard({
             selectedSketchLineIds={selectedSketchLineIds}
             activeNodeId={activeNodeId}
             viewportZoom={zoom}
-            onSelect={(id) => onSelect({ type: "node", id })}
-            onSelectOverlay={(item) => onSelect(item)}
+            onSelect={(id) => {
+              setMarqueeSelectedNodeIds(null);
+              onSelect({ type: "node", id });
+            }}
+            onSelectOverlay={(item) => {
+              setMarqueeSelectedNodeIds(null);
+              onSelect(item);
+            }}
             onAddSketchLine={onAddSketchLine}
             onSelectSketchLine={onSelectSketchLine}
-            onSelectSketchGroup={(id) => onSelectSketchGroup(id)}
-            onSelectContextMenu={(id, x, y) => onSelect({ type: "node", id, menu: { x, y } })}
+            onSelectSketchGroup={(id) => {
+              setMarqueeSelectedNodeIds(null);
+              onSelectSketchGroup(id);
+            }}
+            onSelectContextMenu={(id, x, y) => {
+              setMarqueeSelectedNodeIds(null);
+              onSelect({ type: "node", id, menu: { x, y } });
+            }}
             onDragStart={handleNodePointerDown}
             onImageAction={onImageAction}
             onQuickEdit={onQuickEdit}
@@ -988,7 +1229,7 @@ export default function CanvasBoard({
       </div>
 
       {miniMapOpen ? (
-        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]">
+        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]" data-canvas-ui="true">
           <div
             ref={miniMapFrameRef}
             className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-white/80"
@@ -1034,7 +1275,7 @@ export default function CanvasBoard({
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (
-        <div className="output-tray absolute bottom-7 right-7 z-40 flex max-w-[440px] gap-3 overflow-x-auto rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur">
+        <div className="output-tray absolute bottom-7 right-7 z-40 flex max-w-[440px] gap-3 overflow-x-auto rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
           {[...mockConcepts, ...angleResults].map((item, index) => (
             <div key={`${item}-${index}`} className="output-thumb w-28 shrink-0 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
               <div className="h-20 bg-[linear-gradient(135deg,rgba(109,93,251,.22),#fff_54%,rgba(34,197,94,.16))]" />
@@ -1054,6 +1295,68 @@ type MenuItem = {
   tone?: "danger";
   onSelect?: () => void;
 };
+
+function MultiSelectToolbar({
+  x,
+  y,
+  viewportZoom = 1,
+  onAutoLayout,
+  onGroup,
+  onUngroup,
+  onMerge,
+  onDownload,
+}: {
+  x: number;
+  y: number;
+  viewportZoom?: number;
+  onAutoLayout: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
+  onMerge: () => void;
+  onDownload: () => void;
+}) {
+  const uiScale = 1 / viewportZoom;
+  const actions = [
+    { label: "Auto Layout", icon: Menu, onClick: onAutoLayout },
+    { label: "Group", icon: CircleDot, onClick: onGroup },
+    { label: "Ungroup", icon: CircleDot, onClick: onUngroup },
+    { label: "Merge", icon: Zap, onClick: onMerge },
+    { label: "Download", icon: Download, onClick: onDownload },
+  ] as const;
+
+  return (
+    <div
+      data-canvas-ui="true"
+      className="contextual-toolbar absolute z-[100] flex items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
+      style={{
+        left: x,
+        top: y - 62 * uiScale,
+        transform: `translateX(-50%) scale(${uiScale})`,
+        transformOrigin: "top center",
+      }}
+    >
+      {actions.map((action) => {
+        const Icon = action.icon;
+
+        return (
+          <button
+            key={action.label}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              action.onClick();
+            }}
+            className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-bold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+          >
+            <Icon className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+            <span>{action.label}</span>
+            {action.label !== "Auto Layout" ? <ChevronDown className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function MenuSection({
   items,

@@ -63,7 +63,12 @@ export default function CanvasEdges({
         const midY = (sourceCenter.y + targetCenter.y) / 2;
 
         return (
-          <g key={edge.id} className="group pointer-events-auto cursor-pointer" onClick={(e) => onEdgeClick(edge.id, e)}>
+          <g
+            key={edge.id}
+            data-canvas-interactive="true"
+            className="group pointer-events-auto cursor-pointer"
+            onClick={(e) => onEdgeClick(edge.id, e)}
+          >
             {/* Invisible thick path for easier hovering/clicking */}
             <path d={pathData} fill="none" stroke="transparent" strokeWidth="20" />
             

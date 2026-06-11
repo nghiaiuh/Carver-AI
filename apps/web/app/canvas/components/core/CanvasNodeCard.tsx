@@ -59,6 +59,7 @@ function getContainedRect({
 type CanvasNodeCardProps = {
   node: CanvasNode;
   selected: boolean;
+  showSelectionTools?: boolean;
   selectedItem: SelectedItem;
   activeTool: EditorTool;
   markers: Marker[];
@@ -90,6 +91,7 @@ type CanvasNodeCardProps = {
 export default function CanvasNodeCard({
   node,
   selected,
+  showSelectionTools = true,
   selectedItem,
   activeTool,
   markers,
@@ -126,6 +128,7 @@ export default function CanvasNodeCard({
 
   return (
     <div
+      data-canvas-node-id={node.id}
       className="absolute select-none bg-transparent group"
       style={{
         left: node.x,
@@ -254,7 +257,7 @@ export default function CanvasNodeCard({
       </div>
 
       {/* Selection Chrome & Toolbars (Show only when this node card is selected) */}
-      {selected ? (
+      {selected && showSelectionTools ? (
         <div className="absolute inset-0 z-[120] pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
           <div className="pointer-events-auto">
           <ContextualToolbar
