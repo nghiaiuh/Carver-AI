@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import {
   Box,
   Grid3X3,
+  Circle,
   ImagePlus,
   Library,
   Map,
@@ -25,6 +26,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EditorTool, LeftSidebarPanelId } from "./CanvasWorkspace";
+import type { PenSettings } from "./CanvasWorkspace";
+import PenSettingsPopover from "../canvas/PenSettingsPopover";
 
 type BottomToolDockProps = {
   activeTool: EditorTool;
@@ -44,6 +47,8 @@ type BottomToolDockProps = {
   onResetZoom: () => void;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
+  penSettings: PenSettings;
+  onPenSettingsChange: (settings: PenSettings) => void;
 };
 
 const tools = [
@@ -74,9 +79,12 @@ export default function BottomToolDock({
   onResetZoom,
   canvasThemeColor,
   onCanvasThemeChange,
+  penSettings,
+  onPenSettingsChange,
 }: BottomToolDockProps) {
   const zoomLabel = `${Math.round(zoom * 100)}%`;
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [penPopoverOpen, setPenPopoverOpen] = useState(false);
   const themeSwatches = useMemo(() => ["#F5F5F5", "#000000", "#FFFFFF", "#14532D", "#1E1B4B", "#DDD0F5"], []);
 
   return (
@@ -165,6 +173,14 @@ export default function BottomToolDock({
         </div>
       ) : null}
 
+      {activeTool === "pen" && penPopoverOpen ? (
+        <PenSettingsPopover
+          settings={penSettings}
+          onChange={onPenSettingsChange}
+          onClose={() => setPenPopoverOpen(false)}
+        />
+      ) : null}
+
       <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]" data-canvas-ui="true">
         <div className="flex h-8 items-center gap-2 px-2">
           <DockIcon label="Theme" icon={Palette} onClick={() => setThemePickerOpen((value) => !value)} />
@@ -225,6 +241,37 @@ export default function BottomToolDock({
           );
         })}
       </div>
+
+      {activeTool === "pen" ? (
+        <div className="absolute bottom-[68px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[20px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_10px_28px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setPenPopoverOpen((value) => !value);
+            }}
+            className="flex items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-2 py-1.5 text-sm font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+            title="Open pen settings"
+          >
+            <span
+              className="h-6 w-6 rounded-full border border-white shadow-[0_0_0_1px_rgba(17,24,39,0.12)]"
+              style={{ backgroundColor: penSettings.color, opacity: penSettings.opacity }}
+            />
+            <Circle className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" />
+          </button>
+          <div className="flex items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--canvas-theme-text)]">
+            <span
+              className="inline-block rounded-full bg-[var(--canvas-theme-text)]"
+              style={{
+                width: `${Math.max(penSettings.strokeWidth * 1.6, 18)}px`,
+                height: `${Math.max(Math.min(penSettings.strokeWidth, 12), 2)}px`,
+              }}
+            />
+            <span>{penSettings.strokeWidth}</span>
+            <span className="text-[var(--canvas-theme-text-muted)]">Px</span>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

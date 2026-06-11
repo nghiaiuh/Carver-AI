@@ -46,6 +46,7 @@ export type SelectedItem =
   | { type: "object"; id: string }
   | { type: "sketchLine"; id: string }
   | { type: "sketchGroup"; id: string }
+  | { type: "pen-stroke"; id: string }
   | { type: "libraryAsset"; id: string }
   | { type: "node"; id: string; menu?: { x: number; y: number } }
   | { type: "edge"; id: string };
@@ -82,6 +83,22 @@ export type AddedObject = {
 export type SketchPoint = {
   x: number;
   y: number;
+};
+
+export type PenSettings = {
+  color: string;
+  opacity: number;
+  strokeWidth: number;
+};
+
+export type PenStrokeObject = {
+  id: string;
+  type: "pen-stroke";
+  points: SketchPoint[];
+  color: string;
+  opacity: number;
+  strokeWidth: number;
+  createdAt: string;
 };
 
 export type SketchLine = {
@@ -160,6 +177,11 @@ const initialRegions: Region[] = [
 const initialNodes: CanvasNode[] = [];
 const initialEdges: CanvasEdge[] = [];
 const DEFAULT_CANVAS_THEME = "#F5F5F5";
+const DEFAULT_PEN_SETTINGS: PenSettings = {
+  color: "#000000",
+  opacity: 1,
+  strokeWidth: 10,
+};
 const LEFT_SIDEBAR_PANEL_LABELS: Record<LeftSidebarPanelId, string> = {
   library: "Library",
   "adjust-render": "Adjust render",
@@ -197,6 +219,8 @@ export default function CanvasWorkspace() {
   ]);
   const [sketchLines, setSketchLines] = useState<SketchLine[]>([]);
   const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
+  const [penStrokes, setPenStrokes] = useState<PenStrokeObject[]>([]);
+  const [penSettings, setPenSettings] = useState<PenSettings>(DEFAULT_PEN_SETTINGS);
   const [selectedSketchLineIds, setSelectedSketchLineIds] = useState<string[]>([]);
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
   const [nodes, setNodes] = useState<CanvasNode[]>(initialNodes);
@@ -263,6 +287,17 @@ export default function CanvasWorkspace() {
     if (item.type !== "sketchLine") {
       setSelectedSketchLineIds([]);
     }
+  };
+
+  const addPenStroke = (stroke: PenStrokeObject) => {
+    setPenStrokes((items) => [...items, stroke]);
+    setSelectedItem({ type: "pen-stroke", id: stroke.id });
+    setSelectedSketchLineIds([]);
+  };
+
+  const deletePenStroke = (strokeId: string) => {
+    setPenStrokes((items) => items.filter((stroke) => stroke.id !== strokeId));
+    setSelectedItem((current) => (current.type === "pen-stroke" && current.id === strokeId ? { type: "none" } : current));
   };
 
   const handleImageAction = (x: number, y: number) => {
@@ -492,8 +527,13 @@ export default function CanvasWorkspace() {
             onImageAction={handleImageAction}
             sketchLines={sketchLines}
             sketchGroups={sketchGroups}
+            penStrokes={penStrokes}
+            penSettings={penSettings}
             selectedSketchLineIds={selectedSketchLineIds}
             onAddSketchLine={addSketchLine}
+            onAddPenStroke={addPenStroke}
+            onDeletePenStroke={deletePenStroke}
+            onPenSettingsChange={setPenSettings}
             onSelectSketchLine={selectSketchLine}
             onSelectSketchGroup={(id) => handleSelectItem({ type: "sketchGroup", id })}
             onTool={handleTool}

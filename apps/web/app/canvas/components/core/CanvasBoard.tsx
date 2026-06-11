@@ -17,6 +17,8 @@ import type {
   EditorTool,
   LeftSidebarPanelId,
   Marker,
+  PenSettings,
+  PenStrokeObject,
   Region,
   SelectedItem,
   SketchGroup,
@@ -26,6 +28,7 @@ import type { LibraryAsset } from "../../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";
+import PenStrokeLayer from "../widgets/PenStrokeLayer";
 
 type CanvasBoardProps = {
   selectedItem: SelectedItem;
@@ -36,6 +39,8 @@ type CanvasBoardProps = {
   addedObjects: AddedObject[];
   sketchLines: SketchLine[];
   sketchGroups: SketchGroup[];
+  penStrokes: PenStrokeObject[];
+  penSettings: PenSettings;
   selectedSketchLineIds: string[];
   nodes: CanvasNode[];
   edges: CanvasEdge[];
@@ -44,6 +49,9 @@ type CanvasBoardProps = {
   onSelect: (item: SelectedItem) => void;
   onImageAction: (xPercent: number, yPercent: number) => void;
   onAddSketchLine: (line: SketchLine) => void;
+  onAddPenStroke: (stroke: PenStrokeObject) => void;
+  onDeletePenStroke: (strokeId: string) => void;
+  onPenSettingsChange: (settings: PenSettings) => void;
   onSelectSketchLine: (id: string, additive: boolean) => void;
   onSelectSketchGroup: (id: string) => void;
   onTool: (tool: EditorTool) => void;
@@ -113,6 +121,7 @@ const MINIMAP_WORLD_PADDING = 48;
 const MINIMAP_DRAG_SPEED = 0.8;
 const MARQUEE_SELECTION_THRESHOLD = 5;
 const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
+const MIN_POINT_DISTANCE = 1.5;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -176,6 +185,10 @@ function getWorldPointFromPointer({
     x: (point.x - pan.x) / zoom,
     y: (point.y - pan.y) / zoom,
   };
+}
+
+function distance(a: Point, b: Point) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function createRectFromPoints(a: Point, b: Point): SelectionRect {
@@ -254,6 +267,8 @@ export default function CanvasBoard({
   addedObjects,
   sketchLines,
   sketchGroups,
+  penStrokes,
+  penSettings,
   selectedSketchLineIds,
   nodes,
   edges,
@@ -262,6 +277,9 @@ export default function CanvasBoard({
   onSelect,
   onImageAction,
   onAddSketchLine,
+  onAddPenStroke,
+  onDeletePenStroke,
+  onPenSettingsChange,
   onSelectSketchLine,
   onSelectSketchGroup,
   onTool,
@@ -350,6 +368,8 @@ export default function CanvasBoard({
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const dragStart = useRef<{ x: number; y: number; nodeX: number; nodeY: number } | null>(null);
+  const penPointerId = useRef<number | null>(null);
+  const [draftPenStroke, setDraftPenStroke] = useState<PenStrokeObject | null>(null);
 
   // ── Edge Creation State ───────────────────────────────────────────────────
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
@@ -362,6 +382,11 @@ export default function CanvasBoard({
       rect: null,
     });
     marqueePointerId.current = null;
+  }, []);
+
+  const cancelDraftPenStroke = useCallback(() => {
+    setDraftPenStroke(null);
+    penPointerId.current = null;
   }, []);
 
   const addImageNode = useCallback(
@@ -496,6 +521,34 @@ export default function CanvasBoard({
       }
 
       if (event.button !== 0) return;
+      if (activeTool === "pen") {
+        event.stopPropagation();
+        if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
+        if (isCanvasInteractiveTarget(event.target)) return;
+
+        const container = containerRef.current;
+        if (!container) return;
+
+        const screenPoint = getPointerPointInContainer(event, container);
+        const startPoint = getWorldPointFromPointer({
+          point: screenPoint,
+          pan,
+          zoom,
+        });
+
+        penPointerId.current = event.pointerId;
+        setDraftPenStroke({
+          id: `pen-stroke-${Date.now()}`,
+          type: "pen-stroke",
+          points: [startPoint],
+          color: penSettings.color,
+          opacity: penSettings.opacity,
+          strokeWidth: penSettings.strokeWidth,
+          createdAt: new Date().toISOString(),
+        });
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
       if (activeTool !== "select") return;
       if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
       if (isCanvasInteractiveTarget(event.target)) return;
@@ -519,7 +572,7 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, draftEdge, draggingNodeId, miniMapDragging, pan, zoom],
+    [activeTool, draftEdge, draggingNodeId, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
@@ -545,6 +598,33 @@ export default function CanvasBoard({
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
       setViewport((prev) => ({ ...prev, pan: { x: start.panX + dx, y: start.panY + dy } }));
+      return;
+    }
+
+    if (activeTool === "pen" && draftPenStroke && penPointerId.current === event.pointerId) {
+      event.stopPropagation();
+      const container = containerRef.current;
+      if (!container) return;
+      const screenPoint = getPointerPointInContainer(event, container);
+      const currentPoint = getWorldPointFromPointer({
+        point: screenPoint,
+        pan,
+        zoom,
+      });
+
+      setDraftPenStroke((currentStroke) => {
+        if (!currentStroke) return currentStroke;
+
+        const lastPoint = currentStroke.points[currentStroke.points.length - 1];
+        if (distance(lastPoint, currentPoint) < MIN_POINT_DISTANCE) {
+          return currentStroke;
+        }
+
+        return {
+          ...currentStroke,
+          points: [...currentStroke.points, currentPoint],
+        };
+      });
       return;
     }
 
@@ -593,9 +673,29 @@ export default function CanvasBoard({
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
     }
 
-  }, [draftEdge, draggingNodeId, marqueeSelection, onNodesChange, pan, zoom]);
+  }, [activeTool, draftEdge, draftPenStroke, draggingNodeId, marqueeSelection, onNodesChange, pan, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
+    if (activeTool === "pen" && penPointerId.current === event.pointerId) {
+      event.stopPropagation();
+      if (draftPenStroke && draftPenStroke.points.length > 0) {
+        onAddPenStroke(
+          draftPenStroke.points.length === 1
+            ? {
+                ...draftPenStroke,
+                points: [...draftPenStroke.points, draftPenStroke.points[0]],
+              }
+            : draftPenStroke,
+        );
+      }
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      cancelDraftPenStroke();
+      return;
+    }
+
     if (marqueeSelection.isSelecting && marqueeSelection.startPoint) {
       const container = containerRef.current;
       if (container) {
@@ -686,7 +786,7 @@ export default function CanvasBoard({
       }
       setDraftEdge(null);
     }
-  }, [clearMarqueeSelection, draftEdge, marqueeSelection, nodes, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
+  }, [activeTool, cancelDraftPenStroke, clearMarqueeSelection, draftEdge, draftPenStroke, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -836,6 +936,12 @@ export default function CanvasBoard({
         return;
       }
 
+      if (event.key === "Escape" && draftPenStroke) {
+        event.preventDefault();
+        cancelDraftPenStroke();
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undoDeleteNode();
@@ -843,14 +949,21 @@ export default function CanvasBoard({
       }
 
       if (event.key !== "Delete" && event.key !== "Backspace") return;
-      if (selectedItem.type !== "node") return;
       event.preventDefault();
-      deleteNode(selectedItem.id);
+      if (selectedItem.type === "node") {
+        deleteNode(selectedItem.id);
+        return;
+      }
+
+      if (selectedItem.type === "pen-stroke") {
+        onDeletePenStroke(selectedItem.id);
+        onSelect({ type: "none" });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clearMarqueeSelection, deleteNode, marqueeSelection.isSelecting, selectedItem, undoDeleteNode]);
+  }, [cancelDraftPenStroke, clearMarqueeSelection, deleteNode, draftPenStroke, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, selectedItem, undoDeleteNode]);
 
   const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
@@ -968,7 +1081,7 @@ export default function CanvasBoard({
     <section
       ref={containerRef}
       className="relative h-full flex-1 touch-none overflow-hidden"
-      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : marqueeSelection.isSelecting ? "crosshair" : "default" }}
+      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
       onClick={(event) => {
         if (suppressCanvasBackgroundClickRef.current) {
           suppressCanvasBackgroundClickRef.current = false;
@@ -1136,11 +1249,6 @@ export default function CanvasBoard({
           willChange: "transform",
           transition: "none",
         }}
-        onPointerDown={handleCanvasPointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onPointerLeave={handlePointerUp}
       >
         {isMultiNodeSelection && multiSelectBounds ? (
           <MultiSelectToolbar
@@ -1178,6 +1286,17 @@ export default function CanvasBoard({
             onSelect({ type: "edge", id });
           }}
           draftEdge={draftEdge}
+        />
+
+        <PenStrokeLayer
+          strokes={penStrokes}
+          draftStroke={draftPenStroke}
+          activeTool={activeTool}
+          selectedStrokeId={selectedItem.type === "pen-stroke" ? selectedItem.id : null}
+          onSelectStroke={(strokeId) => {
+            setMarqueeSelectedNodeIds(null);
+            onSelect({ type: "pen-stroke", id: strokeId });
+          }}
         />
 
         {nodes.map(node => (
@@ -1226,6 +1345,17 @@ export default function CanvasBoard({
             onDelete={deleteNode}
           />
         ))}
+
+        {activeTool === "pen" ? (
+          <div
+            className="absolute inset-0 z-[90] cursor-crosshair"
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+          />
+        ) : null}
       </div>
 
       {miniMapOpen ? (
@@ -1272,6 +1402,8 @@ export default function CanvasBoard({
         onResetZoom={resetZoom}
         canvasThemeColor={canvasThemeColor}
         onCanvasThemeChange={onCanvasThemeChange}
+        penSettings={penSettings}
+        onPenSettingsChange={onPenSettingsChange}
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (
