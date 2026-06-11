@@ -519,15 +519,11 @@ export default function CanvasWorkspace() {
           />
           {rightPanelOpen ? (
             <EditorRightPanel
+              canvasId="canvas-main"
               draft={promptText}
               onDraftChange={setPromptText}
               onClose={() => setRightPanelOpen(false)}
               onToast={showToast}
-              onAddAiResultToLibrary={(params) => {
-                const asset = library.addAiResultToLibrary(params);
-                setSelectedLibraryAssetId(asset.id);
-                setLeftSidebar({ open: true, panel: "library" });
-              }}
             />
           ) : (
             <button

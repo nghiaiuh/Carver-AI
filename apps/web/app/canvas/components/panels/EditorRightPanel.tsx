@@ -1,45 +1,31 @@
 /*
- * Flow: Renders the Lovart-style chat panel.
- * 1. Show a compact chat header with quick actions.
- * 2. Offer centered Carver skills before messages exist.
- * 3. Keep the composer anchored at the bottom with image paste support.
+ * Flow: Renders the canvas AI chat panel.
+ * 1. Load persisted chat history for the current canvas.
+ * 2. Let the user send messages to the backend chat route.
+ * 3. Show assistant replies, loading states, and friendly errors inline.
  */
 
 "use client";
 
 import {
   ArrowRight,
-  BookOpen,
-  Bot,
-  Box,
-  ChevronDown,
-  CircleDollarSign,
-  Lightbulb,
-  Mic,
+  LoaderCircle,
+  Paperclip,
   Plus,
-  Share2,
-  Sparkles,
-  Store,
-  Video,
+  SendHorizontal,
   X,
   type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LibraryAsset } from "../../types/library";
 
 type EditorRightPanelProps = {
+  canvasId?: string;
+  projectId?: string;
   draft: string;
   onDraftChange: (value: string) => void;
   onClose: () => void;
   onToast: (message: string) => void;
-  onAddAiResultToLibrary: (params: {
-    imageUrl: string;
-    prompt?: string;
-    suggestedFolderTitle?: string;
-    title?: string;
-    metadata?: LibraryAsset["metadata"];
-  }) => void;
 };
 
 type PromptAttachment = {
@@ -48,91 +34,130 @@ type PromptAttachment = {
   url: string;
 };
 
-type AiResultItem = {
-  id: string;
-  imageUrl: string;
-  title: string;
-  suggestedFolderTitle?: string;
-  prompt?: string;
-  metadata?: LibraryAsset["metadata"];
-};
-
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  results?: AiResultItem[];
+  createdAt: string;
+  status?: "error";
 };
 
-const skills = [
-  { label: "Seedance 2.0 Video Creation", icon: Video, tone: "purple" },
-  { label: "One-shot Video", icon: Video, tone: "purple" },
-  { label: "Instagram Post", icon: Sparkles, tone: "blue" },
-  { label: "Cross-Platform Repurposer", icon: Sparkles, tone: "blue" },
-  { label: "Logo Design", icon: Store, tone: "orange" },
-  { label: "UGC: Lifestyle Try-on", icon: Store, tone: "pink" },
-  { label: "AI Stylist: High-Conversion Looks", icon: Store, tone: "pink" },
-  { label: "All Skills", icon: BookOpen, tone: "slate" },
-] as const;
+type ChatRouteMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  projectId?: string;
+  canvasId?: string;
+};
 
-const aiResultImagePool = ["/assets/garden_3d_render.png", "/assets/mark_generation.png", "/assets/canvas_texture.png"] as const;
+const DEFAULT_CANVAS_ID = "canvas-main";
 
-function inferSuggestedFolderTitle(prompt: string) {
-  const normalized = prompt
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+function buildPromptContent(prompt: string, attachments: PromptAttachment[]) {
+  const trimmedPrompt = prompt.trim();
+  const attachmentSummary =
+    attachments.length > 0
+      ? `Attached local image names: ${attachments.map((attachment) => attachment.name).join(", ")}`
+      : "";
 
-  if (/(penjing|bonsai)/.test(normalized)) return "Penjing";
-  if (/(stone|rock|da)/.test(normalized)) return "Stone";
-  if (/(tree|cay|palm|tropical)/.test(normalized)) return "Tree";
-  return "Uncategorized";
+  return [trimmedPrompt, attachmentSummary].filter(Boolean).join("\n\n").trim();
 }
 
-function buildMockAiResults(prompt: string, attachmentCount: number) {
-  const baseTitle = inferSuggestedFolderTitle(prompt);
-  const description = prompt.trim() || "Landscape reference";
-
-  return aiResultImagePool.map((imageUrl, index) => ({
-    id: `ai_result_${Date.now()}_${index}`,
-    imageUrl,
-    title: `${baseTitle} ${index + 1}`,
-    suggestedFolderTitle: baseTitle,
-    prompt: description,
-    metadata: {
-      categoryHint: baseTitle,
-      model: attachmentCount > 0 ? "Carver Vision Search" : "Carver Moodboard Search",
-      originalWidth: 1522,
-      originalHeight: 1146,
-    },
-  }));
-}
-
-export default function EditorRightPanel({ draft, onDraftChange, onClose, onToast, onAddAiResultToLibrary }: EditorRightPanelProps) {
+export default function EditorRightPanel({
+  canvasId = DEFAULT_CANVAS_ID,
+  projectId,
+  draft,
+  onDraftChange,
+  onClose,
+  onToast,
+}: EditorRightPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [agentOpen, setAgentOpen] = useState(false);
-  const [agent, setAgent] = useState<"Agent" | "Planner" | "Designer">("Agent");
-  const [promoVisible, setPromoVisible] = useState(true);
-  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
-  const [dismissedAiResultIds, setDismissedAiResultIds] = useState<string[]>([]);
+  const attachmentsRef = useRef<PromptAttachment[]>([]);
 
-  const canSend = useMemo(() => draft.trim().length > 0 || attachments.length > 0, [attachments.length, draft]);
+  const canSend = useMemo(() => !isSending && (draft.trim().length > 0 || attachments.length > 0), [attachments.length, draft, isSending]);
 
   const autosize = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
   useEffect(() => autosize(), [draft]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length]);
+  }, [isSending, messages.length]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadHistory = async () => {
+      setHistoryLoading(true);
+      setErrorMessage(null);
+
+      try {
+        const params = new URLSearchParams({ canvasId });
+        if (projectId) params.set("projectId", projectId);
+
+        const response = await fetch(`/api/chat?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          messages?: ChatRouteMessage[];
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load previous chat history.");
+        }
+
+        if (!active) return;
+
+        setMessages(
+          (payload.messages ?? []).map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            createdAt: message.createdAt,
+          })),
+        );
+      } catch (error) {
+        if (!active) return;
+
+        setErrorMessage(
+          error instanceof Error ? error.message : "Unable to load previous chat history right now.",
+        );
+      } finally {
+        if (active) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    void loadHistory();
+
+    return () => {
+      active = false;
+    };
+  }, [canvasId, projectId]);
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    return () => {
+      attachmentsRef.current.forEach((attachment) => URL.revokeObjectURL(attachment.url));
+    };
+  }, []);
 
   const addAttachments = (files: File[] | FileList) => {
     const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
@@ -142,7 +167,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
       ...prev,
       ...imageFiles.map((file) => ({
         id: `att_${Date.now()}_${file.name || "pasted"}`,
-        name: file.name || "Pasted image",
+        name: file.name || "Pasted Image",
         url: URL.createObjectURL(file),
       })),
     ]);
@@ -156,71 +181,157 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
       const file = item.getAsFile();
       if (file) files.push(file);
     });
+
     if (files.length === 0) return;
+
     event.preventDefault();
     addAttachments(files);
   };
 
-  const clearChat = () => {
-    setMessages([]);
-    setAttachments([]);
-    setDismissedAiResultIds([]);
-    onDraftChange("");
-    onToast("New chat started");
+  const removeAttachment = (attachmentId: string) => {
+    setAttachments((current) => {
+      const next = current.filter((attachment) => attachment.id !== attachmentId);
+      const removed = current.find((attachment) => attachment.id === attachmentId);
+
+      if (removed) {
+        URL.revokeObjectURL(removed.url);
+      }
+
+      return next;
+    });
   };
 
-  const send = () => {
-    const content = draft.trim();
-    if (!content && attachments.length === 0) return;
-    const id = `m_${Date.now()}`;
-    const attachmentText =
-      attachments.length > 0 ? `\n\n${attachments.length} image attachment${attachments.length === 1 ? "" : "s"}` : "";
-    const aiResults = buildMockAiResults(content || "Landscape reference", attachments.length);
+  const clearChat = async () => {
+    try {
+      const params = new URLSearchParams({ canvasId });
+      if (projectId) params.set("projectId", projectId);
 
-    setMessages((prev) => [
-      ...prev,
-      { id, role: "user", content: `${content || "Image prompt"}${attachmentText}` },
-      {
-        id: `${id}_a`,
-        role: "assistant",
-        content: "Mình đã gom vài asset tham chiếu phù hợp. Bạn có thể thêm từng ảnh vào Library để kéo thả tiếp trên canvas.",
-        results: aiResults,
-      },
-    ]);
+      const response = await fetch(`/api/chat?${params.toString()}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to reset this chat right now.");
+      }
+
+      attachments.forEach((attachment) => URL.revokeObjectURL(attachment.url));
+      setMessages([]);
+      setAttachments([]);
+      setErrorMessage(null);
+      onDraftChange("");
+      onToast("Chat cleared");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to reset this chat right now.");
+    }
+  };
+
+  const send = async () => {
+    const content = buildPromptContent(draft, attachments);
+    if (!content) return;
+
+    const optimisticUserMessage: ChatMessage = {
+      id: `local_user_${Date.now()}`,
+      role: "user",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, optimisticUserMessage]);
+    setErrorMessage(null);
+    setIsSending(true);
     onDraftChange("");
+    attachments.forEach((attachment) => URL.revokeObjectURL(attachment.url));
     setAttachments([]);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          canvasId,
+          projectId,
+          content,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        userMessage?: ChatRouteMessage;
+        assistantMessage?: ChatRouteMessage;
+      };
+
+      if (!response.ok || !payload.userMessage || !payload.assistantMessage) {
+        throw new Error(payload.error || "Carver AI could not answer right now.");
+      }
+
+      const userMessage = payload.userMessage;
+      const assistantMessage = payload.assistantMessage;
+
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== optimisticUserMessage.id),
+        {
+          id: userMessage.id,
+          role: userMessage.role,
+          content: userMessage.content,
+          createdAt: userMessage.createdAt,
+        },
+        {
+          id: assistantMessage.id,
+          role: assistantMessage.role,
+          content: assistantMessage.content,
+          createdAt: assistantMessage.createdAt,
+        },
+      ]);
+    } catch (error) {
+      const friendlyMessage =
+        error instanceof Error
+          ? error.message
+          : "Carver AI is temporarily unavailable. Please try again in a moment.";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `local_error_${Date.now()}`,
+          role: "assistant",
+          content: friendlyMessage,
+          createdAt: new Date().toISOString(),
+          status: "error",
+        },
+      ]);
+      setErrorMessage(friendlyMessage);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <div className="flex h-12 items-center justify-between px-3">
-        <h2 className="text-sm font-semibold tracking-[-0.02em]">New chat</h2>
+        <h2 className="text-sm font-semibold tracking-[-0.02em]">AI Chat</h2>
         <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
-          <IconButton label="New chat" icon={Plus} onClick={clearChat} />
-          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-          <IconButton label="Share" icon={Share2} onClick={() => onToast("Share link copied")} />
+          <IconButton label="New chat" icon={Plus} onClick={() => void clearChat()} />
           <IconButton label="Close chat" icon={ArrowRight} onClick={onClose} />
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto px-4 pb-[160px] pt-5">
-        {messages.length === 0 ? (
+      <div className="relative flex-1 overflow-y-auto px-4 pb-[164px] pt-5">
+        {historyLoading ? (
           <div className="grid h-full place-items-center">
-            <div className="w-full max-w-[292px] text-center">
-              <h3 className="mb-5 text-sm font-semibold tracking-[-0.01em]">Try these Carver Skills</h3>
-              <div className="flex flex-wrap justify-center gap-1.5">
-                {skills.map((skill) => (
-                  <SkillPill
-                    key={skill.label}
-                    {...skill}
-                    onClick={() => {
-                      onDraftChange(skill.label);
-                      textareaRef.current?.focus();
-                      onToast(`${skill.label} selected`);
-                    }}
-                  />
-                ))}
-              </div>
+            <div className="flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-sm text-[var(--canvas-theme-text-soft)]">
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Loading chat history...
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="grid h-full place-items-center">
+            <div className="max-w-[280px] text-center">
+              <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--canvas-theme-text)]">Ask Carver AI</h3>
+              <p className="mt-3 text-sm leading-6 text-[var(--canvas-theme-text-muted)]">
+                Describe your landscape idea, preserved layout constraints, planting goals, or material direction and we&apos;ll continue from there.
+              </p>
             </div>
           </div>
         ) : (
@@ -229,68 +340,27 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
               <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
                 <div
                   className={[
-                    "whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-5",
+                    "whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-6",
                     message.role === "user"
-                      ? "bg-[var(--canvas-theme-surface-soft)] font-medium text-[var(--canvas-theme-text)]"
-                      : "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
+                      ? "bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-text)]"
+                      : message.status === "error"
+                        ? "border border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]"
+                        : "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
                   ].join(" ")}
                 >
                   {message.content}
                 </div>
-                {message.role === "assistant" && message.results?.length ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {message.results
-                      .filter((result) => !dismissedAiResultIds.includes(result.id))
-                      .map((result) => (
-                        <div
-                          key={result.id}
-                          className="overflow-hidden rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]"
-                        >
-                          <div className="relative aspect-[4/3] overflow-hidden bg-[var(--canvas-theme-surface-muted)]">
-                            <Image src={result.imageUrl} alt={result.title} fill sizes="140px" className="object-cover" />
-                          </div>
-                          <div className="space-y-2 p-2.5">
-                            <div>
-                              <p className="truncate text-xs font-semibold text-[var(--canvas-theme-text)]">{result.title}</p>
-                              <p className="truncate text-[11px] text-[var(--canvas-theme-text-muted)]">
-                                {result.suggestedFolderTitle ?? "Uncategorized"}
-                              </p>
-                            </div>
-                            <div className="flex gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onAddAiResultToLibrary({
-                                    imageUrl: result.imageUrl,
-                                    prompt: result.prompt,
-                                    suggestedFolderTitle: result.suggestedFolderTitle,
-                                    title: result.title,
-                                    metadata: result.metadata,
-                                  });
-                                  onToast(`Added "${result.title}" to Library`);
-                                }}
-                                className="flex-1 rounded-full bg-[var(--canvas-theme-active)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--canvas-theme-active-text)]"
-                              >
-                                Add to Library
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDismissedAiResultIds((prev) => [...prev, result.id]);
-                                  onToast(`Skipped "${result.title}"`);
-                                }}
-                                className="rounded-full border border-[var(--canvas-theme-border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--canvas-theme-text-soft)]"
-                              >
-                                Skip
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : null}
               </div>
             ))}
+
+            {isSending ? (
+              <div className="mr-auto max-w-[92%]">
+                <div className="flex items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-panel)] px-4 py-3 text-[13px] leading-6 text-[var(--canvas-theme-text-soft)]">
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Carver AI is thinking...
+                </div>
+              </div>
+            ) : null}
             <div ref={endRef} />
           </div>
         )}
@@ -308,22 +378,8 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
             event.target.value = "";
           }}
         />
-        <div className="overflow-hidden rounded-[20px] bg-[var(--canvas-theme-surface-soft)] shadow-[0_2px_14px_var(--canvas-theme-shadow)]">
-          {promoVisible ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-[var(--canvas-theme-text)]">
-              <CircleDollarSign className="h-3.5 w-3.5 fill-[#DFFF27] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
-              <span>Limited Time: Upgrade now&amp;save up to 45% OFF!</span>
-              <button
-                type="button"
-                onClick={() => setPromoVisible(false)}
-                className="ml-auto text-base leading-none text-[var(--canvas-theme-icon)]"
-                title="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
 
+        <div className="overflow-hidden rounded-[20px] bg-[var(--canvas-theme-surface-soft)] shadow-[0_2px_14px_var(--canvas-theme-shadow)]">
           <div className="rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2.5">
             <textarea
               ref={textareaRef}
@@ -332,13 +388,13 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  send();
+                  void send();
                 }
               }}
               onPaste={handlePromptPaste}
-              placeholder={'Start with an idea, or type "@" to mention'}
+              placeholder="Describe what you want to design, preserve, or change..."
               rows={3}
-              className="min-h-[60px] w-full resize-none bg-transparent text-sm font-medium leading-5 text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+              className="min-h-[72px] w-full resize-none bg-transparent text-sm leading-6 text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
             />
 
             {attachments.length > 0 ? (
@@ -348,7 +404,7 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
                     <Image src={attachment.url} alt={attachment.name} fill sizes="64px" className="object-cover" unoptimized />
                     <button
                       type="button"
-                      onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}
+                      onClick={() => removeAttachment(attachment.id)}
                       className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white"
                       title="Remove image"
                     >
@@ -359,103 +415,38 @@ export default function EditorRightPanel({ draft, onDraftChange, onClose, onToas
               </div>
             ) : null}
 
+            {errorMessage ? (
+              <p className="mb-2 text-xs leading-5 text-[#B42318]">{errorMessage}</p>
+            ) : attachments.length > 0 ? (
+              <p className="mb-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
+                Attached image names will be included with your prompt. Full image understanding can be added later.
+              </p>
+            ) : null}
+
             <div className="mt-1 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
-                <ComposerIcon label="Attach image" icon={Plus} onClick={() => fileInputRef.current?.click()} />
-                <ComposerIcon label="Library" icon={BookOpen} onClick={() => onToast("Library opened")} />
-                <div className="relative">
-                  <button
-                    type="button"
-                    className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold hover:bg-[var(--canvas-theme-hover)]"
-                    onClick={() => setAgentOpen((value) => !value)}
-                  >
-                    <Bot className="h-4 w-4" aria-hidden="true" />
-                    {agent}
-                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                  {agentOpen ? (
-                    <div className="absolute bottom-10 left-0 z-50 w-36 overflow-hidden rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-xl shadow-[var(--canvas-theme-shadow)]">
-                      {(["Agent", "Planner", "Designer"] as const).map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          className="block w-full px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--canvas-theme-hover)]"
-                          onClick={() => {
-                            setAgent(option);
-                            setAgentOpen(false);
-                            onToast(`${option} selected`);
-                          }}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                <ComposerIcon label="Attach image" icon={Paperclip} onClick={() => fileInputRef.current?.click()} />
               </div>
 
-              <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
-                <ComposerIcon
-                  label="Ideas"
-                  icon={Lightbulb}
-                  onClick={() => {
-                    onDraftChange(draft || "Thiết kế sân vườn biệt thự hiện đại với hồ koi");
-                    textareaRef.current?.focus();
-                  }}
-                />
-                <ComposerIcon label="Objects" icon={Box} onClick={() => onToast("Object picker opened")} />
-                <button
-                  type="button"
-                  onClick={send}
-                  disabled={!canSend}
-                  className={[
-                    "grid h-8 w-8 place-items-center rounded-full transition",
-                    canSend ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]" : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] opacity-70",
-                  ].join(" ")}
-                  title="Send"
-                >
-                  <Mic className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={!canSend}
+                className={[
+                  "grid h-8 w-8 place-items-center rounded-full transition",
+                  canSend
+                    ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
+                    : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] opacity-60",
+                ].join(" ")}
+                title="Send"
+              >
+                {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <SendHorizontal className="h-4 w-4" aria-hidden="true" />}
+              </button>
             </div>
           </div>
         </div>
       </div>
     </aside>
-  );
-}
-
-function SkillPill({
-  label,
-  icon: Icon,
-  tone,
-  onClick,
-}: {
-  label: string;
-  icon: LucideIcon;
-  tone: "purple" | "blue" | "orange" | "pink" | "slate";
-  onClick: () => void;
-}) {
-  const color =
-    tone === "purple"
-      ? "text-[#8B5CF6]"
-      : tone === "blue"
-        ? "text-[#2563EB]"
-        : tone === "orange"
-          ? "text-[#F97316]"
-          : tone === "pink"
-            ? "text-[#EC4899]"
-            : "text-[#98A2B3]";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-xs font-medium text-[var(--canvas-theme-text)] shadow-[0_1px_0_var(--canvas-theme-shadow)] transition hover:border-[var(--canvas-theme-border-strong)]"
-    >
-      <Icon className={`h-3.5 w-3.5 ${color}`} aria-hidden="true" />
-      {label}
-    </button>
   );
 }
 
