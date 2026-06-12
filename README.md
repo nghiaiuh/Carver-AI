@@ -10,17 +10,17 @@ The current repository is a TypeScript monorepo with a Next.js web app, shared d
 
 ## Key Features
 
-| Area | Current / Planned Capability |
-| --- | --- |
-| Project workspace | Project creation route and database model for landscape projects, briefs, chat threads, assets, snapshots, AI jobs, design versions, and exports. |
-| Infinite canvas | Desktop canvas with pan, zoom, cursor-centered zoom, image nodes, marquee selection, drag, pen strokes, markers, editable/locked regions, and contextual tooling. |
-| Reference workflow | Users can paste or import images into the canvas and add local library-style references. Full remote asset persistence is planned through Supabase storage. |
-| AI chat assistant | Canvas chat panel connected to `/api/chat`, using OpenAI Responses API for landscape design guidance. |
-| Prompt engine | Deterministic landscape prompt compiler that detects task type, edit scope, target area/object, risk level, preservation rules, negative constraints, and edit brief metadata. |
-| Spatial lock system | Canvas supports editable and locked regions as a product concept; database schema includes tables for future spatial constraints, but a dedicated `spatial_locks` table is not yet implemented. |
-| Versioned canvas state | Database schema stores `canvas_snapshots` as versioned JSON rows. Current canvas UI is mostly local/demo state and still needs full persistence wiring. |
-| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` scaffold LangGraph, BullMQ, and worker execution. Image generation/refinement jobs are not yet fully implemented. |
-| Gallery / review pages | Static marketing and project review pages exist under `apps/web/app`, including gallery, reviews, submit, engineers, styles, and project detail routes. |
+| Area                   | Current / Planned Capability                                                                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project workspace      | Project creation route and database model for landscape projects, briefs, chat threads, assets, snapshots, AI jobs, design versions, and exports.                                               |
+| Infinite canvas        | Desktop canvas with pan, zoom, cursor-centered zoom, image nodes, marquee selection, drag, pen strokes, markers, editable/locked regions, and contextual tooling.                               |
+| Reference workflow     | Users can paste or import images into the canvas and add local library-style references. Full remote asset persistence is planned through Supabase storage.                                     |
+| AI chat assistant      | Canvas chat panel connected to `/api/chat`, using OpenAI Responses API for landscape design guidance.                                                                                           |
+| Prompt engine          | Deterministic landscape prompt compiler that detects task type, edit scope, target area/object, risk level, preservation rules, negative constraints, and edit brief metadata.                  |
+| Spatial lock system    | Canvas supports editable and locked regions as a product concept; database schema includes tables for future spatial constraints, but a dedicated `spatial_locks` table is not yet implemented. |
+| Versioned canvas state | Database schema stores `canvas_snapshots` as versioned JSON rows. Current canvas UI is mostly local/demo state and still needs full persistence wiring.                                         |
+| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` scaffold LangGraph, BullMQ, and worker execution. Image generation/refinement jobs are not yet fully implemented.                            |
+| Gallery / review pages | Static marketing and project review pages exist under `apps/web/app`, including gallery, reviews, submit, engineers, styles, and project detail routes.                                         |
 
 ## Product Vision
 
@@ -39,19 +39,19 @@ The intended user experience is closer to a lightweight design tool than a chatb
 
 ## Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| Monorepo | npm workspaces, Turborepo |
-| Web app | Next.js App Router, React, TypeScript |
-| Styling | Tailwind CSS, PostCSS, GSAP, Framer Motion, Lucide React |
-| Database | Supabase Postgres, Supabase Auth, Supabase Storage, Prisma client |
-| AI orchestration | LangGraph |
-| Chat model | OpenAI Responses API |
-| Queue | BullMQ |
-| Worker | TypeScript Node worker |
-| Deployment | Vercel configuration for the web app |
-| Package manager | npm 10.9.3 |
-| Runtime | Node.js `>=20.9.0` |
+| Layer            | Technology                                                        |
+| ---------------- | ----------------------------------------------------------------- |
+| Monorepo         | npm workspaces, Turborepo                                         |
+| Web app          | Next.js App Router, React, TypeScript                             |
+| Styling          | Tailwind CSS, PostCSS, GSAP, Framer Motion, Lucide React          |
+| Database         | Supabase Postgres, Supabase Auth, Supabase Storage, Prisma client |
+| AI orchestration | LangGraph                                                         |
+| Chat model       | OpenAI Responses API                                              |
+| Queue            | BullMQ                                                            |
+| Worker           | TypeScript Node worker                                            |
+| Deployment       | Vercel configuration for the web app                              |
+| Package manager  | npm 10.9.3                                                        |
+| Runtime          | Node.js `>=20.9.0`                                                |
 
 ## System Architecture
 
@@ -62,7 +62,7 @@ flowchart TD
   PromptEngine[apps/web/lib/prompt-engine]
   ChatService[apps/web/lib/server/openaiChat.ts]
   ChatHistory[Local chat-history.json]
-  DBPackage[@carver/db]
+  DBPackage["@carver/db"]
   Supabase[(Supabase Postgres / Auth / Storage)]
   AI[(packages/ai LangGraph)]
   Queue[(packages/queue BullMQ / Redis)]
@@ -171,23 +171,23 @@ CarverAI intentionally uses one local `.env` file. The file is ignored by Git.
 
 Required variables:
 
-| Variable | Scope | Purpose |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Client/server | Supabase project URL. Browser code may use this. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client/server | Supabase anon/public key. Browser code may use this. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server/worker only | Server-side Supabase admin access. Never import into browser code. |
-| `OPENAI_API_KEY` | Server only | OpenAI Responses API key for canvas chat. |
+| Variable                        | Scope              | Purpose                                                            |
+| ------------------------------- | ------------------ | ------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Client/server      | Supabase project URL. Browser code may use this.                   |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client/server      | Supabase anon/public key. Browser code may use this.               |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server/worker only | Server-side Supabase admin access. Never import into browser code. |
+| `OPENAI_API_KEY`                | Server only        | OpenAI Responses API key for canvas chat.                          |
 
 Optional infrastructure variables:
 
-| Variable | Scope | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | Server/Prisma | Supabase pooled Postgres connection. |
-| `DIRECT_URL` | Server/Prisma | Supabase direct Postgres connection. |
-| `REDIS_HOST` | Queue/worker | Redis host for BullMQ. Defaults to `localhost`. |
-| `REDIS_PORT` | Queue/worker | Redis port for BullMQ. Defaults to `6379`. |
-| `REDIS_USERNAME` | Queue/worker | Redis username when required. |
-| `REDIS_PASSWORD` | Queue/worker | Redis password when required. |
+| Variable         | Scope         | Purpose                                         |
+| ---------------- | ------------- | ----------------------------------------------- |
+| `DATABASE_URL`   | Server/Prisma | Supabase pooled Postgres connection.            |
+| `DIRECT_URL`     | Server/Prisma | Supabase direct Postgres connection.            |
+| `REDIS_HOST`     | Queue/worker  | Redis host for BullMQ. Defaults to `localhost`. |
+| `REDIS_PORT`     | Queue/worker  | Redis port for BullMQ. Defaults to `6379`.      |
+| `REDIS_USERNAME` | Queue/worker  | Redis username when required.                   |
+| `REDIS_PASSWORD` | Queue/worker  | Redis password when required.                   |
 
 Do not commit `.env`, `.env.local`, keys, signed URLs, prompts, job payloads, access tokens, refresh tokens, or service-role credentials.
 
@@ -245,33 +245,33 @@ CarverAI uses Supabase as the source of truth. The database package provides typ
 
 SQL migrations live in `packages/db/sql`:
 
-| File | Purpose |
-| --- | --- |
+| File                         | Purpose                                                        |
+| ---------------------------- | -------------------------------------------------------------- |
 | `001_canvas_chat_schema.sql` | Creates enums, tables, indexes, triggers, and storage buckets. |
-| `002_rls_policies.sql` | Enables RLS and defines owner/project ownership policies. |
+| `002_rls_policies.sql`       | Enables RLS and defines owner/project ownership policies.      |
 
 Core tables include:
 
-| Table | Purpose |
-| --- | --- |
-| `profiles` | User profile, plan type, credits, onboarding metadata. |
-| `projects` | Project owner, name, description, status, current snapshot, and landscape goal. |
+| Table              | Purpose                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `profiles`         | User profile, plan type, credits, onboarding metadata.                                             |
+| `projects`         | Project owner, name, description, status, current snapshot, and landscape goal.                    |
 | `landscape_briefs` | Site and design requirements such as property type, climate, budget, style preferences, and notes. |
-| `canvas_snapshots` | Versioned canvas JSON snapshots for a project. |
-| `assets` | Uploaded, generated, reference, or exported assets with storage metadata. |
-| `chat_threads` | Project-level chat threads. |
-| `chat_messages` | User and assistant messages with optional asset/canvas references. |
-| `ai_jobs` | Future async AI job records for generation, refinement, analysis, and export. |
-| `design_versions` | Source/output snapshot and job relationships. |
-| `exports` | Export records for PNG, JPG, and PDF outputs. |
+| `canvas_snapshots` | Versioned canvas JSON snapshots for a project.                                                     |
+| `assets`           | Uploaded, generated, reference, or exported assets with storage metadata.                          |
+| `chat_threads`     | Project-level chat threads.                                                                        |
+| `chat_messages`    | User and assistant messages with optional asset/canvas references.                                 |
+| `ai_jobs`          | Future async AI job records for generation, refinement, analysis, and export.                      |
+| `design_versions`  | Source/output snapshot and job relationships.                                                      |
+| `exports`          | Export records for PNG, JPG, and PDF outputs.                                                      |
 
 Storage buckets created by the schema:
 
-| Bucket | Purpose |
-| --- | --- |
-| `project-uploads` | Private user uploads and references. |
-| `generated-assets` | Private generated assets. |
-| `exports` | Private export files. |
+| Bucket             | Purpose                              |
+| ------------------ | ------------------------------------ |
+| `project-uploads`  | Private user uploads and references. |
+| `generated-assets` | Private generated assets.            |
+| `exports`          | Private export files.                |
 
 ### Applying the schema
 
@@ -308,11 +308,11 @@ The prompt engine is in `apps/web/lib/prompt-engine`.
 
 Key exports:
 
-| Export | Purpose |
-| --- | --- |
-| `enhancePromptDraft()` | Produces an editable enhanced draft before generation. |
-| `compileFinalPrompt()` | Builds the guarded final prompt used by generation. |
-| `enhanceLandscapePrompt()` | Core deterministic prompt compiler. |
+| Export                     | Purpose                                                |
+| -------------------------- | ------------------------------------------------------ |
+| `enhancePromptDraft()`     | Produces an editable enhanced draft before generation. |
+| `compileFinalPrompt()`     | Builds the guarded final prompt used by generation.    |
+| `enhanceLandscapePrompt()` | Core deterministic prompt compiler.                    |
 
 The prompt engine detects:
 
@@ -327,10 +327,10 @@ The prompt engine detects:
 
 Current routes:
 
-| Route | Purpose |
-| --- | --- |
-| `POST /api/prompt/enhance` | Enhances a raw prompt and returns draft metadata. |
-| `POST /api/generate` | Compiles a final prompt and returns prompt metadata. |
+| Route                      | Purpose                                              |
+| -------------------------- | ---------------------------------------------------- |
+| `POST /api/prompt/enhance` | Enhances a raw prompt and returns draft metadata.    |
+| `POST /api/generate`       | Compiles a final prompt and returns prompt metadata. |
 
 Known limitation: `/api/generate` currently returns `result: null`; no server-side image/design model is wired yet.
 
@@ -356,18 +356,18 @@ The canvas lives in `apps/web/app/canvas`.
 
 Current canvas capabilities include:
 
-| Capability | Files / Notes |
-| --- | --- |
-| Workspace shell | `CanvasWorkspace.tsx` |
-| Pan, zoom, zoom-to-cursor, marquee selection | `CanvasBoard.tsx` |
-| Image nodes and node cards | `CanvasNodeCard.tsx` |
-| Edge creation | `CanvasEdges.tsx` |
-| Pen strokes | `PenStrokeLayer.tsx` and `PenSettingsPopover.tsx` |
-| Mini map | `MiniMap.tsx` |
-| Floating/contextual toolbar | `BottomToolDock.tsx`, `ContextualToolbar.tsx` |
-| Library panels | `LibrarySidebar.tsx`, `ObjectLibraryPanel.tsx`, `LibraryAssetGrid.tsx` |
-| Editing panels | `EditorLeftSidebar.tsx`, `EditorRightPanel.tsx`, `QuickEditModal.tsx`, `MultiAngleModal.tsx`, `RealityCheckPanel.tsx` |
-| Spatial annotations | `MarkerPin.tsx`, `RegionOverlay.tsx`, `SketchLayer.tsx`, `SelectableImage.tsx` |
+| Capability                                   | Files / Notes                                                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Workspace shell                              | `CanvasWorkspace.tsx`                                                                                                 |
+| Pan, zoom, zoom-to-cursor, marquee selection | `CanvasBoard.tsx`                                                                                                     |
+| Image nodes and node cards                   | `CanvasNodeCard.tsx`                                                                                                  |
+| Edge creation                                | `CanvasEdges.tsx`                                                                                                     |
+| Pen strokes                                  | `PenStrokeLayer.tsx` and `PenSettingsPopover.tsx`                                                                     |
+| Mini map                                     | `MiniMap.tsx`                                                                                                         |
+| Floating/contextual toolbar                  | `BottomToolDock.tsx`, `ContextualToolbar.tsx`                                                                         |
+| Library panels                               | `LibrarySidebar.tsx`, `ObjectLibraryPanel.tsx`, `LibraryAssetGrid.tsx`                                                |
+| Editing panels                               | `EditorLeftSidebar.tsx`, `EditorRightPanel.tsx`, `QuickEditModal.tsx`, `MultiAngleModal.tsx`, `RealityCheckPanel.tsx` |
+| Spatial annotations                          | `MarkerPin.tsx`, `RegionOverlay.tsx`, `SketchLayer.tsx`, `SelectableImage.tsx`                                        |
 
 The canvas is desktop-first and shows a mobile warning below `xl` breakpoint.
 
@@ -381,20 +381,20 @@ Known limitations:
 
 ## API Structure
 
-| Route | Methods | Purpose | Auth |
-| --- | --- | --- | --- |
-| `/api/chat` | `GET`, `POST`, `DELETE` | Load, send, and clear canvas chat history. | Not currently enforced. |
-| `/api/prompt/enhance` | `POST` | Enhance raw landscape prompt into a structured draft. | Not currently enforced. |
-| `/api/generate` | `POST` | Compile final generation prompt and return prompt metadata. | Requires bearer token via `getRequestContext()`. |
-| `/api/projects` | `POST` | Create a project, initial canvas snapshot, landscape brief, and chat thread. | Requires bearer token via `getRequestContext()`. |
-| `/api/profiles` | `GET` | Load the current authenticated user's profile. | Requires bearer token via `getRequestContext()`. |
+| Route                 | Methods                 | Purpose                                                                      | Auth                                             |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------ |
+| `/api/chat`           | `GET`, `POST`, `DELETE` | Load, send, and clear canvas chat history.                                   | Not currently enforced.                          |
+| `/api/prompt/enhance` | `POST`                  | Enhance raw landscape prompt into a structured draft.                        | Not currently enforced.                          |
+| `/api/generate`       | `POST`                  | Compile final generation prompt and return prompt metadata.                  | Requires bearer token via `getRequestContext()`. |
+| `/api/projects`       | `POST`                  | Create a project, initial canvas snapshot, landscape brief, and chat thread. | Requires bearer token via `getRequestContext()`. |
+| `/api/profiles`       | `GET`                   | Load the current authenticated user's profile.                               | Requires bearer token via `getRequestContext()`. |
 
 API helper modules:
 
-| File | Purpose |
-| --- | --- |
+| File                            | Purpose                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/web/app/api/_lib/auth.ts` | Extracts bearer token, validates Supabase user, and returns a user-scoped Supabase client. |
-| `apps/web/app/api/_lib/http.ts` | Parses JSON requests and returns typed HTTP errors. |
+| `apps/web/app/api/_lib/http.ts` | Parses JSON requests and returns typed HTTP errors.                                        |
 
 Security note: `GET /api/chat`, `POST /api/chat`, `DELETE /api/chat`, and `/api/prompt/enhance` currently do not enforce authentication. They should be secured before production use.
 
@@ -430,13 +430,13 @@ npm run typecheck --workspace=@carver/worker
 
 The web app is configured for Vercel in `vercel.json`:
 
-| Setting | Value |
-| --- | --- |
-| Framework | Next.js |
-| Install command | `npm install` |
-| Build command | `npx turbo run build --filter=@carver/web...` |
-| Dev command | `npm run dev --workspace=@carver/web` |
-| Output directory | `apps/web/.next` |
+| Setting          | Value                                         |
+| ---------------- | --------------------------------------------- |
+| Framework        | Next.js                                       |
+| Install command  | `npm install`                                 |
+| Build command    | `npx turbo run build --filter=@carver/web...` |
+| Dev command      | `npm run dev --workspace=@carver/web`         |
+| Output directory | `apps/web/.next`                              |
 
 Recommended deployment flow:
 
@@ -476,15 +476,15 @@ Production hardening items still needed:
 
 ## Roadmap
 
-| Phase | Focus |
-| --- | --- |
-| Foundation | Secure API routes, Supabase Auth, project CRUD, chat persistence, canvas snapshot save/load. |
-| Canvas core | Stable pan/zoom, image resize, object metadata, region locking, version preview, and restore. |
-| Prompt engine | Keep deterministic prompt safety while adding clearer review/expert modes and richer reference handling. |
-| AI job pipeline | Create AI jobs from canvas/chat actions, queue long-running work, execute worker handlers, store outputs, and create design versions. |
-| Spatial lock MVP | Persist locked regions/objects, include them in prompt generation, and prevent accidental edits. |
-| Asset workflow | Supabase Storage upload, signed URL generation, generated asset persistence, export records. |
-| Product polish | Project dashboard, version comparison, proposal preview, budget/reality-check scoring, engineer handoff flows. |
+| Phase            | Focus                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation       | Secure API routes, Supabase Auth, project CRUD, chat persistence, canvas snapshot save/load.                                          |
+| Canvas core      | Stable pan/zoom, image resize, object metadata, region locking, version preview, and restore.                                         |
+| Prompt engine    | Keep deterministic prompt safety while adding clearer review/expert modes and richer reference handling.                              |
+| AI job pipeline  | Create AI jobs from canvas/chat actions, queue long-running work, execute worker handlers, store outputs, and create design versions. |
+| Spatial lock MVP | Persist locked regions/objects, include them in prompt generation, and prevent accidental edits.                                      |
+| Asset workflow   | Supabase Storage upload, signed URL generation, generated asset persistence, export records.                                          |
+| Product polish   | Project dashboard, version comparison, proposal preview, budget/reality-check scoring, engineer handoff flows.                        |
 
 ## Known Limitations
 
