@@ -1,30 +1,11 @@
-/*
- * Flow: Participates in the Landscape Prompt Compiler.
- * 1. Receive raw landscape prompt context.
- * 2. Detect task intent, scope, risk, or constraints.
- * 3. Return structured prompt data for enhance/generate APIs.
- */
-
 import assert from "node:assert/strict";
 import test from "node:test";
+
 import { enhanceLandscapePrompt } from "./enhanceLandscapePrompt";
-import { enhancePromptDraft } from "./enhancePromptDraft";
-
-test("builds an editable enhanced draft before final compile", () => {
-  const result = enhancePromptDraft({
-    rawPrompt: "thêm cây quanh hồ koi cho đẹp",
-  });
-
-  assert.equal(result.taskType, "planting_design");
-  assert.equal(result.editScope, "area_edit");
-  assert.equal(result.riskLevel, "medium");
-  assert.match(result.enhancedDraft, /planting/i);
-  assert.match(result.enhancedDraft, /camera angle/i);
-});
 
 test("detects planting around koi pond as medium-risk area edit", () => {
   const result = enhanceLandscapePrompt({
-    rawPrompt: "thêm cây quanh hồ koi cho đẹp",
+    rawPrompt: "them cay quanh ho koi cho dep",
     promptMode: "auto",
   });
 
@@ -40,7 +21,7 @@ test("detects planting around koi pond as medium-risk area edit", () => {
 
 test("detects house replacement with exact position as high risk", () => {
   const result = enhanceLandscapePrompt({
-    rawPrompt: "thay mẫu nhà bên trái bằng mẫu nhà ảnh 2, giữ đúng vị trí",
+    rawPrompt: "thay mau nha ben trai bang mau nha anh 2, giu dung vi tri",
     referenceImages: ["image-1", "image-2"],
     promptMode: "auto",
   });
@@ -53,7 +34,7 @@ test("detects house replacement with exact position as high risk", () => {
 
 test("detects gray grid courtyard paving as medium-risk area edit", () => {
   const result = enhanceLandscapePrompt({
-    rawPrompt: "đổi sân thành gạch xám kẻ caro",
+    rawPrompt: "doi san thanh gach xam ke caro",
   });
 
   assert.equal(result.taskType, "courtyard_paving");
@@ -63,7 +44,7 @@ test("detects gray grid courtyard paving as medium-risk area edit", () => {
 
 test("detects rockery waterfall replacement as high-risk object edit", () => {
   const result = enhanceLandscapePrompt({
-    rawPrompt: "chỉ thay hòn non bộ thành 5 đỉnh 3 thác nước",
+    rawPrompt: "chi thay hon non bo thanh 5 dinh 3 thac nuoc",
   });
 
   assert.equal(result.taskType, "rockery_replacement");
@@ -79,7 +60,7 @@ test("detects rockery waterfall replacement as high-risk object edit", () => {
 
 test("detects quality and lighting improvement as low-risk global style edit", () => {
   const result = enhanceLandscapePrompt({
-    rawPrompt: "tăng chất lượng ảnh, ánh sáng đẹp hơn, không đổi vật thể",
+    rawPrompt: "tang chat luong anh, anh sang dep hon, khong doi vat the",
   });
 
   assert.equal(result.taskType, "change_lighting");

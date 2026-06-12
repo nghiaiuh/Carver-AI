@@ -74,21 +74,6 @@ export type EnhanceLandscapePromptResult = {
   shouldShowReview: boolean;
 };
 
-export type EnhancePromptDraftInput = Omit<EnhanceLandscapePromptInput, "promptMode" | "generationMode">;
-
-export type EnhancePromptDraftResult = {
-  rawPrompt: string;
-  enhancedDraft: string;
-  taskType: LandscapeTaskType;
-  editScope: EditScope;
-  riskLevel: PromptRiskLevel;
-  targetArea?: string;
-  targetObject?: string;
-  formulaUsed: string;
-  editBrief: EditBrief;
-  shouldShowReview: boolean;
-};
-
 export type PromptMeta = Omit<EnhanceLandscapePromptResult, "rawPrompt" | "enhancedPrompt" | "preserveRules" | "negativeConstraints"> & {
   preserveRules: string[];
   negativeConstraints: string[];

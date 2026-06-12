@@ -40,47 +40,21 @@ function getAssistantText(payload: OpenAIResponse) {
   return text && text.length > 0 ? text : null;
 }
 
-export async function createChatCompletion(params: {
-  message: string;
-  history: ChatHistoryRecord[];
-  canvasId?: string;
-  projectId?: string;
+export async function createOpenAITextResponse(params: {
+  model?: string;
+  input: Array<{
+    role: "system" | "user" | "assistant";
+    content: Array<{
+      type: "input_text";
+      text: string;
+    }>;
+  }>;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY. Add it to your environment before using canvas chat.");
+    throw new Error("Missing OPENAI_API_KEY. Add it to your environment before using OpenAI-powered features.");
   }
-
-  const conversation = [
-    {
-      role: "system",
-      content: [
-        {
-          type: "input_text",
-          text: SYSTEM_PROMPT,
-        },
-      ],
-    },
-    ...params.history.slice(-16).map((entry) => ({
-      role: entry.role,
-      content: [
-        {
-          type: "input_text",
-          text: entry.content,
-        },
-      ],
-    })),
-    {
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: params.message,
-        },
-      ],
-    },
-  ];
 
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: "POST",
@@ -89,8 +63,8 @@ export async function createChatCompletion(params: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: conversation,
+      model: params.model ?? OPENAI_MODEL,
+      input: params.input,
     }),
   });
 
@@ -107,4 +81,60 @@ export async function createChatCompletion(params: {
   }
 
   return assistantText;
+}
+
+export async function createChatCompletion(params: {
+  message: string;
+  history: ChatHistoryRecord[];
+  canvasId?: string;
+  projectId?: string;
+}) {
+  const conversation: Array<{
+    role: "system" | "user" | "assistant";
+    content: Array<{
+      type: "input_text";
+      text: string;
+    }>;
+  }> = [
+    {
+      role: "system",
+      content: [
+        {
+          type: "input_text",
+          text: SYSTEM_PROMPT,
+        },
+      ],
+    },
+    ...params.history.slice(-16).map(
+      (entry): {
+        role: "user" | "assistant";
+        content: Array<{
+          type: "input_text";
+          text: string;
+        }>;
+      } => ({
+        role: entry.role,
+        content: [
+          {
+            type: "input_text",
+            text: entry.content,
+          },
+        ],
+      }),
+    ),
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: params.message,
+        },
+      ],
+    },
+  ];
+
+  return createOpenAITextResponse({
+    model: OPENAI_MODEL,
+    input: conversation,
+  });
 }

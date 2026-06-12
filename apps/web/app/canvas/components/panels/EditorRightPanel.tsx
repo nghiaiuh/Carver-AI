@@ -12,7 +12,9 @@ import {
   LoaderCircle,
   Paperclip,
   Plus,
+  RotateCcw,
   SendHorizontal,
+  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -51,6 +53,24 @@ type ChatRouteMessage = {
   canvasId?: string;
 };
 
+type EnhancePromptResult = {
+  originalPrompt: string;
+  enhancedPrompt: string;
+  mode: string;
+  detectedIntent: string;
+  score: number;
+  usedAiFallback: boolean;
+  detectedObjects: string[];
+  detectedTargetAreas: string[];
+  detectedStyle?: string | null;
+  preserveRules: string[];
+  negativeRules: string[];
+  fallbackReason: string | null;
+  fallbackError: string | null;
+  attemptedAiFallback: boolean;
+  scoringReasons: string[];
+};
+
 const DEFAULT_CANVAS_ID = "canvas-main";
 
 function buildPromptContent(prompt: string, attachments: PromptAttachment[]) {
@@ -75,13 +95,17 @@ export default function EditorRightPanel({
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastOriginalPrompt, setLastOriginalPrompt] = useState<string | null>(null);
+  const [enhanceMeta, setEnhanceMeta] = useState<EnhancePromptResult | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<PromptAttachment[]>([]);
 
   const canSend = useMemo(() => !isSending && (draft.trim().length > 0 || attachments.length > 0), [attachments.length, draft, isSending]);
+  const canEnhance = !isEnhancing && draft.trim().length > 0;
 
   const autosize = () => {
     const el = textareaRef.current;
@@ -219,11 +243,65 @@ export default function EditorRightPanel({
       setMessages([]);
       setAttachments([]);
       setErrorMessage(null);
+      setEnhanceMeta(null);
+      setLastOriginalPrompt(null);
       onDraftChange("");
       onToast("Chat cleared");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to reset this chat right now.");
     }
+  };
+
+  const enhancePrompt = async () => {
+    const originalPrompt = draft.trim();
+    if (!originalPrompt) return;
+
+    setIsEnhancing(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch("/api/prompt/enhance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: originalPrompt,
+          mode: "image_editing",
+          useAiFallback: true,
+          forceAiFallback: false,
+          projectContext: {
+            hasImage: attachments.length > 0,
+          },
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        data?: EnhancePromptResult;
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error || "Prompt enhance failed");
+      }
+
+      setLastOriginalPrompt(originalPrompt);
+      setEnhanceMeta(payload.data);
+      onDraftChange(payload.data.enhancedPrompt);
+      onToast(payload.data.usedAiFallback ? "Prompt enhanced by AI" : "Prompt enhanced by rules");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to enhance prompt right now.");
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  const restoreOriginalPrompt = () => {
+    if (!lastOriginalPrompt) return;
+    onDraftChange(lastOriginalPrompt);
+    setEnhanceMeta(null);
+    onToast("Original prompt restored");
   };
 
   const send = async () => {
@@ -417,6 +495,21 @@ export default function EditorRightPanel({
 
             {errorMessage ? (
               <p className="mb-2 text-xs leading-5 text-[#B42318]">{errorMessage}</p>
+            ) : enhanceMeta ? (
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
+                <span className="rounded-full bg-[var(--canvas-theme-surface-muted)] px-2.5 py-1 font-medium text-[var(--canvas-theme-text)]">
+                  {enhanceMeta.usedAiFallback ? "Enhanced by AI" : "Enhanced by rules"}
+                </span>
+                {enhanceMeta.attemptedAiFallback && !enhanceMeta.usedAiFallback ? (
+                  <span className="rounded-full bg-[#FEF3F2] px-2.5 py-1 font-medium text-[#B42318]">
+                    AI fallback failed
+                  </span>
+                ) : null}
+                <span>Intent: {enhanceMeta.detectedIntent.replaceAll("_", " ")}</span>
+                <span>Score: {enhanceMeta.score}</span>
+                {enhanceMeta.fallbackReason ? <span>{enhanceMeta.fallbackReason}</span> : null}
+                {enhanceMeta.fallbackError ? <span className="text-[#B42318]">{enhanceMeta.fallbackError}</span> : null}
+              </div>
             ) : attachments.length > 0 ? (
               <p className="mb-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
                 Attached image names will be included with your prompt. Full image understanding can be added later.
@@ -426,6 +519,32 @@ export default function EditorRightPanel({
             <div className="mt-1 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
                 <ComposerIcon label="Attach image" icon={Paperclip} onClick={() => fileInputRef.current?.click()} />
+                <button
+                  type="button"
+                  onClick={() => void enhancePrompt()}
+                  disabled={!canEnhance}
+                  className={[
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                    canEnhance
+                      ? "bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]"
+                      : "bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)] opacity-60",
+                  ].join(" ")}
+                  title="Enhance prompt"
+                >
+                  {isEnhancing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+                  Enhance Prompt
+                </button>
+                {lastOriginalPrompt ? (
+                  <button
+                    type="button"
+                    onClick={restoreOriginalPrompt}
+                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+                    title="Restore original prompt"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Restore
+                  </button>
+                ) : null}
               </div>
 
               <button

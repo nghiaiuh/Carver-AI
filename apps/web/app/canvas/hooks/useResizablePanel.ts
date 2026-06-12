@@ -34,7 +34,9 @@ export default function useResizablePanel({
   storageKey,
 }: UseResizablePanelOptions): UseResizablePanelResult {
   const [width, setWidth] = useState(() => {
-    if (typeof window === "undefined" || !storageKey) return defaultWidth;
+    if (typeof window === "undefined" || !storageKey) {
+      return defaultWidth;
+    }
 
     const storedWidth = window.localStorage.getItem(storageKey);
     const parsedWidth = storedWidth ? Number(storedWidth) : Number.NaN;
@@ -43,9 +45,14 @@ export default function useResizablePanel({
   });
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
+  const hasMountedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !storageKey) return;
+    hasMountedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasMountedRef.current || typeof window === "undefined" || !storageKey) return;
     window.localStorage.setItem(storageKey, String(width));
   }, [storageKey, width]);
 

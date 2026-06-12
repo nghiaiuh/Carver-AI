@@ -11,7 +11,14 @@ import { useState } from "react";
 import { ChevronDown, Gift, Mic, Plus, Send, Wand2 } from "lucide-react";
 
 type EnhancePromptResponse = {
-  enhancedDraft?: string;
+  success?: boolean;
+  error?: string;
+  data?: {
+    enhancedPrompt: string;
+    usedAiFallback: boolean;
+    detectedIntent: string;
+    score: number;
+  };
 };
 
 export default function HeroPromptBox() {
@@ -42,8 +49,8 @@ export default function HeroPromptBox() {
       }
 
       const data = (await response.json()) as EnhancePromptResponse;
-      if (data.enhancedDraft) {
-        setPrompt(data.enhancedDraft);
+      if (data.success && data.data?.enhancedPrompt) {
+        setPrompt(data.data.enhancedPrompt);
       }
     } catch {
     } finally {
