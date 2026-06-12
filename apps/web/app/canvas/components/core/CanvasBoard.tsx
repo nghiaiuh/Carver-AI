@@ -74,6 +74,7 @@ type CanvasBoardProps = {
   onToggleMiniMap: () => void;
   pendingLibraryInsertAsset: LibraryAsset | null;
   onConsumePendingLibraryInsert: () => void;
+  isResizingPanel?: boolean;
 };
 
 type DeletedNodeSnapshot = {
@@ -302,6 +303,7 @@ export default function CanvasBoard({
   onToggleMiniMap,
   pendingLibraryInsertAsset,
   onConsumePendingLibraryInsert,
+  isResizingPanel = false,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
   const worldLayerRef = useRef<HTMLDivElement>(null);
@@ -510,6 +512,7 @@ export default function CanvasBoard({
 
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (isResizingPanel) return;
       const isMiddle = event.button === 1;
       const isSpace = (event.nativeEvent as unknown as { _spaceHeld?: boolean })._spaceHeld;
       if (isMiddle || isSpace) {
@@ -572,11 +575,12 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, draftEdge, draggingNodeId, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, zoom],
+    [activeTool, draftEdge, draggingNodeId, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
   const handleNodePointerDown = (id: string, event: React.PointerEvent) => {
+    if (isResizingPanel) return;
     const node = nodes.find(n => n.id === id);
     if (!node) return;
     clearMarqueeSelection();
@@ -593,6 +597,7 @@ export default function CanvasBoard({
 
   // ── Edge Draft logic ──────────────────────────────────────────────────────
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (isResizingPanel) return;
     if (isPanning.current && panStart.current) {
       const start = panStart.current;
       const dx = event.clientX - start.x;
@@ -673,9 +678,10 @@ export default function CanvasBoard({
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
     }
 
-  }, [activeTool, draftEdge, draftPenStroke, draggingNodeId, marqueeSelection, onNodesChange, pan, zoom]);
+  }, [activeTool, draftEdge, draftPenStroke, draggingNodeId, isResizingPanel, marqueeSelection, onNodesChange, pan, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
+    if (isResizingPanel) return;
     if (activeTool === "pen" && penPointerId.current === event.pointerId) {
       event.stopPropagation();
       if (draftPenStroke && draftPenStroke.points.length > 0) {
@@ -786,7 +792,7 @@ export default function CanvasBoard({
       }
       setDraftEdge(null);
     }
-  }, [activeTool, cancelDraftPenStroke, clearMarqueeSelection, draftEdge, draftPenStroke, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
+  }, [activeTool, cancelDraftPenStroke, clearMarqueeSelection, draftEdge, draftPenStroke, isResizingPanel, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
 
   useEffect(() => {
     const el = containerRef.current;

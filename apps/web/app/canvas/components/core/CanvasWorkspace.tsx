@@ -21,6 +21,8 @@ import GroupNameTagModal from "../panels/GroupNameTagModal";
 import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
 import RealityCheckPanel from "../panels/RealityCheckPanel";
+import ResizeHandle from "../widgets/ResizeHandle";
+import useResizablePanel from "../../hooks/useResizablePanel";
 
 export type EditorTool =
   | "select"
@@ -186,6 +188,14 @@ const LEFT_SIDEBAR_PANEL_LABELS: Record<LeftSidebarPanelId, string> = {
   library: "Library",
   "adjust-render": "Adjust render",
 };
+const DEFAULT_LEFT_SIDEBAR_WIDTH = 304;
+const MIN_LEFT_SIDEBAR_WIDTH = 240;
+const MAX_LEFT_SIDEBAR_WIDTH = 480;
+const DEFAULT_RIGHT_PANEL_WIDTH = 380;
+const MIN_RIGHT_PANEL_WIDTH = 320;
+const MAX_RIGHT_PANEL_WIDTH = 560;
+const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "carver-ai:left-sidebar-width";
+const RIGHT_PANEL_WIDTH_STORAGE_KEY = "carver-ai:right-panel-width";
 
 export function inferObjectTypeFromTag(nameTag: string): LibraryAssetCategory {
   const normalized = nameTag
@@ -205,6 +215,8 @@ export function inferObjectTypeFromTag(nameTag: string): LibraryAssetCategory {
 
 export default function CanvasWorkspace() {
   const rootRef = useRef<HTMLDivElement>(null);
+  const leftSidebarPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({ type: "none" });
   const [activeTool, setActiveTool] = useState<EditorTool>("select");
   const [gridVisible, setGridVisible] = useState(true);
@@ -239,9 +251,26 @@ export default function CanvasWorkspace() {
   const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
   const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] = useState<CanvasLibraryAsset | null>(null);
+  const leftSidebarResize = useResizablePanel({
+    panelRef: leftSidebarPanelRef,
+    side: "left",
+    defaultWidth: DEFAULT_LEFT_SIDEBAR_WIDTH,
+    minWidth: MIN_LEFT_SIDEBAR_WIDTH,
+    maxWidth: MAX_LEFT_SIDEBAR_WIDTH,
+    storageKey: LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
+  });
+  const rightPanelResize = useResizablePanel({
+    panelRef: rightPanelRef,
+    side: "right",
+    defaultWidth: DEFAULT_RIGHT_PANEL_WIDTH,
+    minWidth: MIN_RIGHT_PANEL_WIDTH,
+    maxWidth: MAX_RIGHT_PANEL_WIDTH,
+    storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
+  });
   const library = useCanvasLibrary();
   const allLibraryAssets = library.allAssets;
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
+  const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
 
   useGSAP(
     () => {
@@ -483,25 +512,39 @@ export default function CanvasWorkspace() {
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
           {leftSidebar.open ? (
-            <EditorLeftSidebar
-              panel={leftSidebar.panel}
-              folders={library.folders}
-              activeFolderId={library.activeFolderId}
-              selectedAssetId={selectedLibraryAssetId}
-              onSelectFolder={library.setActiveFolderId}
-              onSelectAsset={setSelectedLibraryAssetId}
-              onCreateFolder={library.createFolder}
-              onRenameFolder={library.renameFolder}
-              onDeleteFolder={library.deleteFolder}
-              onDeleteAsset={library.removeAssetFromFolder}
-              onAddAssetToCanvas={(asset) => {
-                setSelectedLibraryAssetId(asset.id);
-                setPendingLibraryInsertAsset(asset);
-              }}
-              onUploadAssets={uploadAssetsToFolder}
-              onToast={showToast}
-              onClose={() => setLeftSidebar((current) => ({ ...current, open: false }))}
-            />
+            <div
+              ref={leftSidebarPanelRef}
+              className="relative h-full shrink-0"
+              style={{ width: leftSidebarResize.width }}
+              data-canvas-ui="true"
+            >
+              <EditorLeftSidebar
+                panel={leftSidebar.panel}
+                folders={library.folders}
+                activeFolderId={library.activeFolderId}
+                selectedAssetId={selectedLibraryAssetId}
+                onSelectFolder={library.setActiveFolderId}
+                onSelectAsset={setSelectedLibraryAssetId}
+                onCreateFolder={library.createFolder}
+                onRenameFolder={library.renameFolder}
+                onDeleteFolder={library.deleteFolder}
+                onDeleteAsset={library.removeAssetFromFolder}
+                onAddAssetToCanvas={(asset) => {
+                  setSelectedLibraryAssetId(asset.id);
+                  setPendingLibraryInsertAsset(asset);
+                }}
+                onUploadAssets={uploadAssetsToFolder}
+                onToast={showToast}
+                onClose={() => setLeftSidebar((current) => ({ ...current, open: false }))}
+              />
+              <ResizeHandle
+                side="right"
+                ariaLabel="Resize left sidebar"
+                isResizing={leftSidebarResize.isResizing}
+                onPointerDown={leftSidebarResize.startResize}
+                onDoubleClick={leftSidebarResize.resetWidth}
+              />
+            </div>
           ) : (
             <button
               type="button"
@@ -556,15 +599,30 @@ export default function CanvasWorkspace() {
             onToggleMiniMap={() => setMiniMapOpen((current) => !current)}
             pendingLibraryInsertAsset={pendingLibraryInsertAsset}
             onConsumePendingLibraryInsert={() => setPendingLibraryInsertAsset(null)}
+            isResizingPanel={isResizingPanel}
           />
           {rightPanelOpen ? (
-            <EditorRightPanel
-              canvasId="canvas-main"
-              draft={promptText}
-              onDraftChange={setPromptText}
-              onClose={() => setRightPanelOpen(false)}
-              onToast={showToast}
-            />
+            <div
+              ref={rightPanelRef}
+              className="relative h-full shrink-0"
+              style={{ width: rightPanelResize.width }}
+              data-canvas-ui="true"
+            >
+              <EditorRightPanel
+                canvasId="canvas-main"
+                draft={promptText}
+                onDraftChange={setPromptText}
+                onClose={() => setRightPanelOpen(false)}
+                onToast={showToast}
+              />
+              <ResizeHandle
+                side="left"
+                ariaLabel="Resize right panel"
+                isResizing={rightPanelResize.isResizing}
+                onPointerDown={rightPanelResize.startResize}
+                onDoubleClick={rightPanelResize.resetWidth}
+              />
+            </div>
           ) : (
             <button
               type="button"

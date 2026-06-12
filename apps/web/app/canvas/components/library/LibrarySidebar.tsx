@@ -79,7 +79,7 @@ export default function LibrarySidebar({
   };
 
   return (
-    <aside className="flex h-full w-[324px] shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
+    <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <input
         ref={fileInputRef}
         type="file"

@@ -57,7 +57,7 @@ function SidebarPlaceholder({
   onClose: () => void;
 }) {
   return (
-    <aside className="flex h-full w-[324px] shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
+    <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-4">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">{title}</h2>

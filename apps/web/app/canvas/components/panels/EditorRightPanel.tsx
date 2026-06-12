@@ -308,7 +308,7 @@ export default function EditorRightPanel({
   };
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
+    <aside className="flex h-full w-full shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <div className="flex h-12 items-center justify-between px-3">
         <h2 className="text-sm font-semibold tracking-[-0.02em]">AI Chat</h2>
         <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
