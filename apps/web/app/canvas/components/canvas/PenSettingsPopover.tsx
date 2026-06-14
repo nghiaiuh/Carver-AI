@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { X } from "lucide-react";
 import type { PenSettings } from "../core/CanvasWorkspace";
+import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv } from "../widgets/colorPickerUtils";
 
 type PenSettingsPopoverProps = {
   settings: PenSettings;
@@ -12,12 +13,16 @@ type PenSettingsPopoverProps = {
 
 const PRESET_COLORS = ["transparent", "#000000", "#FFFFFF", "#19F000", "#9B5CF6", "#D7C4F7"] as const;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
 export default function PenSettingsPopover({ settings, onChange, onClose }: PenSettingsPopoverProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const colorFieldPointerId = useRef<number | null>(null);
+  const huePointerId = useRef<number | null>(null);
+  const normalizedColor = normalizeHexColor(settings.color);
+  const colorHsv = useMemo(() => rgbToHsv({
+    r: parseInt(normalizedColor.slice(1, 3), 16),
+    g: parseInt(normalizedColor.slice(3, 5), 16),
+    b: parseInt(normalizedColor.slice(5, 7), 16),
+  }), [normalizedColor]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -45,11 +50,23 @@ export default function PenSettingsPopover({ settings, onChange, onClose }: PenS
   const opacityPercent = Math.round(settings.opacity * 100);
   const previewBackground = useMemo(
     () => ({
-      backgroundColor: settings.color,
+      backgroundColor: normalizedColor,
       opacity: settings.opacity,
     }),
-    [settings.color, settings.opacity],
+    [normalizedColor, settings.opacity],
   );
+  const rgbLabel = useMemo(() => formatRgbLabel(normalizedColor), [normalizedColor]);
+
+  const updatePenColorFromField = (clientX: number, clientY: number, rect: DOMRect) => {
+    const saturation = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const value = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
+    onChange({ ...settings, color: hsvToHex({ h: colorHsv.h, s: saturation, v: value }) });
+  };
+
+  const updatePenHue = (clientX: number, rect: DOMRect) => {
+    const hue = clamp((clientX - rect.left) / rect.width, 0, 1) * 360;
+    onChange({ ...settings, color: hsvToHex({ h: hue, s: colorHsv.s, v: colorHsv.v }) });
+  };
 
   return (
     <div
@@ -73,40 +90,91 @@ export default function PenSettingsPopover({ settings, onChange, onClose }: PenS
       </div>
 
       <div className="space-y-4 p-4">
-        <label
+        <div
           className="relative block h-[140px] overflow-hidden rounded-2xl"
           style={{
-            background:
-              "linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, transparent), var(--pen-color, #ff0000)",
-            ["--pen-color" as string]: settings.color,
+            background: `linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, transparent), ${hueToHex(colorHsv.h)}`,
+          }}
+          role="slider"
+          tabIndex={0}
+          aria-label="Pick pen color"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(colorHsv.s * 100)}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            colorFieldPointerId.current = event.pointerId;
+            updatePenColorFromField(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (colorFieldPointerId.current !== event.pointerId) return;
+            updatePenColorFromField(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+          }}
+          onPointerUp={(event) => {
+            if (colorFieldPointerId.current !== event.pointerId) return;
+            colorFieldPointerId.current = null;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={(event) => {
+            if (colorFieldPointerId.current !== event.pointerId) return;
+            colorFieldPointerId.current = null;
+            event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
-          <input
-            type="color"
-            value={settings.color}
-            onChange={(event) => onChange({ ...settings, color: event.target.value.toUpperCase() })}
-            className="absolute inset-0 h-full w-full cursor-crosshair opacity-0"
-            aria-label="Pick pen color"
+          <span
+            className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-black shadow-[0_0_0_1px_rgba(17,24,39,0.12)]"
+            style={{
+              left: `${colorHsv.s * 100}%`,
+              top: `${(1 - colorHsv.v) * 100}%`,
+              backgroundColor: normalizedColor,
+            }}
           />
-          <span className="absolute bottom-1 left-1 h-5 w-5 rounded-full border-[3px] border-white bg-black shadow-[0_0_0_1px_rgba(17,24,39,0.12)]" />
-        </label>
+        </div>
 
         <div className="space-y-3">
-          <label className="relative block h-3 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]">
-            <input
-              type="color"
-              value={settings.color}
-              onChange={(event) => onChange({ ...settings, color: event.target.value.toUpperCase() })}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              aria-label="Adjust pen hue"
+          <div
+            className="relative block h-3 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]"
+            role="slider"
+            tabIndex={0}
+            aria-label="Adjust pen hue"
+            aria-valuemin={0}
+            aria-valuemax={360}
+            aria-valuenow={Math.round(colorHsv.h)}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              huePointerId.current = event.pointerId;
+              updatePenHue(event.clientX, event.currentTarget.getBoundingClientRect());
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+              if (huePointerId.current !== event.pointerId) return;
+              updatePenHue(event.clientX, event.currentTarget.getBoundingClientRect());
+            }}
+            onPointerUp={(event) => {
+              if (huePointerId.current !== event.pointerId) return;
+              huePointerId.current = null;
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              if (huePointerId.current !== event.pointerId) return;
+              huePointerId.current = null;
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+          >
+            <span
+              className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(17,24,39,0.2)]"
+              style={{
+                left: `${(colorHsv.h / 360) * 100}%`,
+                backgroundColor: hueToHex(colorHsv.h),
+              }}
             />
-            <span className="absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border-2 border-white bg-black shadow-[0_0_0_1px_rgba(17,24,39,0.2)]" />
-          </label>
+          </div>
 
           <label
             className="relative block h-3 overflow-hidden rounded-full"
             style={{
-              backgroundImage: `linear-gradient(90deg, transparent, ${settings.color})`,
+              backgroundImage: `linear-gradient(90deg, transparent, ${normalizedColor})`,
             }}
           >
             <div className="absolute inset-0 bg-[linear-gradient(45deg,#E5E7EB_25%,transparent_25%,transparent_50%,#E5E7EB_50%,#E5E7EB_75%,transparent_75%,transparent)] bg-[length:12px_12px]" />
@@ -161,11 +229,9 @@ export default function PenSettingsPopover({ settings, onChange, onClose }: PenS
           <div className="flex h-10 flex-1 items-center rounded-2xl bg-[#F3F4F6] px-3 text-sm text-[#111827]">
             <span className="mr-2 text-[#6B7280]">#</span>
             <input
-              key={settings.color}
-              defaultValue={settings.color.replace("#", "").toUpperCase()}
+              value={normalizedColor.replace("#", "")}
               onChange={(event) => {
                 const nextValue = event.target.value.replace(/[^0-9a-f]/gi, "").slice(0, 6).toUpperCase();
-                event.target.value = nextValue;
                 if (nextValue.length === 6) {
                   onChange({ ...settings, color: `#${nextValue}` });
                 }
@@ -173,6 +239,7 @@ export default function PenSettingsPopover({ settings, onChange, onClose }: PenS
               className="w-full bg-transparent font-mono uppercase outline-none"
               aria-label="Pen hex color"
             />
+            <span className="whitespace-nowrap text-xs text-[#6B7280]">{rgbLabel}</span>
           </div>
 
           <label className="flex h-10 w-[78px] items-center justify-center gap-1 rounded-2xl bg-[#F3F4F6] px-3 text-sm text-[#111827]">

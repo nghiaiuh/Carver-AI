@@ -29,6 +29,8 @@ import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
+import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils";
+import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosition } from "./imageGraph";
 
 type CanvasBoardProps = {
   selectedItem: SelectedItem;
@@ -51,6 +53,7 @@ type CanvasBoardProps = {
   onAddSketchLine: (line: SketchLine) => void;
   onAddPenStroke: (stroke: PenStrokeObject) => void;
   onDeletePenStroke: (strokeId: string) => void;
+  onReplacePenStrokes: (strokes: PenStrokeObject[]) => void;
   onPenSettingsChange: (settings: PenSettings) => void;
   onSelectSketchLine: (id: string, additive: boolean) => void;
   onSelectSketchGroup: (id: string) => void;
@@ -123,6 +126,11 @@ const MINIMAP_DRAG_SPEED = 0.8;
 const MARQUEE_SELECTION_THRESHOLD = 5;
 const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
 const MIN_POINT_DISTANCE = 1.5;
+const ERASER_BASE_SIZE = 18;
+const ERASER_MIN_SIZE = 12;
+const ERASER_MAX_SIZE = 60;
+const ERASER_SPEED_SCALE = 0.17;
+const ERASER_SIZE_SMOOTHING = 0.22;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -280,6 +288,7 @@ export default function CanvasBoard({
   onAddSketchLine,
   onAddPenStroke,
   onDeletePenStroke,
+  onReplacePenStrokes,
   onPenSettingsChange,
   onSelectSketchLine,
   onSelectSketchGroup,
@@ -372,9 +381,23 @@ export default function CanvasBoard({
   const dragStart = useRef<{ x: number; y: number; nodeX: number; nodeY: number } | null>(null);
   const penPointerId = useRef<number | null>(null);
   const [draftPenStroke, setDraftPenStroke] = useState<PenStrokeObject | null>(null);
+  const eraserPointerId = useRef<number | null>(null);
+  const eraseSessionBeforeRef = useRef<PenStrokeObject[] | null>(null);
+  const eraseSessionAfterRef = useRef<PenStrokeObject[] | null>(null);
+  const eraseSessionChangedRef = useRef(false);
+  const lastEraserMotionRef = useRef<{ x: number; y: number; time: number; size: number } | null>(null);
+  const [eraserPreview, setEraserPreview] = useState<{ x: number; y: number; size: number; visible: boolean }>({
+    x: 0,
+    y: 0,
+    size: ERASER_BASE_SIZE,
+    visible: false,
+  });
+  const [penEraseUndoStack, setPenEraseUndoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
+  const [penEraseRedoStack, setPenEraseRedoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
 
   // ── Edge Creation State ───────────────────────────────────────────────────
-  const [draftEdge, setDraftEdge] = useState<{ sourceId: string; targetX: number; targetY: number } | null>(null);
+  const [draftEdge, setDraftEdge] = useState<{ sourceId: string; sourceHandle: ImageHandlePosition; targetX: number; targetY: number } | null>(null);
+  const [hoveredConnectionTargetId, setHoveredConnectionTargetId] = useState<string | null>(null);
 
   const clearMarqueeSelection = useCallback(() => {
     setMarqueeSelection({
@@ -390,6 +413,90 @@ export default function CanvasBoard({
     setDraftPenStroke(null);
     penPointerId.current = null;
   }, []);
+
+  const clearEraserSession = useCallback(() => {
+    eraserPointerId.current = null;
+    eraseSessionBeforeRef.current = null;
+    eraseSessionAfterRef.current = null;
+    eraseSessionChangedRef.current = false;
+  }, []);
+
+  const updateEraserPreview = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const now = performance.now();
+    const previousMotion = lastEraserMotionRef.current;
+    let nextSize = eraserPreview.size;
+
+    if (previousMotion) {
+      const elapsed = Math.max(now - previousMotion.time, 1);
+      const delta = Math.hypot(event.clientX - previousMotion.x, event.clientY - previousMotion.y);
+      const velocity = delta / elapsed;
+      const targetSize = clamp(ERASER_BASE_SIZE + velocity / ERASER_SPEED_SCALE, ERASER_MIN_SIZE, ERASER_MAX_SIZE);
+      nextSize = previousMotion.size + (targetSize - previousMotion.size) * ERASER_SIZE_SMOOTHING;
+    } else {
+      nextSize = ERASER_BASE_SIZE;
+    }
+
+    lastEraserMotionRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      time: now,
+      size: nextSize,
+    };
+
+    const container = containerRef.current;
+    if (!container) return null;
+
+    const screenPoint = getPointerPointInContainer(event, container);
+    const worldPoint = getWorldPointFromPointer({
+      point: screenPoint,
+      pan,
+      zoom,
+    });
+
+    setEraserPreview({
+      x: worldPoint.x,
+      y: worldPoint.y,
+      size: nextSize / zoom,
+      visible: true,
+    });
+
+    return {
+      point: worldPoint,
+      worldSize: nextSize / zoom,
+    };
+  }, [eraserPreview.size, pan, zoom]);
+
+  const applyEraserAt = useCallback((point: Point, worldSize: number) => {
+    const nextResult = erasePenStrokesBySquare(penStrokes, point, worldSize);
+    if (!nextResult.changed) return false;
+
+    onReplacePenStrokes(nextResult.strokes);
+    eraseSessionChangedRef.current = true;
+    eraseSessionAfterRef.current = clonePenStrokes(nextResult.strokes);
+    return true;
+  }, [onReplacePenStrokes, penStrokes]);
+
+  const undoPenErase = useCallback(() => {
+    const latestAction = penEraseUndoStack.at(-1);
+    if (!latestAction) return false;
+
+    setPenEraseUndoStack((current) => current.slice(0, -1));
+    setPenEraseRedoStack((current) => [...current, latestAction]);
+    onReplacePenStrokes(clonePenStrokes(latestAction.before));
+    onSelect({ type: "none" });
+    return true;
+  }, [onReplacePenStrokes, onSelect, penEraseUndoStack]);
+
+  const redoPenErase = useCallback(() => {
+    const latestAction = penEraseRedoStack.at(-1);
+    if (!latestAction) return false;
+
+    setPenEraseRedoStack((current) => current.slice(0, -1));
+    setPenEraseUndoStack((current) => [...current, latestAction]);
+    onReplacePenStrokes(clonePenStrokes(latestAction.after));
+    onSelect({ type: "none" });
+    return true;
+  }, [onReplacePenStrokes, onSelect, penEraseRedoStack]);
 
   const addImageNode = useCallback(
     async (imageUrl: string, title = "Pasted Image", sourceMetadata: ImageSourceMetadata = {}) => {
@@ -552,6 +659,22 @@ export default function CanvasBoard({
         event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
+      if (activeTool === "eraser") {
+        event.stopPropagation();
+        if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
+        if (isCanvasInteractiveTarget(event.target)) return;
+
+        eraserPointerId.current = event.pointerId;
+        eraseSessionBeforeRef.current = clonePenStrokes(penStrokes);
+        eraseSessionAfterRef.current = clonePenStrokes(penStrokes);
+        eraseSessionChangedRef.current = false;
+        const preview = updateEraserPreview(event);
+        if (preview) {
+          applyEraserAt(preview.point, preview.worldSize);
+        }
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
       if (activeTool !== "select") return;
       if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
       if (isCanvasInteractiveTarget(event.target)) return;
@@ -575,7 +698,7 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, draftEdge, draggingNodeId, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, zoom],
+    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
@@ -594,6 +717,27 @@ export default function CanvasBoard({
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
+
+  const handleConnectionHandlePointerDown = useCallback(
+    (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => {
+      if (isResizingPanel) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const sourceNode = nodes.find((node) => node.id === nodeId);
+      if (!sourceNode) return;
+
+      const startPoint = getImageHandlePoint(sourceNode, handle);
+      setDraftEdge({
+        sourceId: nodeId,
+        sourceHandle: handle,
+        targetX: startPoint.x,
+        targetY: startPoint.y,
+      });
+      setHoveredConnectionTargetId(null);
+    },
+    [isResizingPanel, nodes],
+  );
 
   // ── Edge Draft logic ──────────────────────────────────────────────────────
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
@@ -630,6 +774,15 @@ export default function CanvasBoard({
           points: [...currentStroke.points, currentPoint],
         };
       });
+      return;
+    }
+
+    if (activeTool === "eraser") {
+      const preview = updateEraserPreview(event);
+      if (eraserPointerId.current === event.pointerId && preview) {
+        event.stopPropagation();
+        applyEraserAt(preview.point, preview.worldSize);
+      }
       return;
     }
 
@@ -676,9 +829,20 @@ export default function CanvasBoard({
       });
       
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
+      const hoveredNode = nodes.find((node) => {
+        if (node.id === draftEdge.sourceId) return false;
+        const scale = node.scale ?? 1;
+        return (
+          target.x >= node.x &&
+          target.x <= node.x + node.width * scale &&
+          target.y >= node.y &&
+          target.y <= node.y + node.height * scale
+        );
+      });
+      setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
 
-  }, [activeTool, draftEdge, draftPenStroke, draggingNodeId, isResizingPanel, marqueeSelection, onNodesChange, pan, zoom]);
+  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
     if (isResizingPanel) return;
@@ -699,6 +863,27 @@ export default function CanvasBoard({
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       cancelDraftPenStroke();
+      return;
+    }
+
+    if (activeTool === "eraser" && eraserPointerId.current === event.pointerId) {
+      event.stopPropagation();
+      if (eraseSessionChangedRef.current && eraseSessionBeforeRef.current && eraseSessionAfterRef.current) {
+        setPenEraseUndoStack((current) => [
+          ...current,
+          {
+            before: eraseSessionBeforeRef.current!,
+            after: eraseSessionAfterRef.current!,
+          },
+        ]);
+        setPenEraseRedoStack([]);
+      }
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      clearEraserSession();
       return;
     }
 
@@ -778,21 +963,32 @@ export default function CanvasBoard({
         });
 
         if (targetNode) {
-          const newEdge: CanvasEdge = {
-            id: `edge-${Date.now()}`,
-            sourceId: draftEdge.sourceId,
-            targetId: targetNode.id,
-            label: "reference", // default role
-          };
-          onEdgesChange(prev => [...prev, newEdge]);
-          setMarqueeSelectedNodeIds(null);
-          onSelect({ type: "edge", id: newEdge.id });
-          onToast("Edge created");
+          const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
+          const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
+          const edgeExists = edges.some((edge) => edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id);
+
+          if (!edgeExists) {
+            const newEdge: CanvasEdge = {
+              id: `edge-${Date.now()}`,
+              sourceId: draftEdge.sourceId,
+              targetId: targetNode.id,
+              fromHandle: draftEdge.sourceHandle,
+              toHandle: draftEdge.sourceHandle === "right" ? "left" : "right",
+              role,
+              label: role.replace("_reference", "").replaceAll("_", " "),
+              createdAt: new Date().toISOString(),
+            };
+            onEdgesChange(prev => [...prev, newEdge]);
+            setMarqueeSelectedNodeIds(null);
+            onSelect({ type: "edge", id: newEdge.id });
+            onToast("Connection created");
+          }
         }
       }
       setDraftEdge(null);
+      setHoveredConnectionTargetId(null);
     }
-  }, [activeTool, cancelDraftPenStroke, clearMarqueeSelection, draftEdge, draftPenStroke, isResizingPanel, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, draftEdge, draftPenStroke, edges, isResizingPanel, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -837,6 +1033,13 @@ export default function CanvasBoard({
       if (wheelZoomTimeout.current) window.clearTimeout(wheelZoomTimeout.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTool === "eraser") return;
+
+    lastEraserMotionRef.current = null;
+    clearEraserSession();
+  }, [activeTool, clearEraserSession]);
 
   useEffect(() => {
     if (!projectMenuOpen) return;
@@ -948,8 +1151,27 @@ export default function CanvasBoard({
         return;
       }
 
+      if (event.key === "Escape" && activeTool === "eraser" && eraserPreview.visible) {
+        event.preventDefault();
+        setEraserPreview((current) => ({ ...current, visible: false }));
+        clearEraserSession();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && ((event.shiftKey && event.key.toLowerCase() === "z") || event.key.toLowerCase() === "y")) {
+        event.preventDefault();
+        if (redoPenErase()) {
+          onToast("Erase redone");
+        }
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
+        if (undoPenErase()) {
+          onToast("Erase undone");
+          return;
+        }
         undoDeleteNode();
         return;
       }
@@ -969,7 +1191,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cancelDraftPenStroke, clearMarqueeSelection, deleteNode, draftPenStroke, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, selectedItem, undoDeleteNode]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoPenErase, selectedItem, undoDeleteNode, undoPenErase]);
 
   const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
@@ -1294,17 +1516,6 @@ export default function CanvasBoard({
           draftEdge={draftEdge}
         />
 
-        <PenStrokeLayer
-          strokes={penStrokes}
-          draftStroke={draftPenStroke}
-          activeTool={activeTool}
-          selectedStrokeId={selectedItem.type === "pen-stroke" ? selectedItem.id : null}
-          onSelectStroke={(strokeId) => {
-            setMarqueeSelectedNodeIds(null);
-            onSelect({ type: "pen-stroke", id: strokeId });
-          }}
-        />
-
         {nodes.map(node => (
           <CanvasNodeCard
             key={node.id}
@@ -1321,10 +1532,12 @@ export default function CanvasBoard({
             selectedSketchLineIds={selectedSketchLineIds}
             activeNodeId={activeNodeId}
             viewportZoom={zoom}
+            isConnectionTarget={hoveredConnectionTargetId === node.id}
             onSelect={(id) => {
               setMarqueeSelectedNodeIds(null);
               onSelect({ type: "node", id });
             }}
+            onStartConnection={handleConnectionHandlePointerDown}
             onSelectOverlay={(item) => {
               setMarqueeSelectedNodeIds(null);
               onSelect(item);
@@ -1352,14 +1565,33 @@ export default function CanvasBoard({
           />
         ))}
 
-        {activeTool === "pen" ? (
+        <div className="pointer-events-none absolute inset-0 z-[140]">
+          <PenStrokeLayer
+            strokes={penStrokes}
+            draftStroke={draftPenStroke}
+            activeTool={activeTool}
+            eraserPreview={eraserPreview}
+            selectedStrokeId={selectedItem.type === "pen-stroke" ? selectedItem.id : null}
+            onSelectStroke={(strokeId) => {
+              setMarqueeSelectedNodeIds(null);
+              onSelect({ type: "pen-stroke", id: strokeId });
+            }}
+          />
+        </div>
+
+        {activeTool === "pen" || activeTool === "eraser" ? (
           <div
-            className="absolute inset-0 z-[90] cursor-crosshair"
+            className={`absolute inset-0 z-[90] ${activeTool === "eraser" ? "cursor-none" : "cursor-crosshair"}`}
             onPointerDown={handleCanvasPointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-            onPointerLeave={handlePointerUp}
+            onPointerLeave={(event) => {
+              if (activeTool === "eraser") {
+                setEraserPreview((current) => ({ ...current, visible: false }));
+              }
+              handlePointerUp(event);
+            }}
           />
         ) : null}
       </div>

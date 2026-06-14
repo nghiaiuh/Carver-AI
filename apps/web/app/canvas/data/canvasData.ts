@@ -27,7 +27,7 @@ export type ToolId =
   | "region"
   | "lock"
   | "add-object"
-  | "erase"
+  | "eraser"
   | "multi-angle"
   | "comment";
 
@@ -135,7 +135,7 @@ export const canvasTools: CanvasTool[] = [
   { id: "region", label: "Region", group: "Mark & Region", icon: PenLine, tip: "Draw an editable area for AI changes." },
   { id: "lock", label: "Lock", group: "Mark & Region", icon: Lock, tip: "Protect an area from changes." },
   { id: "add-object", label: "Object", group: "Object", icon: PackagePlus, tip: "Add koi pond, waterfall, plants, people, or hardscape." },
-  { id: "erase", label: "Erase", group: "Object", icon: Eraser, tip: "Remove selected canvas items." },
+  { id: "eraser", label: "Erase", group: "Object", icon: Eraser, tip: "Erase pen marks by area." },
   { id: "multi-angle", label: "Angles", group: "Camera", icon: Camera, tip: "Create a multi-angle concept set." },
   { id: "comment", label: "Comment", group: "Assist", icon: MessageCircle, tip: "Leave a design note for collaborators." },
 ];

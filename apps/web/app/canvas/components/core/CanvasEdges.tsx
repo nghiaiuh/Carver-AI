@@ -9,6 +9,7 @@
 
 import React from "react";
 import type { CanvasNode, CanvasEdge } from "./CanvasWorkspace";
+import { buildBezierPath, getImageHandlePoint } from "./imageGraph";
 
 type CanvasEdgesProps = {
   nodes: CanvasNode[];
@@ -16,7 +17,7 @@ type CanvasEdgesProps = {
   selectedEdgeId: string | null;
   onEdgeClick: (id: string, e: React.MouseEvent) => void;
   // For interactive dragging
-  draftEdge?: { sourceId: string; targetX: number; targetY: number } | null;
+  draftEdge?: { sourceId: string; sourceHandle?: CanvasEdge["fromHandle"]; targetX: number; targetY: number } | null;
 };
 
 export default function CanvasEdges({
@@ -26,37 +27,23 @@ export default function CanvasEdges({
   onEdgeClick,
   draftEdge,
 }: CanvasEdgesProps) {
-  // Helper to find node center coordinates
-  const getNodeCenter = (nodeId: string) => {
+  const getNodeAnchor = (nodeId: string, handle?: CanvasEdge["fromHandle"]) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
-    const scale = node.scale ?? 1;
-    return {
-      x: node.x + (node.width * scale) / 2,
-      y: node.y + (node.height * scale) / 2 + 16, // approximate center taking into account padding
-    };
-  };
-
-  const drawBezier = (x1: number, y1: number, x2: number, y2: number) => {
-    // For a nice curve, control points are offset horizontally
-    const dx = Math.abs(x2 - x1);
-    const offsetX = Math.max(dx * 0.4, 50);
-    // If target is to the left, curve backwards. We just use standard horizontal bezier
-    const dir = x2 > x1 ? 1 : -1;
-    return `M ${x1} ${y1} C ${x1 + offsetX * dir} ${y1}, ${x2 - offsetX * dir} ${y2}, ${x2} ${y2}`;
+    return getImageHandlePoint(node, handle ?? "right");
   };
 
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible" }}>
       {/* Render established edges */}
       {edges.map((edge) => {
-        const sourceCenter = getNodeCenter(edge.sourceId);
-        const targetCenter = getNodeCenter(edge.targetId);
+        const sourceCenter = getNodeAnchor(edge.sourceId, edge.fromHandle ?? "right");
+        const targetCenter = getNodeAnchor(edge.targetId, edge.toHandle ?? "left");
         
         if (!sourceCenter || !targetCenter) return null;
 
         const isSelected = selectedEdgeId === edge.id;
-        const pathData = drawBezier(sourceCenter.x, sourceCenter.y, targetCenter.x, targetCenter.y);
+        const pathData = buildBezierPath(sourceCenter, targetCenter);
 
         // Calculate midpoint for label
         const midX = (sourceCenter.x + targetCenter.x) / 2;
@@ -76,8 +63,8 @@ export default function CanvasEdges({
             <path
               d={pathData}
               fill="none"
-              stroke={isSelected ? "#3B82F6" : "#D1D5DB"}
-              strokeWidth={isSelected ? "3" : "2"}
+              stroke={isSelected ? "#8A8A8A" : "#5F5F5F"}
+              strokeWidth={isSelected ? "2.5" : "2"}
               className="group-hover:stroke-[#9CA3AF] transition-colors"
             />
             
@@ -97,16 +84,16 @@ export default function CanvasEdges({
 
       {/* Render draft edge if dragging */}
       {draftEdge && (() => {
-        const sourceCenter = getNodeCenter(draftEdge.sourceId);
+        const sourceCenter = getNodeAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
         if (!sourceCenter) return null;
-        const pathData = drawBezier(sourceCenter.x, sourceCenter.y, draftEdge.targetX, draftEdge.targetY);
+        const pathData = buildBezierPath(sourceCenter, { x: draftEdge.targetX, y: draftEdge.targetY });
         return (
           <path
             d={pathData}
             fill="none"
-            stroke="#3B82F6"
+            stroke="#737373"
             strokeWidth="2"
-            strokeDasharray="5,5"
+            strokeDasharray="4 4"
             className="opacity-70 animate-pulse"
           />
         );

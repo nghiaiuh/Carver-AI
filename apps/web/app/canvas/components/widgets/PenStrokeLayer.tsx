@@ -11,6 +11,12 @@ type PenStrokeLayerProps = {
   strokes: PenStrokeObject[];
   draftStroke: PenStrokeObject | null;
   activeTool: string;
+  eraserPreview: {
+    x: number;
+    y: number;
+    size: number;
+    visible: boolean;
+  };
   selectedStrokeId: string | null;
   onSelectStroke: (strokeId: string) => void;
 };
@@ -77,6 +83,7 @@ export default function PenStrokeLayer({
   strokes,
   draftStroke,
   activeTool,
+  eraserPreview,
   selectedStrokeId,
   onSelectStroke,
 }: PenStrokeLayerProps) {
@@ -97,7 +104,7 @@ export default function PenStrokeLayer({
               <button
                 key={`${stroke.id}-hitbox`}
                 type="button"
-                className="absolute cursor-pointer rounded-md bg-transparent"
+                className="pointer-events-auto absolute cursor-pointer rounded-md bg-transparent"
                 style={{
                   left: bounds.x,
                   top: bounds.y,
@@ -114,6 +121,18 @@ export default function PenStrokeLayer({
             );
           })
         : null}
+
+      {activeTool === "eraser" && eraserPreview.visible ? (
+        <div
+          className="pointer-events-none absolute border border-[rgba(17,24,39,0.45)] bg-transparent shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
+          style={{
+            left: eraserPreview.x - eraserPreview.size / 2,
+            top: eraserPreview.y - eraserPreview.size / 2,
+            width: eraserPreview.size,
+            height: eraserPreview.size,
+          }}
+        />
+      ) : null}
     </>
   );
 }

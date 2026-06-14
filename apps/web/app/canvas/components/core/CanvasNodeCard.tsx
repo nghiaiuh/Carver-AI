@@ -9,12 +9,13 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
-import { ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
+import { Image as ImageIcon, ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import FloatingQuickPanel from "../widgets/FloatingQuickPanel";
 import MarkerPin from "../widgets/MarkerPin";
 import RegionOverlay from "../widgets/RegionOverlay";
 import SketchLayer from "../widgets/SketchLayer";
+import type { ImageHandlePosition } from "./imageGraph";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
@@ -70,7 +71,9 @@ type CanvasNodeCardProps = {
   selectedSketchLineIds: string[];
   activeNodeId: string;
   viewportZoom: number;
+  isConnectionTarget?: boolean;
   onSelect: (id: string, event?: React.MouseEvent) => void;
+  onStartConnection: (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => void;
   onSelectOverlay: (item: SelectedItem) => void;
   onAddSketchLine: (line: SketchLine) => void;
   onSelectSketchLine: (id: string, additive: boolean) => void;
@@ -102,7 +105,9 @@ export default function CanvasNodeCard({
   selectedSketchLineIds,
   activeNodeId,
   viewportZoom,
+  isConnectionTarget = false,
   onSelect,
+  onStartConnection,
   onSelectOverlay,
   onAddSketchLine,
   onSelectSketchLine,
@@ -156,7 +161,11 @@ export default function CanvasNodeCard({
         <div 
           className={[
             "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
-            selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-transparent",
+            selected
+              ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/15"
+              : isConnectionTarget
+                ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/10"
+                : "border-transparent",
           ].join(" ")}
           style={{ height: displayHeight }}
           onClick={(e) => {
@@ -185,6 +194,19 @@ export default function CanvasNodeCard({
           )}
           
           <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
+
+          <ImageNodeHandle
+            side="left"
+            viewportZoom={viewportZoom}
+            active={selected || isConnectionTarget}
+            onPointerDown={(event) => onStartConnection(node.id, "left", event)}
+          />
+          <ImageNodeHandle
+            side="right"
+            viewportZoom={viewportZoom}
+            active={selected || isConnectionTarget}
+            onPointerDown={(event) => onStartConnection(node.id, "right", event)}
+          />
 
           {/* Overlays (Render only on active node, mimicking SelectableImage behavior) */}
           {isActiveNode && (
@@ -287,6 +309,41 @@ export default function CanvasNodeCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ImageNodeHandle({
+  side,
+  viewportZoom,
+  active,
+  onPointerDown,
+}: {
+  side: ImageHandlePosition;
+  viewportZoom: number;
+  active: boolean;
+  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
+}) {
+  const uiScale = 1 / viewportZoom;
+
+  return (
+    <button
+      type="button"
+      data-canvas-interactive="true"
+      className={[
+        "absolute top-1/2 z-50 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
+        active ? "border-[#8A8A8A] bg-[#5F5F5F]" : "border-[#4A4A4A] bg-[#3F3F3F] hover:border-[#8A8A8A] hover:bg-[#5F5F5F]",
+      ].join(" ")}
+      style={{
+        left: side === "left" ? `${10 * uiScale}px` : "auto",
+        right: side === "right" ? `${10 * uiScale}px` : "auto",
+        transform: `translateY(-50%) scale(${uiScale})`,
+        transformOrigin: "center",
+      }}
+      aria-label={`Start image connection from ${side} handle`}
+      onPointerDown={onPointerDown}
+    >
+      <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+    </button>
   );
 }
 

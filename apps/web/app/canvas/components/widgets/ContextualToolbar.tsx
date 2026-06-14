@@ -35,7 +35,7 @@ type ContextualToolbarProps = {
 const tools = [
   { label: "Quick Edit", icon: WandSparkles, action: "quick-edit" },
   { label: "Enhance", icon: Sparkles, action: "enhance" },
-  { label: "Erase", icon: Eraser, tool: "erase" },
+  { label: "Erase", icon: Eraser, tool: "eraser" },
   { label: "Edit Elements", icon: MousePointer2, tool: "edit-elements" },
   { label: "Mark Position", icon: Scan, tool: "mark-position" },
   { label: "Lock Area", icon: Lock, tool: "lock-area" },

@@ -161,6 +161,10 @@ export const TARGET_AREA_MAP: Record<string, string> = {
   "phia tren": "top area",
   "phia duoi": "bottom area",
   "gan giua": "near the center",
+  "gan giua ben duoi": "near the lower middle area",
+  "gan giua phia duoi": "near the lower middle area",
+  "giua ben duoi": "lower middle area",
+  "phia duoi giua": "lower middle area",
   "o giua": "center area",
   "trung tam": "center area",
   "doc hang rao": "along the fence",
@@ -173,6 +177,8 @@ export const TARGET_AREA_MAP: Record<string, string> = {
   "quanh ho": "around the pond",
   "canh ho koi": "beside the koi pond",
   "quanh ho koi": "around the koi pond",
+  "goc phai phia tren": "upper right corner",
+  "goc trai phia tren": "upper left corner",
   "gan nha choi": "near the gazebo",
   "xung quanh nha choi": "around the gazebo",
   "san truoc": "front courtyard",
@@ -185,6 +191,8 @@ export const TARGET_AREA_MAP: Record<string, string> = {
   "right side": "right side",
   "left edge": "left edge",
   "left side": "left side",
+  "near the lower middle area": "near the lower middle area",
+  "lower middle area": "lower middle area",
   "top area": "top area",
   "bottom area": "bottom area",
   "near the center": "near the center",
@@ -204,6 +212,72 @@ export const TARGET_AREA_MAP: Record<string, string> = {
   "lawn area": "lawn area",
   "entrance area": "entrance area",
 };
+
+export const TARGET_AREA_DICTIONARY = {
+  "mep trai": "left edge",
+  "ben trai": "left side",
+  "mep phai": "right edge",
+  "ben phai": "right side",
+  "gan giua ben duoi": "near the lower middle area",
+  "gan giua phia duoi": "near the lower middle area",
+  "giua ben duoi": "lower middle area",
+  "phia duoi giua": "lower middle area",
+  "gan trung tam": "near the center",
+  "goc phai phia tren": "upper right corner",
+  "goc trai phia tren": "upper left corner",
+  "doc hang rao": "along the fence",
+  "ngoai hang rao": "outside the fence",
+  "sat tuong": "beside the wall",
+  "quanh ho koi": "around the koi pond",
+} as const;
+
+export const IMAGE_REFERENCE_DICTIONARY = {
+  "anh 1": "Image A",
+  "hinh 1": "Image A",
+  "anh goc": "Image A",
+  "anh can sua": "Image A",
+  "anh 2": "Image B",
+  "hinh 2": "Image B",
+  "anh tham chieu 1": "Image B",
+  "anh 3": "Image C",
+  "hinh 3": "Image C",
+  "anh tham chieu 2": "Image C",
+} as const;
+
+export const ARCHITECTURE_DICTIONARY = {
+  "nha go": "wooden house",
+  "nha truyen thong": "traditional house",
+  "nha viet nam": "Vietnamese traditional house",
+  "mai ngoi": "clay tile roof",
+  "mai do": "red terracotta tiled roof",
+  "mai dat nung": "terracotta tiled roof",
+  "cot go": "timber columns",
+  "nha choi": "gazebo",
+  "choi luc giac": "hexagonal pavilion",
+  "nha mo": "open-sided structure",
+  "nha kin": "enclosed house",
+  "nha o": "residential house",
+  "hien nha": "front veranda / porch",
+  "lan can": "railing",
+  "bac them": "low entrance step",
+} as const;
+
+export const LANDSCAPE_OBJECT_DICTIONARY = {
+  "truc quan tu": "slender bamboo",
+  "cay cau": "areca palm",
+  "cau do": "areca palm with red fruit",
+  "ho koi": "koi pond",
+  "hon non bo": "Vietnamese rockery waterfall",
+  "da co thach": "natural limestone rocks",
+  san: "courtyard",
+  "gach xam ke caro": "gray square grid paving tiles",
+  "nha choi": "gazebo",
+  "cau go": "wooden bridge",
+  "da buoc dao": "stepping stone path",
+  "tung la han": "podocarpus bonsai",
+  bonsai: "bonsai tree",
+  "co nhung nhat": "Japanese zoysia grass",
+} as const;
 
 export const STYLE_PRESETS = [
   {

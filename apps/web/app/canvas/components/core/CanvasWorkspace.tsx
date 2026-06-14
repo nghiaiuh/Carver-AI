@@ -23,10 +23,12 @@ import QuickEditModal from "../panels/QuickEditModal";
 import RealityCheckPanel from "../panels/RealityCheckPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
 import useResizablePanel from "../../hooks/useResizablePanel";
+import type { ImageConnectionRole, ImageHandlePosition } from "./imageGraph";
 
 export type EditorTool =
   | "select"
   | "pen"
+  | "eraser"
   | "mark-position"
   | "add-source"
   | "grid"
@@ -35,7 +37,6 @@ export type EditorTool =
   | "text-note"
   | "add-object"
   | "generate"
-  | "erase"
   | "edit-elements"
   | "move-object";
 
@@ -166,6 +167,10 @@ export type CanvasEdge = {
   sourceId: string;
   targetId: string;
   label: string;
+  fromHandle?: ImageHandlePosition;
+  toHandle?: ImageHandlePosition;
+  role?: ImageConnectionRole;
+  createdAt?: string;
 };
 
 export type LeftSidebarPanelId = "library" | "adjust-render";
@@ -322,6 +327,17 @@ export default function CanvasWorkspace() {
     setPenStrokes((items) => [...items, stroke]);
     setSelectedItem({ type: "pen-stroke", id: stroke.id });
     setSelectedSketchLineIds([]);
+  };
+
+  const replacePenStrokes = (nextStrokes: PenStrokeObject[]) => {
+    setPenStrokes(nextStrokes);
+    setSelectedItem((current) => {
+      if (current.type !== "pen-stroke") {
+        return current;
+      }
+
+      return nextStrokes.some((stroke) => stroke.id === current.id) ? current : { type: "none" };
+    });
   };
 
   const deletePenStroke = (strokeId: string) => {
@@ -576,6 +592,7 @@ export default function CanvasWorkspace() {
             onAddSketchLine={addSketchLine}
             onAddPenStroke={addPenStroke}
             onDeletePenStroke={deletePenStroke}
+            onReplacePenStrokes={replacePenStrokes}
             onPenSettingsChange={setPenSettings}
             onSelectSketchLine={selectSketchLine}
             onSelectSketchGroup={(id) => handleSelectItem({ type: "sketchGroup", id })}

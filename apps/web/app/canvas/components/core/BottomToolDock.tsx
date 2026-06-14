@@ -7,11 +7,12 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Grid3X3,
   Circle,
+  Eraser,
   ImagePlus,
   Library,
   Map,
@@ -28,6 +29,7 @@ import {
 import type { EditorTool, LeftSidebarPanelId } from "./CanvasWorkspace";
 import type { PenSettings } from "./CanvasWorkspace";
 import PenSettingsPopover from "../canvas/PenSettingsPopover";
+import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv } from "../widgets/colorPickerUtils";
 
 type BottomToolDockProps = {
   activeTool: EditorTool;
@@ -58,6 +60,7 @@ const tools = [
   { id: "grid", label: "Grid", icon: Grid3X3 },
   { id: "draw-region", label: "Shape", icon: Square },
   { id: "pen", label: "Pen", icon: Pencil },
+  { id: "eraser", label: "Eraser", icon: Eraser },
   { id: "text-note", label: "Text", icon: Type },
   { id: "add-object", label: "Object", icon: Box },
   { id: "generate", label: "Generate", icon: WandSparkles },
@@ -85,12 +88,66 @@ export default function BottomToolDock({
   const zoomLabel = `${Math.round(zoom * 100)}%`;
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [penPopoverOpen, setPenPopoverOpen] = useState(false);
+  const themePickerRef = useRef<HTMLDivElement>(null);
+  const themeTriggerRef = useRef<HTMLButtonElement>(null);
+  const themeFieldPointerId = useRef<number | null>(null);
+  const themeHuePointerId = useRef<number | null>(null);
   const themeSwatches = useMemo(() => ["#F5F5F5", "#000000", "#FFFFFF", "#14532D", "#1E1B4B", "#DDD0F5"], []);
+  const normalizedThemeColor = normalizeHexColor(canvasThemeColor, "#F5F5F5");
+  const themeHsv = useMemo(() => rgbToHsv({
+    r: parseInt(normalizedThemeColor.slice(1, 3), 16),
+    g: parseInt(normalizedThemeColor.slice(3, 5), 16),
+    b: parseInt(normalizedThemeColor.slice(5, 7), 16),
+  }), [normalizedThemeColor]);
+  const themeRgbLabel = useMemo(() => formatRgbLabel(normalizedThemeColor), [normalizedThemeColor]);
+
+  useEffect(() => {
+    if (!themePickerOpen) return undefined;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (themePickerRef.current?.contains(target) || themeTriggerRef.current?.contains(target)) {
+        return;
+      }
+
+      setThemePickerOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setThemePickerOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [themePickerOpen]);
+
+  const updateThemeColorFromField = (clientX: number, clientY: number, rect: DOMRect) => {
+    const saturation = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const value = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
+    onCanvasThemeChange(hsvToHex({ h: themeHsv.h, s: saturation, v: value }));
+  };
+
+  const updateThemeHue = (clientX: number, rect: DOMRect) => {
+    const hue = clamp((clientX - rect.left) / rect.width, 0, 1) * 360;
+    onCanvasThemeChange(hsvToHex({ h: hue, s: themeHsv.s, v: themeHsv.v }));
+  };
 
   return (
     <>
       {themePickerOpen ? (
-        <div className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
+        <div
+          ref={themePickerRef}
+          className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur"
+          data-canvas-ui="true"
+        >
           <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-5">
             <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">Theme</h2>
             <button
@@ -107,37 +164,89 @@ export default function BottomToolDock({
           </div>
 
           <div className="space-y-4 p-5">
-            <label
+            <div
               className="relative block h-[165px] overflow-hidden rounded-lg"
               style={{
                 background:
-                  "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), linear-gradient(135deg, #ff8a8a, #f00000)",
+                  `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), ${hueToHex(themeHsv.h)}`,
+              }}
+              role="slider"
+              tabIndex={0}
+              aria-label="Pick canvas theme color"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(themeHsv.s * 100)}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                themeFieldPointerId.current = event.pointerId;
+                updateThemeColorFromField(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (themeFieldPointerId.current !== event.pointerId) return;
+                updateThemeColorFromField(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+              }}
+              onPointerUp={(event) => {
+                if (themeFieldPointerId.current !== event.pointerId) return;
+                themeFieldPointerId.current = null;
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerCancel={(event) => {
+                if (themeFieldPointerId.current !== event.pointerId) return;
+                themeFieldPointerId.current = null;
+                event.currentTarget.releasePointerCapture(event.pointerId);
               }}
             >
-              <input
-                type="color"
-                value={canvasThemeColor}
-                onChange={(event) => onCanvasThemeChange(event.target.value.toUpperCase())}
-                className="absolute inset-0 h-full w-full cursor-crosshair opacity-0"
-                aria-label="Pick canvas theme color"
+              <span
+                className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.18)]"
+                style={{
+                  left: `${themeHsv.s * 100}%`,
+                  top: `${(1 - themeHsv.v) * 100}%`,
+                }}
               />
-              <span className="absolute left-0 top-1 h-5 w-5 rounded-full border-2 border-white bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.18)]" />
-            </label>
+            </div>
 
-            <label className="relative block h-4 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]">
-              <input
-                type="color"
-                value={canvasThemeColor}
-                onChange={(event) => onCanvasThemeChange(event.target.value.toUpperCase())}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                aria-label="Adjust theme hue"
+            <div
+              className="relative block h-4 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]"
+              role="slider"
+              tabIndex={0}
+              aria-label="Adjust theme hue"
+              aria-valuemin={0}
+              aria-valuemax={360}
+              aria-valuenow={Math.round(themeHsv.h)}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                themeHuePointerId.current = event.pointerId;
+                updateThemeHue(event.clientX, event.currentTarget.getBoundingClientRect());
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (themeHuePointerId.current !== event.pointerId) return;
+                updateThemeHue(event.clientX, event.currentTarget.getBoundingClientRect());
+              }}
+              onPointerUp={(event) => {
+                if (themeHuePointerId.current !== event.pointerId) return;
+                themeHuePointerId.current = null;
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerCancel={(event) => {
+                if (themeHuePointerId.current !== event.pointerId) return;
+                themeHuePointerId.current = null;
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+            >
+              <span
+                className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.16)]"
+                style={{
+                  left: `${(themeHsv.h / 360) * 100}%`,
+                  backgroundColor: hueToHex(themeHsv.h),
+                }}
               />
-              <span className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border-2 border-white bg-[#FF1D00] shadow-[0_0_0_1px_rgba(0,0,0,0.16)]" />
-            </label>
+            </div>
 
             <div className="flex items-center gap-4">
               {themeSwatches.map((color) => {
-                const selected = canvasThemeColor.toUpperCase() === color;
+                const selected = normalizedThemeColor === color;
                 return (
                   <button
                     key={color}
@@ -160,14 +269,17 @@ export default function BottomToolDock({
             <div className="flex h-9 items-center gap-2 rounded-lg bg-[var(--canvas-theme-surface-soft)] px-3 text-sm text-[var(--canvas-theme-text-muted)]">
               <span className="text-[var(--canvas-theme-text-muted)]">#</span>
               <input
-                value={canvasThemeColor.replace("#", "")}
+                value={normalizedThemeColor.replace("#", "")}
                 onChange={(event) => {
                   const value = event.target.value.replace(/[^0-9a-f]/gi, "").slice(0, 6).toUpperCase();
-                  if (value.length === 6) onCanvasThemeChange(`#${value}`);
+                  if (value.length === 6) {
+                    onCanvasThemeChange(`#${value}`);
+                  }
                 }}
                 className="w-full bg-transparent font-mono uppercase outline-none"
                 aria-label="Theme hex color"
               />
+              <span className="whitespace-nowrap text-xs">{themeRgbLabel}</span>
             </div>
           </div>
         </div>
@@ -183,7 +295,13 @@ export default function BottomToolDock({
 
       <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-xl bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-icon-muted)]" data-canvas-ui="true">
         <div className="flex h-8 items-center gap-2 px-2">
-          <DockIcon label="Theme" icon={Palette} onClick={() => setThemePickerOpen((value) => !value)} />
+          <DockIcon
+            buttonRef={themeTriggerRef}
+            label="Theme"
+            icon={Palette}
+            active={themePickerOpen}
+            onClick={() => setThemePickerOpen((value) => !value)}
+          />
           <DockIcon
             label="Library"
             icon={Library}
@@ -277,11 +395,13 @@ export default function BottomToolDock({
 }
 
 function DockIcon({
+  buttonRef,
   icon: Icon,
   label,
   active,
   onClick,
 }: {
+  buttonRef?: React.RefObject<HTMLButtonElement | null>;
   icon: LucideIcon;
   label: string;
   active?: boolean;
@@ -289,6 +409,7 @@ function DockIcon({
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       title={label}
       aria-pressed={active}

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { enhancePrompt } from "./enhancePrompt";
+import { structuredPromptTestCases } from "./promptTestCases";
+import { buildStructuredEditingPrompt } from "./structuredPromptBuilder";
 
 test("adds bamboo along the fence without AI fallback", async () => {
   const result = await enhancePrompt({
@@ -162,4 +164,47 @@ test("preserves layout while changing only paving material", async () => {
 
   assert.equal(result.detectedIntent, "change_material");
   assert.ok(result.preserveRules.includes("exact object positions"));
+});
+
+test("builds structured prompt sections from scaffold test cases", () => {
+  for (const testCase of structuredPromptTestCases) {
+    const result = buildStructuredEditingPrompt(testCase.input);
+
+    for (const expectedSection of testCase.expectedSections) {
+      assert.ok(
+        result.prompt.includes(expectedSection) || result.sections.includes(expectedSection),
+        `${testCase.name} should include ${expectedSection}`,
+      );
+    }
+  }
+});
+
+test("builds multi-reference architecture sections", () => {
+  const result = buildStructuredEditingPrompt({
+    originalPrompt: "thay nha mep trai bang anh 2, thay nha gan giua ben duoi bang anh 3",
+    mode: "image_editing",
+    intent: "architecture_replace",
+    targetAreas: ["left edge", "near the lower middle area"],
+    targetObjects: ["house / structure", "house / structure"],
+    references: [
+      { imageLabel: "Image A", role: "direct_edit_target" },
+      {
+        imageLabel: "Image B",
+        role: "architectural_reference",
+        targetArea: "left edge",
+        targetObject: "house / structure",
+      },
+      {
+        imageLabel: "Image C",
+        role: "architectural_reference",
+        targetArea: "near the lower middle area",
+        targetObject: "house / structure",
+      },
+    ],
+  });
+
+  assert.ok(result.prompt.includes("BUILDING REPLACEMENT 1"));
+  assert.ok(result.prompt.includes("LEFT EDGE STRUCTURE -> BASED ON IMAGE B"));
+  assert.ok(result.prompt.includes("BUILDING REPLACEMENT 2"));
+  assert.ok(result.prompt.includes("LOWER MIDDLE STRUCTURE -> BASED ON IMAGE C"));
 });
