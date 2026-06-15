@@ -8,7 +8,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "./CanvasWorkspace";
+import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "../../types/canvas";
 import { Image as ImageIcon, ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import FloatingQuickPanel from "../widgets/FloatingQuickPanel";

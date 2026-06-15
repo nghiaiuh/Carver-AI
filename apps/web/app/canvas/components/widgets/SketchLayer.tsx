@@ -8,7 +8,7 @@
 "use client";
 
 import { useState } from "react";
-import type { EditorTool, SelectedItem, SketchGroup, SketchLine, SketchPoint } from "../core/CanvasWorkspace";
+import type { EditorTool, SelectedItem, SketchGroup, SketchLine, SketchPoint } from "../../types/canvas";
 
 type SketchLayerProps = {
   activeTool: EditorTool;

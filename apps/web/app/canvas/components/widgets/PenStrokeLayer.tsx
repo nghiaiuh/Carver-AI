@@ -1,6 +1,6 @@
 "use client";
 
-import type { PenStrokeObject } from "../core/CanvasWorkspace";
+import type { PenStrokeObject } from "../../types/canvas";
 
 type Point = {
   x: number;

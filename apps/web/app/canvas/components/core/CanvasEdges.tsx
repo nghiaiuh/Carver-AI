@@ -8,7 +8,7 @@
 "use client";
 
 import React from "react";
-import type { CanvasNode, CanvasEdge } from "./CanvasWorkspace";
+import type { CanvasNode, CanvasEdge } from "../../types/canvas";
 import { buildBezierPath, getImageHandlePoint } from "./imageGraph";
 
 type CanvasEdgesProps = {

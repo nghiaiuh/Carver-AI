@@ -26,8 +26,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { EditorTool, LeftSidebarPanelId } from "./CanvasWorkspace";
-import type { PenSettings } from "./CanvasWorkspace";
+import type { EditorTool, LeftSidebarPanelId, PenSettings } from "../../types/canvas";
 import PenSettingsPopover from "../canvas/PenSettingsPopover";
 import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv } from "../widgets/colorPickerUtils";
 

@@ -23,7 +23,7 @@ import type {
   SelectedItem,
   SketchGroup,
   SketchLine,
-} from "./CanvasWorkspace";
+} from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";

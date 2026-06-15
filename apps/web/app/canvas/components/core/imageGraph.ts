@@ -1,17 +1,9 @@
-import type { CanvasNode } from "./CanvasWorkspace";
+import type { CanvasNode } from "../../types/canvas";
 
-export type ImageHandlePosition = "left" | "right";
-
-export type ImageConnectionRole =
-  | "material_reference"
-  | "style_reference"
-  | "architecture_reference"
-  | "structure_reference"
-  | "plant_reference"
-  | "layout_reference"
-  | "direct_edit_target"
-  | "output_result"
-  | "generic_reference";
+// Re-export from the canonical type module so existing callers of imageGraph
+// that import ImageHandlePosition / ImageConnectionRole continue to work.
+export type { ImageHandlePosition, ImageConnectionRole } from "../../types/canvas";
+import type { ImageHandlePosition, ImageConnectionRole } from "../../types/canvas";
 
 const MATERIAL_PATTERN = /(material|tile|texture|gach|da|vat lieu|limestone|stone)/i;
 const ARCHITECTURE_PATTERN = /(house|architecture|structure|nha|mai|cot|kien truc|roof|building)/i;
