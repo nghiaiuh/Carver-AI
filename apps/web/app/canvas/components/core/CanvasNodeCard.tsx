@@ -159,46 +159,99 @@ export default function CanvasNodeCard({
       }}
     >
       <div>
-        <div
-          className={[
-            "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
-            selected
-              ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/15"
-              : isConnectionTarget
-                ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/10"
-                : "border-transparent",
-          ].join(" ")}
-          style={{ height: displayHeight }}
-          onClick={(e) => {
-            if (
-              activeTool === "mark-position" ||
-              activeTool === "draw-region" ||
-              activeTool === "lock-area"
-            ) {
-              e.stopPropagation();
-              onSetActiveNode(node.id);
-              const rect = e.currentTarget.getBoundingClientRect();
-              const x = ((e.clientX - rect.left) / rect.width) * 100;
-              const y = ((e.clientY - rect.top) / rect.height) * 100;
-              onImageAction(x, y);
-            }
-          }}
-        >
-          {node.imageUrl ? (
-            <AdaptiveImageRenderer
-              imageUrl={node.sourceImage?.url ?? node.imageUrl}
-              title={node.title}
-              displayWidth={displayWidth}
-              displayHeight={displayHeight}
-              viewportZoom={viewportZoom}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-[#9CA3AF]">
-              <ImagePlus className="w-8 h-8 opacity-50" />
-            </div>
-          )}
+        <div className="relative">
+          <div
+            className={[
+              "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
+              selected
+                ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/15"
+                : isConnectionTarget
+                  ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/10"
+                  : "border-transparent",
+            ].join(" ")}
+            style={{ height: displayHeight }}
+            onClick={(e) => {
+              if (
+                activeTool === "mark-position" ||
+                activeTool === "draw-region" ||
+                activeTool === "lock-area"
+              ) {
+                e.stopPropagation();
+                onSetActiveNode(node.id);
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                onImageAction(x, y);
+              }
+            }}
+          >
+            {node.imageUrl ? (
+              <AdaptiveImageRenderer
+                imageUrl={node.sourceImage?.url ?? node.imageUrl}
+                title={node.title}
+                displayWidth={displayWidth}
+                displayHeight={displayHeight}
+                viewportZoom={viewportZoom}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[#9CA3AF]">
+                <ImagePlus className="w-8 h-8 opacity-50" />
+              </div>
+            )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
+
+            {/* Overlays: only rendered on the active node */}
+            {isActiveNode && (
+              <div
+                className="absolute inset-0 z-20"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {regions.map((region) => (
+                  <RegionOverlay
+                    key={region.id}
+                    region={region}
+                    selected={selectedItem.type === "region" && selectedItem.id === region.id}
+                    onSelect={() => onSelectOverlay({ type: "region", id: region.id })}
+                  />
+                ))}
+                {markers.map((marker) => (
+                  <MarkerPin
+                    key={marker.id}
+                    marker={marker}
+                    selected={selectedItem.type === "marker" && selectedItem.id === marker.id}
+                    onSelect={() => onSelectOverlay({ type: "marker", id: marker.id })}
+                  />
+                ))}
+                {addedObjects.map((object) => (
+                  <ObjectBox
+                    key={object.id}
+                    object={object}
+                    selected={selectedItem.type === "object" && selectedItem.id === object.id}
+                    onSelect={() => onSelectOverlay({ type: "object", id: object.id })}
+                  />
+                ))}
+                <SketchLayer
+                  activeTool={activeTool}
+                  selectedItem={selectedItem}
+                  sketchLines={sketchLines}
+                  sketchGroups={sketchGroups}
+                  selectedSketchLineIds={selectedSketchLineIds}
+                  onAddLine={onAddSketchLine}
+                  onSelectLine={onSelectSketchLine}
+                  onSelectGroup={onSelectSketchGroup}
+                />
+              </div>
+            )}
+
+            {selected ? (
+              <SelectionChrome
+                label={node.role === "output" ? "Image" : "Reference"}
+                size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`}
+                viewportZoom={viewportZoom}
+              />
+            ) : null}
+          </div>
 
           <ImageNodeHandle
             side="left"
@@ -212,57 +265,6 @@ export default function CanvasNodeCard({
             active={selected || isConnectionTarget}
             onPointerDown={(event) => onStartConnection(node.id, "right", event)}
           />
-
-          {/* Overlays: only rendered on the active node */}
-          {isActiveNode && (
-            <div
-              className="absolute inset-0 z-20"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              {regions.map((region) => (
-                <RegionOverlay
-                  key={region.id}
-                  region={region}
-                  selected={selectedItem.type === "region" && selectedItem.id === region.id}
-                  onSelect={() => onSelectOverlay({ type: "region", id: region.id })}
-                />
-              ))}
-              {markers.map((marker) => (
-                <MarkerPin
-                  key={marker.id}
-                  marker={marker}
-                  selected={selectedItem.type === "marker" && selectedItem.id === marker.id}
-                  onSelect={() => onSelectOverlay({ type: "marker", id: marker.id })}
-                />
-              ))}
-              {addedObjects.map((object) => (
-                <ObjectBox
-                  key={object.id}
-                  object={object}
-                  selected={selectedItem.type === "object" && selectedItem.id === object.id}
-                  onSelect={() => onSelectOverlay({ type: "object", id: object.id })}
-                />
-              ))}
-              <SketchLayer
-                activeTool={activeTool}
-                selectedItem={selectedItem}
-                sketchLines={sketchLines}
-                sketchGroups={sketchGroups}
-                selectedSketchLineIds={selectedSketchLineIds}
-                onAddLine={onAddSketchLine}
-                onSelectLine={onSelectSketchLine}
-                onSelectGroup={onSelectSketchGroup}
-              />
-            </div>
-          )}
-
-          {selected ? (
-            <SelectionChrome
-              label={node.role === "output" ? "Image" : "Reference"}
-              size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`}
-              viewportZoom={viewportZoom}
-            />
-          ) : null}
         </div>
 
         <div
@@ -352,28 +354,28 @@ function ImageNodeHandle({
   active: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  const uiScale = 1 / viewportZoom;
+  const handleOffset = -20;
 
   return (
     <button
       type="button"
       data-canvas-interactive="true"
       className={[
-        "absolute top-1/2 z-50 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
+        "absolute top-1/2 z-[150] grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
         active
           ? "border-[#8A8A8A] bg-[#5F5F5F]"
           : "border-[#4A4A4A] bg-[#3F3F3F] hover:border-[#8A8A8A] hover:bg-[#5F5F5F]",
       ].join(" ")}
       style={{
-        left: side === "left" ? `${10 * uiScale}px` : "auto",
-        right: side === "right" ? `${10 * uiScale}px` : "auto",
-        transform: `translateY(-50%) scale(${uiScale})`,
+        left: side === "left" ? `${handleOffset}px` : "auto",
+        right: side === "right" ? `${handleOffset}px` : "auto",
+        transform: `translateY(-50%)`,
         transformOrigin: "center",
       }}
       aria-label={`Start image connection from ${side} handle`}
       onPointerDown={onPointerDown}
     >
-      <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      <ImageIcon className="h-4 w-4" aria-hidden="true" />
     </button>
   );
 }
@@ -518,9 +520,8 @@ function ObjectBox({
 }) {
   return (
     <button
-      className={`added-object absolute z-30 rounded-2xl border bg-white/85 text-center shadow-xl transition ${
-        selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-[#22C55E]"
-      }`}
+      className={`added-object absolute z-30 rounded-2xl border bg-white/85 text-center shadow-xl transition ${selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-[#22C55E]"
+        }`}
       style={{
         left: `${object.x}%`,
         top: `${object.y}%`,
