@@ -8,7 +8,7 @@
 "use client";
 
 import { MapPin } from "lucide-react";
-import type { Marker } from "../core/CanvasWorkspace";
+import type { Marker } from "../../types/canvas";
 
 type MarkerPinProps = {
   marker: Marker;

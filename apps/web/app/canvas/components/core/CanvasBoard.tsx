@@ -706,6 +706,8 @@ export default function CanvasBoard({
     if (isResizingPanel) return;
     const node = nodes.find(n => n.id === id);
     if (!node) return;
+    // Prevent browser text-selection on header/toolbar elements during drag
+    event.preventDefault();
     clearMarqueeSelection();
     setMarqueeSelectedNodeIds(null);
     setDraggingNodeId(id);
@@ -1308,7 +1310,7 @@ export default function CanvasBoard({
   return (
     <section
       ref={containerRef}
-      className="relative h-full flex-1 touch-none overflow-hidden"
+      className="relative h-full flex-1 touch-none select-none overflow-hidden"
       style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
       onClick={(event) => {
         if (suppressCanvasBackgroundClickRef.current) {

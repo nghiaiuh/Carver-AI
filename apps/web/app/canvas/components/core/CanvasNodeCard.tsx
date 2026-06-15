@@ -1,8 +1,7 @@
 /*
- * Flow: Renders one interactive canvas workspace component.
- * 1. Receive canvas state and callbacks from the workspace.
- * 2. Render the focused control, overlay, or board UI.
- * 3. Send user actions back up through typed handlers.
+ * CanvasNodeCard
+ * Renders a single draggable image node on the canvas.
+ * Receives all state and callbacks from CanvasBoard – no internal state except rendering.
  */
 
 "use client";
@@ -72,7 +71,7 @@ type CanvasNodeCardProps = {
   activeNodeId: string;
   viewportZoom: number;
   isConnectionTarget?: boolean;
-  onSelect: (id: string, event?: React.MouseEvent) => void;
+  onSelect: (id: string, event?: React.MouseEvent | React.PointerEvent) => void;
   onStartConnection: (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => void;
   onSelectOverlay: (item: SelectedItem) => void;
   onAddSketchLine: (line: SketchLine) => void;
@@ -142,7 +141,9 @@ export default function CanvasNodeCard({
         zIndex: selected ? 80 : 10,
       }}
       onPointerDown={(e) => {
-        // Prevent pan behavior on canvas when clicking node
+        // Prevent canvas pan and suppress browser text-selection on header/toolbar
+        // elements that visually overlap when the user drags this node.
+        e.preventDefault();
         e.stopPropagation();
         onSelect(node.id, e);
         onDragStart(node.id, e);
@@ -158,7 +159,7 @@ export default function CanvasNodeCard({
       }}
     >
       <div>
-        <div 
+        <div
           className={[
             "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
             selected
@@ -169,7 +170,11 @@ export default function CanvasNodeCard({
           ].join(" ")}
           style={{ height: displayHeight }}
           onClick={(e) => {
-            if (activeTool === "mark-position" || activeTool === "draw-region" || activeTool === "lock-area") {
+            if (
+              activeTool === "mark-position" ||
+              activeTool === "draw-region" ||
+              activeTool === "lock-area"
+            ) {
               e.stopPropagation();
               onSetActiveNode(node.id);
               const rect = e.currentTarget.getBoundingClientRect();
@@ -192,7 +197,7 @@ export default function CanvasNodeCard({
               <ImagePlus className="w-8 h-8 opacity-50" />
             </div>
           )}
-          
+
           <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
 
           <ImageNodeHandle
@@ -208,10 +213,10 @@ export default function CanvasNodeCard({
             onPointerDown={(event) => onStartConnection(node.id, "right", event)}
           />
 
-          {/* Overlays (Render only on active node, mimicking SelectableImage behavior) */}
+          {/* Overlays: only rendered on the active node */}
           {isActiveNode && (
-            <div 
-              className="absolute inset-0 z-20" 
+            <div
+              className="absolute inset-0 z-20"
               onPointerDown={(e) => e.stopPropagation()}
             >
               {regions.map((region) => (
@@ -231,11 +236,11 @@ export default function CanvasNodeCard({
                 />
               ))}
               {addedObjects.map((object) => (
-                <ObjectBox 
-                  key={object.id} 
-                  object={object} 
-                  selected={selectedItem.type === "object" && selectedItem.id === object.id} 
-                  onSelect={() => onSelectOverlay({ type: "object", id: object.id })} 
+                <ObjectBox
+                  key={object.id}
+                  object={object}
+                  selected={selectedItem.type === "object" && selectedItem.id === object.id}
+                  onSelect={() => onSelectOverlay({ type: "object", id: object.id })}
                 />
               ))}
               <SketchLayer
@@ -250,9 +255,16 @@ export default function CanvasNodeCard({
               />
             </div>
           )}
-          {selected ? <SelectionChrome label={node.role === "output" ? "Image" : "Reference"} size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`} viewportZoom={viewportZoom} /> : null}
+
+          {selected ? (
+            <SelectionChrome
+              label={node.role === "output" ? "Image" : "Reference"}
+              size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`}
+              viewportZoom={viewportZoom}
+            />
+          ) : null}
         </div>
-        
+
         <div
           className="px-1 pb-1 text-center"
           style={{
@@ -264,7 +276,10 @@ export default function CanvasNodeCard({
           <h3 className="text-sm font-black text-[var(--canvas-theme-text)]">{node.title}</h3>
           {isOutput ? (
             <div className="mt-1">
-              <p className="line-clamp-2 text-center text-xs leading-snug text-[var(--canvas-theme-text-muted)]" title={node.prompt || ""}>
+              <p
+                className="line-clamp-2 text-center text-xs leading-snug text-[var(--canvas-theme-text-muted)]"
+                title={node.prompt || ""}
+              >
                 {node.prompt || "No prompt provided."}
               </p>
             </div>
@@ -278,34 +293,48 @@ export default function CanvasNodeCard({
         </div>
       </div>
 
-      {/* Selection Chrome & Toolbars (Show only when this node card is selected) */}
+      {/* Selection toolbars */}
       {selected && showSelectionTools ? (
-        <div className="absolute inset-0 z-[120] pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+        <div
+          className="absolute inset-0 z-[120] pointer-events-none"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <div className="pointer-events-auto">
-          <ContextualToolbar
-            itemLabel={node.role === "output" ? "Image" : node.role === "reference" ? "Reference" : "Object"}
-            viewportZoom={viewportZoom}
-            onQuickEdit={onQuickEdit}
-            onMultiAngle={onMultiAngle}
-            onAddObject={onAddObject}
-            onTool={onTool}
-            onToast={onToast}
-          />
-          <FloatingQuickPanel 
-            viewportZoom={viewportZoom}
-            onTool={onTool} 
-            onMultiAngle={onMultiAngle} 
-            onRealityCheck={onRealityCheck} 
-            onToast={onToast} 
-          />
+            <ContextualToolbar
+              itemLabel={
+                node.role === "output"
+                  ? "Image"
+                  : node.role === "reference"
+                    ? "Reference"
+                    : "Object"
+              }
+              viewportZoom={viewportZoom}
+              onQuickEdit={onQuickEdit}
+              onMultiAngle={onMultiAngle}
+              onAddObject={onAddObject}
+              onTool={onTool}
+              onToast={onToast}
+            />
+            <FloatingQuickPanel
+              viewportZoom={viewportZoom}
+              onTool={onTool}
+              onMultiAngle={onMultiAngle}
+              onRealityCheck={onRealityCheck}
+              onToast={onToast}
+            />
           </div>
         </div>
       ) : null}
 
-      {/* Context Menu */}
+      {/* Context menu */}
       {selected && selectedItem.type === "node" && selectedItem.menu ? (
         <div onPointerDown={(e) => e.stopPropagation()}>
-          <ContextMenu x={selectedItem.menu.x} y={selectedItem.menu.y} onToast={onToast} onDelete={() => onDelete(node.id)} />
+          <ContextMenu
+            x={selectedItem.menu.x}
+            y={selectedItem.menu.y}
+            onToast={onToast}
+            onDelete={() => onDelete(node.id)}
+          />
         </div>
       ) : null}
     </div>
@@ -331,7 +360,9 @@ function ImageNodeHandle({
       data-canvas-interactive="true"
       className={[
         "absolute top-1/2 z-50 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
-        active ? "border-[#8A8A8A] bg-[#5F5F5F]" : "border-[#4A4A4A] bg-[#3F3F3F] hover:border-[#8A8A8A] hover:bg-[#5F5F5F]",
+        active
+          ? "border-[#8A8A8A] bg-[#5F5F5F]"
+          : "border-[#4A4A4A] bg-[#3F3F3F] hover:border-[#8A8A8A] hover:bg-[#5F5F5F]",
       ].join(" ")}
       style={{
         left: side === "left" ? `${10 * uiScale}px` : "auto",
@@ -425,26 +456,50 @@ function AdaptiveImageRenderer({
       />
       {!ready ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={imageUrl} alt={title} className="absolute inset-0 h-full w-full select-none object-contain pointer-events-none" draggable={false} decoding="async" />
+        <img
+          src={imageUrl}
+          alt={title}
+          className="absolute inset-0 h-full w-full select-none object-contain pointer-events-none"
+          draggable={false}
+          decoding="async"
+        />
       ) : null}
     </>
   );
 }
 
-function SelectionChrome({ label, size, viewportZoom }: { label: string; size: string; viewportZoom: number }) {
+function SelectionChrome({
+  label,
+  size,
+  viewportZoom,
+}: {
+  label: string;
+  size: string;
+  viewportZoom: number;
+}) {
   const uiScale = 1 / viewportZoom;
 
   return (
     <>
       <div
         className="absolute z-30 rounded-lg bg-[#3B82F6] px-2.5 py-1 text-xs font-black text-white"
-        style={{ left: `${-4 * uiScale}px`, top: `${-34 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "top left" }}
+        style={{
+          left: `${-4 * uiScale}px`,
+          top: `${-34 * uiScale}px`,
+          transform: `scale(${uiScale})`,
+          transformOrigin: "top left",
+        }}
       >
         {label}
       </div>
       <div
         className="absolute z-30 rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-xs font-black text-[var(--canvas-theme-text-muted)] shadow-sm"
-        style={{ right: `${-4 * uiScale}px`, bottom: `${-32 * uiScale}px`, transform: `scale(${uiScale})`, transformOrigin: "bottom right" }}
+        style={{
+          right: `${-4 * uiScale}px`,
+          bottom: `${-32 * uiScale}px`,
+          transform: `scale(${uiScale})`,
+          transformOrigin: "bottom right",
+        }}
       >
         {size}
       </div>
@@ -452,22 +507,40 @@ function SelectionChrome({ label, size, viewportZoom }: { label: string; size: s
   );
 }
 
-function ObjectBox({ object, selected, onSelect }: { object: AddedObject; selected: boolean; onSelect: () => void }) {
+function ObjectBox({
+  object,
+  selected,
+  onSelect,
+}: {
+  object: AddedObject;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   return (
     <button
       className={`added-object absolute z-30 rounded-2xl border bg-white/85 text-center shadow-xl transition ${
         selected ? "border-[#3B82F6] ring-4 ring-[#3B82F6]/15" : "border-[#22C55E]"
       }`}
-      style={{ left: `${object.x}%`, top: `${object.y}%`, width: `${object.w}%`, height: `${object.h}%`, transform: `rotate(${object.rotation}deg)` }}
+      style={{
+        left: `${object.x}%`,
+        top: `${object.y}%`,
+        width: `${object.w}%`,
+        height: `${object.h}%`,
+        transform: `rotate(${object.rotation}deg)`,
+      }}
       onClick={(event) => {
         event.stopPropagation();
         onSelect();
       }}
     >
-      <span className="grid h-full place-items-center rounded-2xl bg-[#ECFDF3]/80 px-3 text-xs font-black text-[#111827]">{object.label}</span>
+      <span className="grid h-full place-items-center rounded-2xl bg-[#ECFDF3]/80 px-3 text-xs font-black text-[#111827]">
+        {object.label}
+      </span>
       {selected ? (
         <>
-          <span className="absolute -right-3 -top-8 grid h-7 w-7 place-items-center rounded-full bg-[#111827] text-white shadow-lg">↻</span>
+          <span className="absolute -right-3 -top-8 grid h-7 w-7 place-items-center rounded-full bg-[#111827] text-white shadow-lg">
+            ↻
+          </span>
           <span className="absolute -bottom-2 -right-2 h-5 w-5 rounded-full border-2 border-[#3B82F6] bg-white" />
         </>
       ) : null}
@@ -475,7 +548,17 @@ function ObjectBox({ object, selected, onSelect }: { object: AddedObject; select
   );
 }
 
-function ContextMenu({ x, y, onToast, onDelete }: { x: number; y: number; onToast: (message: string) => void; onDelete: () => void }) {
+function ContextMenu({
+  x,
+  y,
+  onToast,
+  onDelete,
+}: {
+  x: number;
+  y: number;
+  onToast: (message: string) => void;
+  onDelete: () => void;
+}) {
   const items = [
     ["Duplicate", Copy],
     ["Replace image", ImagePlus],
@@ -486,7 +569,10 @@ function ContextMenu({ x, y, onToast, onDelete }: { x: number; y: number; onToas
   ] as const;
 
   return (
-    <div className="fixed z-[90] w-56 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-2 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" style={{ left: x, top: y }}>
+    <div
+      className="fixed z-[90] w-56 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-2 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
+      style={{ left: x, top: y }}
+    >
       {items.map(([label, Icon]) => (
         <button
           key={label}

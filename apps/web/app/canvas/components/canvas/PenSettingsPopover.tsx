@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { X } from "lucide-react";
-import type { PenSettings } from "../core/CanvasWorkspace";
+import type { PenSettings } from "../../types/canvas";
 import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv } from "../widgets/colorPickerUtils";
 
 type PenSettingsPopoverProps = {

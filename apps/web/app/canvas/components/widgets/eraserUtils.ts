@@ -1,4 +1,4 @@
-import type { PenStrokeObject, SketchPoint } from "../core/CanvasWorkspace";
+import type { PenStrokeObject, SketchPoint } from "../../types/canvas";
 
 type Point = SketchPoint;
 

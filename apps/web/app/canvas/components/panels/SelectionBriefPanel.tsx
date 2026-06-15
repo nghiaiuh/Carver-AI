@@ -8,7 +8,7 @@
 "use client";
 
 import { ClipboardList } from "lucide-react";
-import type { AddedObject, LibraryAsset, Region, SketchGroup } from "../core/CanvasWorkspace";
+import type { AddedObject, LibraryAsset, Region, SketchGroup } from "../../types/canvas";
 
 type SelectionBriefPanelProps = {
   target?: Region | SketchGroup | AddedObject;

@@ -1,7 +1,7 @@
 "use client";
 
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
-import type { LeftSidebarPanelId } from "../core/CanvasWorkspace";
+import type { LeftSidebarPanelId } from "../../types/canvas";
 import LibrarySidebar from "../library/LibrarySidebar";
 
 type EditorLeftSidebarProps = {

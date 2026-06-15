@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { Bookmark, ImagePlus, Search, Trash2 } from "lucide-react";
-import type { LibraryAsset, LibraryAssetCategory } from "../core/CanvasWorkspace";
+import type { LibraryAsset, LibraryAssetCategory } from "../../types/canvas";
 
 type ObjectLibraryPanelProps = {
   assets: LibraryAsset[];
