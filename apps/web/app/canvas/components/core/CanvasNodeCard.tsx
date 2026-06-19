@@ -7,14 +7,14 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import type { AddedObject, CanvasNode, EditorTool, Marker, Region, SelectedItem, SketchGroup, SketchLine } from "../../types/canvas";
+import type { AddedObject, CanvasEdge, CanvasNode, EditorTool, InputPort, Marker, SelectedItem, SketchGroup, SketchLine } from "../../types/canvas";
+import { getVisibleInputPorts, getDefaultInputPorts } from "../../types/canvas";
 import { Image as ImageIcon, ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import FloatingQuickPanel from "../widgets/FloatingQuickPanel";
 import MarkerPin from "../widgets/MarkerPin";
-import RegionOverlay from "../widgets/RegionOverlay";
 import SketchLayer from "../widgets/SketchLayer";
-import type { ImageHandlePosition } from "./imageGraph";
+import { INPUT_PORT_HANDLE_CENTER_OFFSET, INPUT_PORT_GAP, type ImageHandlePosition } from "./imageGraph";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
@@ -58,12 +58,12 @@ function getContainedRect({
 
 type CanvasNodeCardProps = {
   node: CanvasNode;
+  edges: CanvasEdge[];
   selected: boolean;
   showSelectionTools?: boolean;
   selectedItem: SelectedItem;
   activeTool: EditorTool;
   markers: Marker[];
-  regions: Region[];
   addedObjects: AddedObject[];
   sketchLines: SketchLine[];
   sketchGroups: SketchGroup[];
@@ -71,6 +71,10 @@ type CanvasNodeCardProps = {
   activeNodeId: string;
   viewportZoom: number;
   isConnectionTarget?: boolean;
+  /** Port ID currently hovered during a draft edge drag */
+  hoveredPortId?: string | null;
+  /** Port ID where a replace/cancel popover is showing */
+  pendingReplacePortId?: string | null;
   onSelect: (id: string, event?: React.MouseEvent | React.PointerEvent) => void;
   onStartConnection: (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => void;
   onSelectOverlay: (item: SelectedItem) => void;
@@ -88,16 +92,20 @@ type CanvasNodeCardProps = {
   onToast: (message: string) => void;
   onSetActiveNode: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Called when user confirms "Replace" on an occupied port (Q3) */
+  onRequestPortReplace?: (portId: string) => void;
+  /** Called when user cancels the replace popover */
+  onCancelPortReplace?: () => void;
 };
 
 export default function CanvasNodeCard({
   node,
+  edges,
   selected,
   showSelectionTools = true,
   selectedItem,
   activeTool,
   markers,
-  regions,
   addedObjects,
   sketchLines,
   sketchGroups,
@@ -105,6 +113,8 @@ export default function CanvasNodeCard({
   activeNodeId,
   viewportZoom,
   isConnectionTarget = false,
+  hoveredPortId,
+  pendingReplacePortId,
   onSelect,
   onStartConnection,
   onSelectOverlay,
@@ -122,6 +132,8 @@ export default function CanvasNodeCard({
   onToast,
   onSetActiveNode,
   onDelete,
+  onRequestPortReplace,
+  onCancelPortReplace,
 }: CanvasNodeCardProps) {
   const isOutput = node.role === "output";
   const isActiveNode = node.id === activeNodeId;
@@ -129,6 +141,13 @@ export default function CanvasNodeCard({
   const objectScale = node.scale ?? 1;
   const displayWidth = node.width * objectScale;
   const displayHeight = node.height * objectScale;
+
+  // Port rendering (Q1: dynamic — connected + 1 empty slot)
+  const nodePorts = node.inputPorts || getDefaultInputPorts();
+  const visiblePorts = getVisibleInputPorts(nodePorts, edges, node.id);
+  const connectedPortIds = new Set(
+    edges.filter((e) => e.targetId === node.id).map((e) => e.targetPortId),
+  );
 
   return (
     <div
@@ -172,9 +191,7 @@ export default function CanvasNodeCard({
             style={{ height: displayHeight }}
             onClick={(e) => {
               if (
-                activeTool === "mark-position" ||
-                activeTool === "draw-region" ||
-                activeTool === "lock-area"
+                activeTool === "mark-position"
               ) {
                 e.stopPropagation();
                 onSetActiveNode(node.id);
@@ -207,14 +224,7 @@ export default function CanvasNodeCard({
                 className="absolute inset-0 z-20"
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                {regions.map((region) => (
-                  <RegionOverlay
-                    key={region.id}
-                    region={region}
-                    selected={selectedItem.type === "region" && selectedItem.id === region.id}
-                    onSelect={() => onSelectOverlay({ type: "region", id: region.id })}
-                  />
-                ))}
+
                 {markers.map((marker) => (
                   <MarkerPin
                     key={marker.id}
@@ -253,15 +263,71 @@ export default function CanvasNodeCard({
             ) : null}
           </div>
 
-          <ImageNodeHandle
-            side="left"
-            viewportZoom={viewportZoom}
-            active={selected || isConnectionTarget}
-            onPointerDown={(event) => onStartConnection(node.id, "left", event)}
-          />
+          {visiblePorts.length > 0 ? (
+            <div
+              className={[
+                "absolute inset-y-4 z-[140] w-7 transition-opacity",
+                selected || isConnectionTarget || pendingReplacePortId
+                  ? "opacity-100"
+                  : "opacity-85 group-hover:opacity-100",
+              ].join(" ")}
+              style={{ left: `${-(INPUT_PORT_HANDLE_CENTER_OFFSET + 16)}px` }}
+              aria-hidden="true"
+            >
+              {visiblePorts.length > 1 ? (
+                <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 rounded-full bg-white/10 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" />
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Left side: dynamic input ports, ordered by image index */}
+          {visiblePorts.map((port, visibleIndex) => {
+            const isConnected = connectedPortIds.has(port.id);
+            const isHovered = hoveredPortId === port.id;
+            const isPendingReplace = pendingReplacePortId === port.id;
+            const isMaxReached = visiblePorts.length === nodePorts.length && !isConnected;
+            const totalVisible = visiblePorts.length;
+
+            let topPx = displayHeight / 2;
+            if (totalVisible > 1) {
+              const clusterHeight = (totalVisible - 1) * INPUT_PORT_GAP;
+              const startY = (displayHeight / 2) - (clusterHeight / 2);
+              topPx = startY + visibleIndex * INPUT_PORT_GAP;
+            }
+
+            return (
+              <div
+                key={port.id}
+                className="absolute z-[150]"
+                style={{
+                  left: `${-(INPUT_PORT_HANDLE_CENTER_OFFSET + 16)}px`,
+                  top: `${topPx}px`,
+                  transform: "translateY(-50%)",
+                }}
+              >
+                <InputPortHandle
+                  port={port}
+                  isConnected={isConnected}
+                  isHovered={isHovered}
+                  isPendingReplace={isPendingReplace}
+                  isMaxReached={isMaxReached}
+                  isNodeActive={selected || isConnectionTarget}
+                  onPointerDown={(event) => onStartConnection(node.id, "left", event)}
+                />
+                {isPendingReplace && onRequestPortReplace && onCancelPortReplace ? (
+                  <ReplacePortPopover
+                    viewportZoom={viewportZoom}
+                    onReplace={() => onRequestPortReplace(port.id)}
+                    onCancel={onCancelPortReplace}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+
+          {/* Right side: single output handle (unchanged) */}
           <ImageNodeHandle
             side="right"
-            viewportZoom={viewportZoom}
             active={selected || isConnectionTarget}
             onPointerDown={(event) => onStartConnection(node.id, "right", event)}
           />
@@ -343,14 +409,13 @@ export default function CanvasNodeCard({
   );
 }
 
+/** Single output handle on the right side — unchanged from original design. */
 function ImageNodeHandle({
   side,
-  viewportZoom,
   active,
   onPointerDown,
 }: {
   side: ImageHandlePosition;
-  viewportZoom: number;
   active: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
@@ -377,6 +442,142 @@ function ImageNodeHandle({
     >
       <ImageIcon className="h-4 w-4" aria-hidden="true" />
     </button>
+  );
+}
+
+/**
+ * InputPortHandle — renders a single named input port on the left side of a node.
+ * Shows a badge with the 1-based index and has 4 visual states:
+ * - default (gray outline)
+ * - connected (filled dark)
+ * - hovered (cyan glow during drag)
+ * - occupied-pending (amber, when replace/cancel popover is active)
+ */
+function InputPortHandle({
+  port,
+  isConnected,
+  isHovered,
+  isPendingReplace,
+  isMaxReached,
+  isNodeActive,
+  onPointerDown,
+}: {
+  port: InputPort;
+  isConnected: boolean;
+  isHovered: boolean;
+  isPendingReplace: boolean;
+  isMaxReached: boolean;
+  isNodeActive: boolean;
+  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
+}) {
+  let bgClass = "border-[#4A4A4A] bg-[#2F3033] hover:border-[#A3A3A3] hover:bg-[#4B4C50]";
+  let labelClass = "border-[#4B5563] bg-[#1F2937] text-[#E5E7EB]";
+
+  if (isPendingReplace) {
+    bgClass = "border-[#F59E0B] bg-[#92400E] ring-2 ring-[#F59E0B]/30";
+    labelClass = "border-[#F59E0B]/50 bg-[#451A03] text-[#FEF3C7]";
+  } else if (isHovered) {
+    bgClass = "border-[#22D3EE] bg-[#164E63] ring-2 ring-[#22D3EE]/30";
+    labelClass = "border-[#22D3EE]/50 bg-[#083344] text-[#CFFAFE]";
+  } else if (isConnected) {
+    bgClass = "border-[#9CA3AF] bg-[#4B5563]";
+    labelClass = "border-[#6B7280] bg-[#374151] text-white";
+  } else {
+    // Empty slot — dashed outline to signal "drop here"
+    bgClass = "border-[#6B7280] bg-[#111827]/30 border-dashed hover:border-[#9CA3AF] hover:bg-[#374151]/60";
+    labelClass = "border-[#4B5563] bg-[#111827] text-[#D1D5DB]";
+  }
+
+  return (
+    <div className="group/port relative flex items-center">
+      <button
+        type="button"
+        data-canvas-interactive="true"
+        className={[
+          "relative grid h-8 w-8 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
+          bgClass,
+        ].join(" ")}
+        aria-label={`${port.label}${isConnected ? " (connected)" : " (empty)"}${isMaxReached ? " — max ports reached" : ""}`}
+        title={isMaxReached ? "Max input ports reached" : port.label}
+        onPointerDown={onPointerDown}
+      >
+        <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className="absolute -bottom-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full border border-[#111827] bg-white px-1 text-[9px] font-black leading-none text-[#111827]">
+          {port.index + 1}
+        </span>
+      </button>
+      <span
+        className={[
+          "absolute left-full ml-2 whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-bold shadow-lg shadow-black/20 pointer-events-none transition",
+          isNodeActive || isHovered || isPendingReplace
+            ? "translate-x-0 opacity-100"
+            : "-translate-x-1 opacity-0 group-hover/port:translate-x-0 group-hover/port:opacity-100",
+          labelClass,
+        ].join(" ")}
+      >
+        {port.label}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * ReplacePortPopover — shown when a user drops a connection on an occupied port (Q3).
+ * Two buttons: "Replace" removes old edge and creates new one, "Cancel" reverts.
+ * Auto-dismisses on outside click (→ Cancel).
+ */
+function ReplacePortPopover({
+  viewportZoom,
+  onReplace,
+  onCancel,
+}: {
+  viewportZoom: number;
+  onReplace: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onCancel();
+      }
+    };
+    window.addEventListener("pointerdown", handleOutsideClick);
+    return () => window.removeEventListener("pointerdown", handleOutsideClick);
+  }, [onCancel]);
+
+  const scale = 1 / viewportZoom;
+
+  return (
+    <div
+      ref={ref}
+      className="absolute z-[200] mt-1"
+      style={{
+        left: "0px",
+        top: "100%",
+        transform: `scale(${scale})`,
+        transformOrigin: "top left",
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1 rounded-xl border border-[#F59E0B]/60 bg-[#1C1917] p-1 shadow-xl shadow-black/40">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onReplace(); }}
+          className="rounded-lg bg-[#F59E0B] px-2.5 py-1 text-[11px] font-bold text-[#1C1917] transition hover:bg-[#FBBF24]"
+        >
+          Replace
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onCancel(); }}
+          className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-[#9CA3AF] transition hover:bg-[#374151] hover:text-white"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

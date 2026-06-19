@@ -19,11 +19,11 @@ import type {
   Marker,
   PenSettings,
   PenStrokeObject,
-  Region,
   SelectedItem,
   SketchGroup,
   SketchLine,
 } from "../../types/canvas";
+import { getDefaultInputPorts } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
@@ -37,7 +37,6 @@ type CanvasBoardProps = {
   activeTool: EditorTool;
   gridVisible: boolean;
   markers: Marker[];
-  regions: Region[];
   addedObjects: AddedObject[];
   sketchLines: SketchLine[];
   sketchGroups: SketchGroup[];
@@ -272,7 +271,6 @@ export default function CanvasBoard({
   activeTool,
   gridVisible,
   markers,
-  regions,
   addedObjects,
   sketchLines,
   sketchGroups,
@@ -522,6 +520,7 @@ export default function CanvasBoard({
           width: nodeWidth,
           height: nodeHeight,
           scale: 1,
+          inputPorts: getDefaultInputPorts(),
           imageUrl,
           sourceImage: {
             url: imageUrl,
@@ -833,6 +832,13 @@ export default function CanvasBoard({
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
       const hoveredNode = nodes.find((node) => {
         if (node.id === draftEdge.sourceId) return false;
+        // Rule: only 1 connection line between any 2 images — skip already-connected pairs
+        const alreadyConnected = edges.some(
+          (e) =>
+            (e.sourceId === draftEdge.sourceId && e.targetId === node.id) ||
+            (e.sourceId === node.id && e.targetId === draftEdge.sourceId),
+        );
+        if (alreadyConnected) return false;
         const scale = node.scale ?? 1;
         return (
           target.x >= node.x &&
@@ -844,7 +850,7 @@ export default function CanvasBoard({
       setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
 
-  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
+  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
     if (isResizingPanel) return;
@@ -967,13 +973,28 @@ export default function CanvasBoard({
         if (targetNode) {
           const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
           const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
-          const edgeExists = edges.some((edge) => edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id);
+          // Rule: only 1 connection line between any 2 images (check both directions)
+          const edgeExists = edges.some(
+            (edge) =>
+              (edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id) ||
+              (edge.sourceId === targetNode.id && edge.targetId === draftEdge.sourceId),
+          );
 
-          if (!edgeExists) {
+          if (edgeExists) {
+            onToast("These two images are already connected");
+          } else {
+            const targetPorts = targetNode.inputPorts || getDefaultInputPorts();
+            const connectedPortIds = new Set(
+              edges.filter((e) => e.targetId === targetNode.id).map((e) => e.targetPortId)
+            );
+            const firstEmpty = targetPorts.find((p) => !connectedPortIds.has(p.id));
+            const targetPortId = firstEmpty ? firstEmpty.id : targetPorts[0].id;
+
             const newEdge: CanvasEdge = {
               id: `edge-${Date.now()}`,
               sourceId: draftEdge.sourceId,
               targetId: targetNode.id,
+              targetPortId,
               fromHandle: draftEdge.sourceHandle,
               toHandle: draftEdge.sourceHandle === "right" ? "left" : "right",
               role,
@@ -1522,12 +1543,12 @@ export default function CanvasBoard({
           <CanvasNodeCard
             key={node.id}
             node={node}
+            edges={edges}
             selected={selectedNodeIds.includes(node.id)}
             showSelectionTools={!isMultiNodeSelection}
             selectedItem={selectedItem}
             activeTool={activeTool}
             markers={markers}
-            regions={regions}
             addedObjects={addedObjects}
             sketchLines={sketchLines}
             sketchGroups={sketchGroups}

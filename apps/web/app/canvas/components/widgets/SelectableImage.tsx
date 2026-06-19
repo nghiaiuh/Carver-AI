@@ -10,17 +10,15 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { Copy, ImagePlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import type { AddedObject, EditorTool, Marker, Region, SelectedItem } from "../../types/canvas";
+import type { AddedObject, EditorTool, Marker, SelectedItem } from "../../types/canvas";
 import ContextualToolbar from "./ContextualToolbar";
 import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";
-import RegionOverlay from "./RegionOverlay";
 
 type SelectableImageProps = {
   selectedItem: SelectedItem;
   activeTool: EditorTool;
   markers: Marker[];
-  regions: Region[];
   addedObjects: AddedObject[];
   onSelect: (item: SelectedItem) => void;
   onImageAction: (xPercent: number, yPercent: number) => void;
@@ -36,7 +34,6 @@ export default function SelectableImage({
   selectedItem,
   activeTool,
   markers,
-  regions,
   addedObjects,
   onSelect,
   onImageAction,
@@ -52,7 +49,7 @@ export default function SelectableImage({
 
   const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (activeTool === "mark-position" || activeTool === "draw-region" || activeTool === "lock-area") {
+    if (activeTool === "mark-position") {
       const rect = event.currentTarget.getBoundingClientRect();
       const x = ((event.clientX - rect.left) / rect.width) * 100;
       const y = ((event.clientY - rect.top) / rect.height) * 100;
@@ -102,14 +99,7 @@ export default function SelectableImage({
           </div>
         </div>
 
-        {regions.map((region) => (
-          <RegionOverlay
-            key={region.id}
-            region={region}
-            selected={selectedItem.type === "region" && selectedItem.id === region.id}
-            onSelect={() => onSelect({ type: "region", id: region.id })}
-          />
-        ))}
+
         {markers.map((marker) => (
           <MarkerPin
             key={marker.id}

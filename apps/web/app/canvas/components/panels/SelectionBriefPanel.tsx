@@ -8,10 +8,10 @@
 "use client";
 
 import { ClipboardList } from "lucide-react";
-import type { AddedObject, LibraryAsset, Region, SketchGroup } from "../../types/canvas";
+import type { AddedObject, LibraryAsset, SketchGroup } from "../../types/canvas";
 
 type SelectionBriefPanelProps = {
-  target?: Region | SketchGroup | AddedObject;
+  target?: SketchGroup | AddedObject;
   assets: LibraryAsset[];
 };
 
@@ -20,14 +20,14 @@ export default function SelectionBriefPanel({ target, assets }: SelectionBriefPa
     return (
       <div className="border-t border-[#E5E7EB] p-4">
         <div className="rounded-2xl border border-[#E5E7EB] bg-[#F7F8FA] p-3 text-xs font-bold text-[#667085]">
-          Select a region, object, or sketch group to build an edit brief.
+          Select an object or sketch group to build an edit brief.
         </div>
       </div>
     );
   }
 
-  const title = "nameTag" in target ? target.nameTag : "label" in target ? target.label : "Selected target";
-  const type = "objectType" in target ? target.objectType : "kind" in target ? target.kind : target.label;
+  const title = "nameTag" in target ? target.nameTag : target.label;
+  const type = "objectType" in target ? target.objectType : target.label;
 
   return (
     <div className="border-t border-[#E5E7EB] p-4">

@@ -24,8 +24,6 @@ export type ToolId =
   | "select"
   | "pan"
   | "mark"
-  | "region"
-  | "lock"
   | "add-object"
   | "eraser"
   | "multi-angle"
@@ -35,7 +33,6 @@ export type Selection =
   | { type: "none" }
   | { type: "node"; id: string }
   | { type: "marker"; id: string }
-  | { type: "region"; id: string }
   | { type: "object"; id: string }
   | { type: "recipe"; id: string }
   | { type: "source-mix"; role: SourceRole };
@@ -82,16 +79,7 @@ export type CanvasMarker = {
   y: number;
 };
 
-export type CanvasRegion = {
-  id: string;
-  label: string;
-  instruction: string;
-  type: "Editable area" | "Locked area" | "Replace area";
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
+
 
 export type CanvasObject = {
   id: string;
@@ -132,8 +120,6 @@ export const canvasTools: CanvasTool[] = [
   { id: "select", label: "Select", group: "Navigate", icon: MousePointer2, tip: "Select nodes, markers, regions, and objects." },
   { id: "pan", label: "Pan", group: "Navigate", icon: Hand, tip: "Move around the canvas." },
   { id: "mark", label: "Mark", group: "Mark & Region", icon: MapPin, tip: "Place a marker with an instruction." },
-  { id: "region", label: "Region", group: "Mark & Region", icon: PenLine, tip: "Draw an editable area for AI changes." },
-  { id: "lock", label: "Lock", group: "Mark & Region", icon: Lock, tip: "Protect an area from changes." },
   { id: "add-object", label: "Object", group: "Object", icon: PackagePlus, tip: "Add koi pond, waterfall, plants, people, or hardscape." },
   { id: "eraser", label: "Erase", group: "Object", icon: Eraser, tip: "Erase pen marks by area." },
   { id: "multi-angle", label: "Angles", group: "Camera", icon: Camera, tip: "Create a multi-angle concept set." },
@@ -168,10 +154,7 @@ export const demoMarkers: CanvasMarker[] = [
   { id: "marker-1", name: "Marker 01", instruction: "Place koi pond here", objectType: "Koi pond", priority: "High", x: 680, y: 180 },
 ];
 
-export const demoRegions: CanvasRegion[] = [
-  { id: "region-lock", label: "Locked: Keep house unchanged", instruction: "Preserve the house facade and walkway.", type: "Locked area", x: 650, y: 84, w: 210, h: 88 },
-  { id: "region-edit", label: "Editable Zone", instruction: "Redesign this zone with tropical planting.", type: "Editable area", x: 640, y: 450, w: 270, h: 118 },
-];
+
 
 export const demoObjects: CanvasObject[] = [
   { id: "object-koi", label: "Koi pond", type: "Koi pond", x: 700, y: 326, w: 150, h: 78, rotation: -3, scale: 1 },

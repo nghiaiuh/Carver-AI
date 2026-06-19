@@ -106,7 +106,6 @@ export default function CanvasWorkspace() {
             activeTool={state.activeTool}
             gridVisible={state.gridVisible}
             markers={state.markers}
-            regions={state.regions}
             addedObjects={state.addedObjects}
             nodes={state.nodes}
             edges={state.edges}

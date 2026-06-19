@@ -36,7 +36,6 @@ import type {
   Marker,
   PenSettings,
   PenStrokeObject,
-  Region,
   SelectedItem,
   SketchGroup,
   SketchLine,
@@ -46,11 +45,6 @@ import type {
 
 const INITIAL_MARKERS: Marker[] = [
   { id: "marker-1", x: 58, y: 56, label: "Place koi pond here" },
-];
-
-const INITIAL_REGIONS: Region[] = [
-  { id: "region-lock-1", x: 9, y: 10, w: 34, h: 19, label: "Keep unchanged", kind: "locked" },
-  { id: "region-edit-1", x: 48, y: 58, w: 34, h: 21, label: "Editable Zone", kind: "editable" },
 ];
 
 const INITIAL_OBJECTS: AddedObject[] = [
@@ -83,7 +77,6 @@ export function useCanvasWorkspace() {
   const [activeTool, setActiveTool] = useState<EditorTool>("select");
   const [gridVisible, setGridVisible] = useState(true);
   const [markers, setMarkers] = useState<Marker[]>(INITIAL_MARKERS);
-  const [regions, setRegions] = useState<Region[]>(INITIAL_REGIONS);
   const [addedObjects, setAddedObjects] = useState<AddedObject[]>(INITIAL_OBJECTS);
   const [sketchLines, setSketchLines] = useState<SketchLine[]>([]);
   const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
@@ -202,24 +195,6 @@ export function useCanvasWorkspace() {
       setSelectedItem({ type: "marker", id });
       animateIn(".marker-pin");
     }
-    if (activeTool === "draw-region" || activeTool === "lock-area") {
-      const locked = activeTool === "lock-area";
-      const id = `${locked ? "locked" : "region"}-${regions.length + 1}`;
-      setRegions((items) => [
-        ...items,
-        {
-          id,
-          x: Math.min(x, 68),
-          y: Math.min(y, 70),
-          w: locked ? 28 : 32,
-          h: locked ? 15 : 19,
-          label: locked ? "Keep unchanged" : "Editable Zone",
-          kind: locked ? "locked" : "editable",
-        },
-      ]);
-      setSelectedItem({ type: "region", id });
-      animateIn(".region-overlay");
-    }
   };
 
   const addObject = (label: string) => {
@@ -315,10 +290,6 @@ export function useCanvasWorkspace() {
   };
 
   const buildGenerationContext = () => {
-    const selectedRegion =
-      selectedItem.type === "region"
-        ? regions.find((region) => region.id === selectedItem.id)
-        : undefined;
     const selectedGroup =
       selectedItem.type === "sketchGroup"
         ? sketchGroups.find((group) => group.id === selectedItem.id)
@@ -327,9 +298,8 @@ export function useCanvasWorkspace() {
       selectedItem.type === "object"
         ? addedObjects.find((object) => object.id === selectedItem.id)
         : undefined;
-    const selectedTarget = selectedRegion ?? selectedGroup ?? selectedObject;
+    const selectedTarget = selectedGroup ?? selectedObject;
     const assetIds =
-      selectedRegion?.selectedAssetIds ??
       selectedGroup?.selectedAssetIds ??
       selectedObject?.selectedAssetIds ??
       [];
@@ -345,9 +315,7 @@ export function useCanvasWorkspace() {
     const targetSummary =
       "nameTag" in selectedTarget
         ? `Target group: ${selectedTarget.nameTag}; object type: ${selectedTarget.objectType}; bounds: ${JSON.stringify(selectedTarget.bounds)}.`
-        : "kind" in selectedTarget
-          ? `Target region: ${selectedTarget.label}; kind: ${selectedTarget.kind}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`
-          : `Target object: ${selectedTarget.label}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`;
+        : `Target object: ${selectedTarget.label}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`;
 
     const referenceSummary =
       assets.length > 0
@@ -413,7 +381,6 @@ export function useCanvasWorkspace() {
       activeTool,
       gridVisible,
       markers,
-      regions,
       addedObjects,
       sketchLines,
       sketchGroups,

@@ -29,8 +29,6 @@ export type EditorTool =
   | "mark-position"
   | "add-source"
   | "grid"
-  | "draw-region"
-  | "lock-area"
   | "text-note"
   | "add-object"
   | "generate"
@@ -42,7 +40,6 @@ export type SelectedItem =
   | { type: "image"; id: string; menu?: { x: number; y: number } }
   | { type: "reference"; id: string }
   | { type: "marker"; id: string }
-  | { type: "region"; id: string }
   | { type: "object"; id: string }
   | { type: "sketchLine"; id: string }
   | { type: "sketchGroup"; id: string }
@@ -60,16 +57,7 @@ export type Marker = {
   label: string;
 };
 
-export type Region = {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  label: string;
-  kind: "editable" | "locked";
-  selectedAssetIds?: string[];
-};
+
 
 export type AddedObject = {
   id: string;
@@ -151,6 +139,20 @@ export type SketchGroup = {
 
 // ── Canvas Graph (Nodes & Edges) ──────────────────────────────────────────────
 
+/**
+ * Named input port on a canvas node.
+ * Ports are intentionally generic: every connection is treated as an image input.
+ * The stable `index` determines ordering in AI payloads.
+ */
+export type InputPort = {
+  id: string;            // e.g. "port-img-0"
+  index: number;         // 0-based, stable ordering — never changes once created
+  label: string;         // "Image 1", "Image 2", etc. (1-based for display)
+};
+
+/** Max input ports per node. One shared image-input model keeps the UX simple. */
+export const MAX_INPUT_PORTS_PER_NODE = 5;
+
 export type CanvasNode = {
   id: string;
   x: number;
@@ -173,18 +175,61 @@ export type CanvasNode = {
   role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output";
   model?: string;
   createdAt?: string;
+  /** Ordered input ports for this node. */
+  inputPorts: InputPort[];
 };
 
 export type CanvasEdge = {
   id: string;
   sourceId: string;
   targetId: string;
+  /** Which input port on the target node this edge connects to. */
+  targetPortId: string;
   label: string;
   fromHandle?: ImageHandlePosition;
   toHandle?: ImageHandlePosition;
   role?: ImageConnectionRole;
   createdAt?: string;
 };
+
+// ── Port Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Generate the full set of input ports for a node.
+ * All nodes use the same generic image-input ports.
+ */
+export function getDefaultInputPorts(): InputPort[] {
+  const max = MAX_INPUT_PORTS_PER_NODE;
+  return Array.from({ length: max }, (_, i) => ({
+    id: `port-img-${i}`,
+    index: i,
+    label: `Image ${i + 1}`,
+  }));
+}
+
+/**
+ * Compute which ports should be rendered in the UI (Q1 resolution).
+ * Returns: all ports that have an inbound edge + the first empty port (if any
+ * remain under maxPorts). If all ports are connected, no empty slot is shown.
+ */
+export function getVisibleInputPorts(
+  ports: InputPort[],
+  edges: CanvasEdge[],
+  nodeId: string,
+): InputPort[] {
+  const safePorts = ports || getDefaultInputPorts();
+  const connectedPortIds = new Set(
+    edges
+      .filter((e) => e.targetId === nodeId)
+      .map((e) => e.targetPortId),
+  );
+  const connected = safePorts.filter((p) => connectedPortIds.has(p.id));
+  const firstEmpty = safePorts.find((p) => !connectedPortIds.has(p.id));
+  if (firstEmpty) {
+    return [...connected, firstEmpty].sort((a, b) => a.index - b.index);
+  }
+  return connected.sort((a, b) => a.index - b.index);
+}
 
 // ── UI Layout ─────────────────────────────────────────────────────────────────
 

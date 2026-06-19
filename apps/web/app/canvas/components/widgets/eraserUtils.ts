@@ -89,6 +89,7 @@ function normalizeSegmentPoints(points: Point[]) {
 }
 
 export function clonePenStrokes(strokes: PenStrokeObject[]) {
+  if (!strokes) return [];
   return strokes.map((stroke) => ({
     ...stroke,
     points: stroke.points.map((point) => ({ ...point })),
