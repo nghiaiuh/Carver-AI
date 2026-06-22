@@ -25,6 +25,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function normalizeWidth(value: number, min: number, max: number) {
+  return Math.round(clamp(value, min, max));
+}
+
 export default function useResizablePanel({
   panelRef,
   side,
@@ -33,26 +37,32 @@ export default function useResizablePanel({
   maxWidth,
   storageKey,
 }: UseResizablePanelOptions): UseResizablePanelResult {
-  const [width, setWidth] = useState(() => {
+  const [width, setWidth] = useState(() => normalizeWidth(defaultWidth, minWidth, maxWidth));
+  const [isResizing, setIsResizing] = useState(false);
+  const stopResizeRef = useRef<(() => void) | null>(null);
+  const hasLoadedStoredWidthRef = useRef(false);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !storageKey) {
-      return defaultWidth;
+      hasLoadedStoredWidthRef.current = true;
+      return;
     }
 
     const storedWidth = window.localStorage.getItem(storageKey);
     const parsedWidth = storedWidth ? Number(storedWidth) : Number.NaN;
+    const timeoutId = window.setTimeout(() => {
+      if (Number.isFinite(parsedWidth)) {
+        setWidth(normalizeWidth(parsedWidth, minWidth, maxWidth));
+      }
 
-    return Number.isFinite(parsedWidth) ? clamp(parsedWidth, minWidth, maxWidth) : defaultWidth;
-  });
-  const [isResizing, setIsResizing] = useState(false);
-  const stopResizeRef = useRef<(() => void) | null>(null);
-  const hasMountedRef = useRef(false);
+      hasLoadedStoredWidthRef.current = true;
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [storageKey, minWidth, maxWidth]);
 
   useEffect(() => {
-    hasMountedRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    if (!hasMountedRef.current || typeof window === "undefined" || !storageKey) return;
+    if (!hasLoadedStoredWidthRef.current || typeof window === "undefined" || !storageKey) return;
     window.localStorage.setItem(storageKey, String(width));
   }, [storageKey, width]);
 
@@ -79,7 +89,7 @@ export default function useResizablePanel({
   }, []);
 
   const resetWidth = () => {
-    setWidth(defaultWidth);
+    setWidth(normalizeWidth(defaultWidth, minWidth, maxWidth));
   };
 
   const startResize = (event: ReactPointerEvent | React.MouseEvent) => {
@@ -96,7 +106,7 @@ export default function useResizablePanel({
           ? moveEvent.clientX - (panelRect?.left ?? 0)
           : (panelRect?.right ?? window.innerWidth) - moveEvent.clientX;
 
-      setWidth(clamp(nextWidth, minWidth, maxWidth));
+      setWidth(normalizeWidth(nextWidth, minWidth, maxWidth));
     };
 
     const stopResize = () => {

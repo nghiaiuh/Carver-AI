@@ -33,7 +33,8 @@ export type EditorTool =
   | "add-object"
   | "generate"
   | "edit-elements"
-  | "move-object";
+  | "move-object"
+  | "region";
 
 export type SelectedItem =
   | { type: "none" }
@@ -137,6 +138,21 @@ export type SketchGroup = {
   selectedAssetIds: string[];
 };
 
+// ── Masks ─────────────────────────────────────────────────────────────────────
+
+export type MaskData = {
+  width: number;
+  height: number;
+  dataUrl: string;
+  selectionRatio: number;
+  updatedAt: number;
+};
+
+export type MaskHistory = {
+  past: (MaskData | undefined)[];
+  future: (MaskData | undefined)[];
+};
+
 // ── Canvas Graph (Nodes & Edges) ──────────────────────────────────────────────
 
 /**
@@ -177,6 +193,9 @@ export type CanvasNode = {
   createdAt?: string;
   /** Ordered input ports for this node. */
   inputPorts: InputPort[];
+  /** Region brush mask */
+  regionMask?: MaskData;
+  maskHistory?: MaskHistory;
 };
 
 export type CanvasEdge = {

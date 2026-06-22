@@ -9,10 +9,11 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, CircleDot, Download, Menu, Zap } from "lucide-react";
+import { ChevronDown, CircleDot, Download, History, Layers3, Menu, Sparkles, Zap } from "lucide-react";
 import type {
   AddedObject,
   CanvasEdge,
+  MaskData,
   CanvasNode,
   EditorTool,
   LeftSidebarPanelId,
@@ -29,6 +30,7 @@ import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
+import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
 import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils";
 import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosition } from "./imageGraph";
 
@@ -77,6 +79,16 @@ type CanvasBoardProps = {
   pendingLibraryInsertAsset: LibraryAsset | null;
   onConsumePendingLibraryInsert: () => void;
   isResizingPanel?: boolean;
+  selectedNode: CanvasNode | null;
+  brushMode: "add" | "subtract";
+  brushSize: number;
+  brushSoftness: number;
+  maskTrigger: { action: "invert" | "clear"; timestamp: number } | null;
+  onBeginMaskChange: (nodeId: string) => void;
+  onCommitMask: (nodeId: string, mask: MaskData | undefined) => void;
+  onBrushSizeChange: (value: number) => void;
+  onBrushSoftnessChange: (value: number) => void;
+  onCloseRegionEditor: () => void;
 };
 
 type DeletedNodeSnapshot = {
@@ -130,6 +142,21 @@ const ERASER_MIN_SIZE = 12;
 const ERASER_MAX_SIZE = 60;
 const ERASER_SPEED_SCALE = 0.17;
 const ERASER_SIZE_SMOOTHING = 0.22;
+
+const TOOL_LABELS: Record<EditorTool, string> = {
+  select: "Select",
+  pen: "Sketch Pen",
+  eraser: "Erase Notes",
+  "mark-position": "Marker",
+  "add-source": "Add Source",
+  grid: "Grid",
+  "text-note": "Text Note",
+  "add-object": "Object",
+  generate: "Generate",
+  "edit-elements": "Edit Elements",
+  "move-object": "Move Object",
+  region: "Region Edit",
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -311,6 +338,16 @@ export default function CanvasBoard({
   pendingLibraryInsertAsset,
   onConsumePendingLibraryInsert,
   isResizingPanel = false,
+  selectedNode,
+  brushMode,
+  brushSize,
+  brushSoftness,
+  maskTrigger,
+  onBeginMaskChange,
+  onCommitMask,
+  onBrushSizeChange,
+  onBrushSoftnessChange,
+  onCloseRegionEditor,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
   const worldLayerRef = useRef<HTMLDivElement>(null);
@@ -351,6 +388,7 @@ export default function CanvasBoard({
     () => marqueeSelectedNodeIds ?? (selectedItem.type === "node" ? [selectedItem.id] : []),
     [marqueeSelectedNodeIds, selectedItem],
   );
+  const isRegionEditing = activeTool === "region" && Boolean(selectedNode);
   const isMultiNodeSelection = selectedNodeIds.length >= MULTI_SELECT_TOOLBAR_MIN_SELECTION;
   const multiSelectBounds = useMemo(() => {
     if (!isMultiNodeSelection) return null;
@@ -582,6 +620,7 @@ export default function CanvasBoard({
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
   const handleWheel = useCallback((event: WheelEvent) => {
+    if (isRegionEditing) return;
     event.preventDefault();
 
     const container = containerRef.current;
@@ -614,10 +653,11 @@ export default function CanvasBoard({
         }),
       };
     });
-  }, []);
+  }, [isRegionEditing]);
 
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (isRegionEditing) return;
       if (isResizingPanel) return;
       const isMiddle = event.button === 1;
       const isSpace = (event.nativeEvent as unknown as { _spaceHeld?: boolean })._spaceHeld;
@@ -697,7 +737,7 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
+    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isRegionEditing, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
@@ -742,6 +782,7 @@ export default function CanvasBoard({
 
   // ── Edge Draft logic ──────────────────────────────────────────────────────
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (isRegionEditing) return;
     if (isResizingPanel) return;
     if (isPanning.current && panStart.current) {
       const start = panStart.current;
@@ -850,9 +891,10 @@ export default function CanvasBoard({
       setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
 
-  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
+  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isRegionEditing, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
+    if (isRegionEditing) return;
     if (isResizingPanel) return;
     if (activeTool === "pen" && penPointerId.current === event.pointerId) {
       event.stopPropagation();
@@ -1011,7 +1053,7 @@ export default function CanvasBoard({
       setDraftEdge(null);
       setHoveredConnectionTargetId(null);
     }
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, draftEdge, draftPenStroke, edges, isResizingPanel, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, draftEdge, draftPenStroke, edges, isRegionEditing, isResizingPanel, marqueeSelection, nodes, onAddPenStroke, onEdgesChange, onSelect, onToast, pan, selectedNodeIds, zoom]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1222,6 +1264,28 @@ export default function CanvasBoard({
     setViewport({ zoom: 1, pan: { x: 0, y: 0 } });
   };
 
+  const selectedNodeSummary = useMemo(() => {
+    if (selectedItem.type === "node" || selectedItem.type === "image") {
+      const node = nodes.find((item) => item.id === selectedItem.id);
+      return node ? `${node.title} selected` : "No image selected";
+    }
+
+    if (selectedNodeIds.length > 1) return `${selectedNodeIds.length} images selected`;
+    if (selectedItem.type === "edge") return "Reference connection selected";
+    if (selectedItem.type === "marker") return "Instruction marker selected";
+    if (selectedItem.type === "object") return "Canvas object selected";
+    if (selectedItem.type === "pen-stroke") return "Sketch annotation selected";
+    if (selectedItem.type === "sketchGroup") return "Grouped sketch selected";
+    if (selectedItem.type === "sketchLine") return "Sketch line selected";
+
+    return "Ready to compose";
+  }, [nodes, selectedItem, selectedNodeIds.length]);
+
+  const sourceNodeCount = useMemo(
+    () => nodes.filter((node) => node.role !== "output").length,
+    [nodes],
+  );
+
   const miniMapModel = useMemo(() => {
     const viewportWorldWidth = zoom > 0 ? containerSize.width / zoom : 0;
     const viewportWorldHeight = zoom > 0 ? containerSize.height / zoom : 0;
@@ -1357,6 +1421,182 @@ export default function CanvasBoard({
         className="hidden"
         onChange={(event) => importImages(event.target.files)}
       />
+      <div className="hidden" data-canvas-ui="true">
+        <div className="pointer-events-auto relative min-w-0 flex-1">
+          <div className="inline-flex max-w-full items-center gap-3 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2.5 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setProjectMenuOpen((value) => !value)}
+              className="grid h-10 w-10 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
+              title={projectMenuOpen ? "Close menu" : "Open menu"}
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
+            >
+              {projectMenuOpen ? <Menu className="h-4 w-4" aria-hidden="true" /> : <CircleDot className="h-5 w-5" aria-hidden="true" />}
+            </button>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">Canvas Session</p>
+              {editingProjectName ? (
+                <input
+                  ref={projectNameInputRef}
+                  value={projectNameDraft}
+                  onChange={(e) => setProjectNameDraft(e.target.value)}
+                  onBlur={commitProjectName}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitProjectName();
+                    if (e.key === "Escape") cancelProjectName();
+                  }}
+                  className="w-40 max-w-full bg-transparent text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)] outline-none"
+                  aria-label="Project name"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={startEditingProjectName}
+                  className="max-w-[180px] truncate text-left text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]"
+                  title="Edit project name"
+                >
+                  {projectName}
+                </button>
+              )}
+            </div>
+            <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#166534]">
+              Auto Saved
+            </span>
+            <ChevronDown className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+          </div>
+
+          {projectMenuOpen ? (
+            <div
+              role="menu"
+              className="mt-3 w-72 overflow-hidden rounded-[30px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
+            >
+              <MenuSection
+                items={[
+                  { label: "Home", onSelect: () => router.push("/") },
+                  { label: projectName, onSelect: startEditingProjectName },
+                ]}
+                onSelect={handleMenuSelect}
+              />
+              <MenuSection
+                items={[
+                  {
+                    label: "New Project",
+                    onSelect: () => {
+                      setProjectName("Untitled");
+                      onNodesChange([]);
+                      onEdgesChange([]);
+                      setDeletedNodeStack([]);
+                      resetZoom();
+                      onToast("New project created");
+                    },
+                  },
+                  {
+                    label: "Delete Project",
+                    tone: "danger",
+                    onSelect: () => {
+                      onNodesChange([]);
+                      onEdgesChange([]);
+                      setDeletedNodeStack([]);
+                      resetZoom();
+                      onToast("Project cleared");
+                    },
+                  },
+                ]}
+                onSelect={handleMenuSelect}
+              />
+              <MenuSection
+                items={[{ label: "Import Images", onSelect: () => importImagesInputRef.current?.click() }]}
+                onSelect={handleMenuSelect}
+              />
+              <MenuSection
+                items={[
+                  { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
+                  { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: true },
+                  { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
+                ]}
+                onSelect={handleMenuSelect}
+              />
+              <MenuSection
+                items={[
+                  { label: "Zoom to Fit", shortcut: "Shift+1", onSelect: resetZoom },
+                  { label: "Zoom In", shortcut: "Ctrl++", onSelect: zoomIn },
+                  { label: "Zoom Out", shortcut: "Ctrl+-", onSelect: zoomOut },
+                ]}
+                onSelect={handleMenuSelect}
+                noDivider
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="pointer-events-auto flex flex-1 justify-center">
+          <div className="flex max-w-[560px] items-center gap-3 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2.5 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
+            <span className="rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">
+              {TOOL_LABELS[activeTool]}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[var(--canvas-theme-text)]">{selectedNodeSummary}</p>
+              <p className="hidden text-xs text-[var(--canvas-theme-text-muted)]">
+                {nodes.length} images · {sourceNodeCount} references · {edges.length} connections
+              </p>
+              <p className="text-xs text-[var(--canvas-theme-text-muted)]">
+                {nodes.length} images / {sourceNodeCount} references / {edges.length} connections
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="pointer-events-auto flex flex-1 justify-end">
+          <div className="flex items-center gap-2 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
+            <button
+              type="button"
+              onClick={() => {
+                if (deletedNodeStack.length === 0) {
+                  onToast("Nothing to undo");
+                  return;
+                }
+                undoDeleteNode();
+                onToast("Reverted latest canvas deletion");
+              }}
+              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+              title="Undo latest deletion"
+            >
+              <History className="h-4 w-4" aria-hidden="true" />
+              <span>Undo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToast("Snapshot timeline is the next UI pass")}
+              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+            >
+              <Layers3 className="h-4 w-4" aria-hidden="true" />
+              <span>Snapshot</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToast("Compare view opens when multiple outputs exist")}
+              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              <span>Compare</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onToast("Export flow coming next")}
+              className="flex items-center gap-2 rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              <span>Export</span>
+            </button>
+            <div className="ml-1 flex items-center gap-2 rounded-full bg-[#EFF6FF] px-3 py-2 text-xs font-bold text-[#1D4ED8]">
+              <Zap className="h-4 w-4 fill-current" aria-hidden="true" />
+              <span>30 credits</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
         <div className="flex h-12 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-[var(--canvas-theme-text-soft)]" data-canvas-ui="true">
           <button
@@ -1619,6 +1859,22 @@ export default function CanvasBoard({
         ) : null}
       </div>
 
+      {isRegionEditing && selectedNode ? (
+        <RegionMaskLightbox
+          key={selectedNode.id}
+          node={selectedNode}
+          brushMode={brushMode}
+          brushSize={brushSize}
+          brushSoftness={brushSoftness}
+          maskTrigger={maskTrigger}
+          onBeginMaskChange={onBeginMaskChange}
+          onCommitMask={onCommitMask}
+          onBrushSizeChange={onBrushSizeChange}
+          onBrushSoftnessChange={onBrushSoftnessChange}
+          onClose={onCloseRegionEditor}
+        />
+      ) : null}
+
       {miniMapOpen ? (
         <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]" data-canvas-ui="true">
           <div
@@ -1668,13 +1924,28 @@ export default function CanvasBoard({
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (
-        <div className="output-tray absolute bottom-7 right-7 z-40 flex max-w-[440px] gap-3 overflow-x-auto rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
-          {[...mockConcepts, ...angleResults].map((item, index) => (
-            <div key={`${item}-${index}`} className="output-thumb w-28 shrink-0 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
-              <div className="h-20 bg-[linear-gradient(135deg,rgba(109,93,251,.22),#fff_54%,rgba(34,197,94,.16))]" />
-              <p className="px-3 py-2 text-xs font-black text-[var(--canvas-theme-text)]">{item}</p>
+        <div className="output-tray absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100%-2rem)] overflow-hidden rounded-[32px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
+          <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--canvas-theme-text-muted)]">Output Tray</p>
+              <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">Latest concept directions</p>
             </div>
-          ))}
+            <button
+              type="button"
+              onClick={() => onToast("Compare outputs is the next refinement step")}
+              className="rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)]"
+            >
+              Compare
+            </button>
+          </div>
+          <div className="flex gap-3 overflow-x-auto p-4">
+            {[...mockConcepts, ...angleResults].map((item, index) => (
+              <div key={`${item}-${index}`} className="output-thumb w-32 shrink-0 overflow-hidden rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
+                <div className="h-24 bg-[linear-gradient(135deg,rgba(109,93,251,.22),#fff_54%,rgba(34,197,94,.16))]" />
+                <p className="px-3 py-3 text-xs font-black text-[var(--canvas-theme-text)]">{item}</p>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
     </section>

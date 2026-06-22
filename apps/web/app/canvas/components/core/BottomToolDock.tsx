@@ -22,6 +22,7 @@ import {
   Pencil,
   Type,
   WandSparkles,
+  Brush,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -59,6 +60,7 @@ const tools = [
   { id: "pen", label: "Pen", icon: Pencil },
   { id: "eraser", label: "Eraser", icon: Eraser },
   { id: "text-note", label: "Text", icon: Type },
+  { id: "region", label: "Region", icon: Brush },
   { id: "add-object", label: "Object", icon: Box },
   { id: "generate", label: "Generate", icon: WandSparkles },
 ] as const;

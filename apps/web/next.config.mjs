@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   // Transpile monorepo packages so Next.js handles their source directly
-  transpilePackages: ["@carver/db"],
+  transpilePackages: ["@carver/ai", "@carver/db", "@carver/queue", "@carver/shared"],
   images: {
     remotePatterns: [
       {

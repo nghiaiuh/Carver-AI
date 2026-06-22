@@ -27,9 +27,11 @@ import {
   RIGHT_PANEL_WIDTH_STORAGE_KEY,
   inferObjectTypeFromTag,
 } from "../types/canvas";
+import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import type {
   AddedObject,
   CanvasEdge,
+  MaskData,
   CanvasNode,
   EditorTool,
   LeftSidebarPanelId,
@@ -40,6 +42,14 @@ import type {
   SketchGroup,
   SketchLine,
 } from "../types/canvas";
+
+function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
+  if (selectedItem.type !== "node" && selectedItem.type !== "image") {
+    return null;
+  }
+
+  return nodes.find((node) => node.id === selectedItem.id) ?? null;
+}
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +92,10 @@ export function useCanvasWorkspace() {
   const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
   const [penStrokes, setPenStrokes] = useState<PenStrokeObject[]>([]);
   const [penSettings, setPenSettings] = useState<PenSettings>(DEFAULT_PEN_SETTINGS);
+  const [brushMode, setBrushMode] = useState<"add" | "subtract">("add");
+  const [brushSize, setBrushSize] = useState<number>(80);
+  const [brushSoftness, setBrushSoftness] = useState<number>(35);
+  const [maskTrigger, setMaskTrigger] = useState<{ action: "invert" | "clear", timestamp: number } | null>(null);
   const [selectedSketchLineIds, setSelectedSketchLineIds] = useState<string[]>([]);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -91,6 +105,7 @@ export function useCanvasWorkspace() {
   const [mockConcepts, setMockConcepts] = useState<string[]>([]);
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
+  const [isGeneratingRegion, setIsGeneratingRegion] = useState(false);
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<string | null>(null);
@@ -135,6 +150,7 @@ export function useCanvasWorkspace() {
   const allLibraryAssets = library.allAssets;
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
   const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
+  const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -156,6 +172,11 @@ export function useCanvasWorkspace() {
   };
 
   const handleTool = (tool: EditorTool) => {
+    if (tool === "region" && !selectedNode) {
+      showToast("Select an image first");
+      return;
+    }
+
     setActiveTool(tool);
     if (tool === "add-object") setShowAddObjectMenu(true);
   };
@@ -326,7 +347,32 @@ export function useCanvasWorkspace() {
   };
 
   const generateConcept = () => {
+    if (activeTool === "region" && !selectedNode) {
+      showToast("Select an image first");
+      return;
+    }
+
+    if (activeTool === "region" && (!selectedNode?.regionMask || selectedNode.regionMask.selectionRatio <= 0)) {
+      showToast("No region selected");
+      return;
+    }
+
+    if (activeTool === "region" && !promptText.trim()) {
+      showToast("Enter a prompt");
+      return;
+    }
+
     const generationContext = buildGenerationContext();
+    const regionPayload =
+      activeTool === "region" && selectedNode?.regionMask
+        ? {
+            imageId: selectedNode.id,
+            prompt: promptText.trim(),
+            mask: selectedNode.regionMask,
+          }
+        : null;
+
+    setIsGeneratingRegion(activeTool === "region");
     setMockConcepts([]);
     setNodes((items) =>
       items.map((node) =>
@@ -337,6 +383,17 @@ export function useCanvasWorkspace() {
                 promptText || "Canvas generation request",
                 generationContext.targetSummary,
                 generationContext.referenceSummary,
+                regionPayload
+                  ? `Region edit payload: ${JSON.stringify({
+                      imageId: regionPayload.imageId,
+                      prompt: regionPayload.prompt,
+                      mask: {
+                        width: regionPayload.mask.width,
+                        height: regionPayload.mask.height,
+                        selectionRatio: Number(regionPayload.mask.selectionRatio.toFixed(4)),
+                      },
+                    })}`
+                  : "Region edit target: none.",
               ].join("\n"),
             }
           : node,
@@ -344,6 +401,7 @@ export function useCanvasWorkspace() {
     );
     window.setTimeout(() => {
       setMockConcepts(["Concept A", "Concept B", "Concept C"]);
+      setIsGeneratingRegion(false);
       animateIn(".output-thumb");
     }, 850);
   };
@@ -358,6 +416,84 @@ export function useCanvasWorkspace() {
   const applyQuickEdit = () => {
     setShowQuickEditModal(false);
     showToast("Edit instruction added");
+  };
+
+  const pushMaskHistoryCheckpoint = (nodeId: string) => {
+    setNodes((items) =>
+      items.map((node) => {
+        if (node.id !== nodeId) return node;
+        const history = node.maskHistory || { past: [], future: [] };
+        const nextPast = [...history.past, node.regionMask].slice(-MAX_MASK_HISTORY);
+        return {
+          ...node,
+          maskHistory: {
+            past: nextPast,
+            future: [],
+          },
+        };
+      }),
+    );
+  };
+
+  const commitMaskData = (nodeId: string, newMask: MaskData | undefined) => {
+    setNodes((items) =>
+      items.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              regionMask: newMask,
+            }
+          : node,
+      ),
+    );
+  };
+
+  const undoMask = (nodeId: string) => {
+    setNodes((items) =>
+      items.map((node) => {
+        if (node.id !== nodeId) return node;
+        const history = node.maskHistory;
+        if (!history || history.past.length === 0) {
+          showToast("Nothing to undo for this mask");
+          return node;
+        }
+        const previousMask = history.past[history.past.length - 1];
+        const newPast = history.past.slice(0, -1);
+        const currentMask = node.regionMask;
+        return {
+          ...node,
+          regionMask: previousMask,
+          maskHistory: {
+            past: newPast,
+            future: [currentMask, ...history.future],
+          },
+        };
+      }),
+    );
+  };
+
+  const redoMask = (nodeId: string) => {
+    setNodes((items) =>
+      items.map((node) => {
+        if (node.id !== nodeId) return node;
+        const history = node.maskHistory;
+        if (!history || history.future.length === 0) {
+          showToast("Nothing to redo for this mask");
+          return node;
+        }
+        const nextMask = history.future[0];
+        const newFuture = history.future.slice(1);
+        const currentMask = node.regionMask;
+        return {
+          ...node,
+          regionMask: nextMask,
+          maskHistory: {
+            past: [...history.past, currentMask],
+            future: newFuture,
+          },
+        };
+      }),
+    );
   };
 
   // ── Return shape ────────────────────────────────────────────────────────────
@@ -399,10 +535,16 @@ export function useCanvasWorkspace() {
       canvasThemeColor,
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
+      brushMode,
+      brushSize,
+      brushSoftness,
+      maskTrigger,
+      isGeneratingRegion,
       // derived
       allLibraryAssets,
       canvasThemeStyle,
       isResizingPanel,
+      selectedNode,
     },
 
     // ── Modal visibility ──────────────────────────────────────────────────────
@@ -432,6 +574,7 @@ export function useCanvasWorkspace() {
 
       // Tool & selection
       handleTool,
+      exitRegionMode: () => setActiveTool("select"),
       handleSelectItem,
 
       // Pen strokes
@@ -439,6 +582,16 @@ export function useCanvasWorkspace() {
       replacePenStrokes,
       deletePenStroke,
       setPenSettings,
+
+      // Region Brush
+      setBrushMode,
+      setBrushSize,
+      setBrushSoftness,
+      pushMaskHistoryCheckpoint,
+      commitMaskData,
+      undoMask,
+      redoMask,
+      triggerMaskAction: (action: "invert" | "clear") => setMaskTrigger({ action, timestamp: Date.now() }),
 
       // Sketch
       addSketchLine,

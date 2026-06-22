@@ -165,7 +165,9 @@ export default function CanvasNodeCard({
         e.preventDefault();
         e.stopPropagation();
         onSelect(node.id, e);
-        onDragStart(node.id, e);
+        if (activeTool !== "region") {
+          onDragStart(node.id, e);
+        }
       }}
       onDoubleClick={(event) => {
         event.stopPropagation();
@@ -215,7 +217,6 @@ export default function CanvasNodeCard({
                 <ImagePlus className="w-8 h-8 opacity-50" />
               </div>
             )}
-
             <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
 
             {/* Overlays: only rendered on the active node */}
@@ -261,24 +262,15 @@ export default function CanvasNodeCard({
                 viewportZoom={viewportZoom}
               />
             ) : null}
-          </div>
 
-          {visiblePorts.length > 0 ? (
-            <div
-              className={[
-                "absolute inset-y-4 z-[140] w-7 transition-opacity",
-                selected || isConnectionTarget || pendingReplacePortId
-                  ? "opacity-100"
-                  : "opacity-85 group-hover:opacity-100",
-              ].join(" ")}
-              style={{ left: `${-(INPUT_PORT_HANDLE_CENTER_OFFSET + 16)}px` }}
-              aria-hidden="true"
-            >
-              {visiblePorts.length > 1 ? (
-                <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 rounded-full bg-white/10 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" />
-              ) : null}
-            </div>
-          ) : null}
+            {(node.regionMask?.selectionRatio && activeTool !== "region") ? (
+              <div className="absolute top-2 right-2 z-40 flex items-center gap-1.5 rounded-lg bg-[#111827]/80 px-2.5 py-1.5 backdrop-blur-md text-white shadow-[0_4px_12px_rgba(0,0,0,0.15)] ring-1 ring-white/10 transition-opacity">
+                <span className="text-[10px] font-bold tracking-widest uppercase text-[#22D3EE]">
+                  🎨 Mask Active {Math.round(node.regionMask.selectionRatio * 100)}%
+                </span>
+              </div>
+            ) : null}
+          </div>
 
           {/* Left side: dynamic input ports, ordered by image index */}
           {visiblePorts.map((port, visibleIndex) => {

@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useRef } from "react";
+import { useEffect } from "react";
 import { MessageSquare, PanelLeftOpen } from "lucide-react";
 import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
@@ -23,6 +23,7 @@ import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
 import RealityCheckPanel from "../panels/RealityCheckPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
+import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
 
 export default function CanvasWorkspace() {
   const canvas = useCanvasWorkspace();
@@ -44,6 +45,20 @@ export default function CanvasWorkspace() {
     },
     { scope: rootRef },
   );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+
+      if (event.key.toLowerCase() === "r" && state.selectedNode) {
+        event.preventDefault();
+        actions.handleTool("region");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [actions, state.selectedNode]);
 
   return (
     <div
@@ -146,6 +161,16 @@ export default function CanvasWorkspace() {
             pendingLibraryInsertAsset={state.pendingLibraryInsertAsset}
             onConsumePendingLibraryInsert={actions.consumePendingLibraryInsert}
             isResizingPanel={state.isResizingPanel}
+            selectedNode={state.selectedNode}
+            brushMode={state.brushMode}
+            brushSize={state.brushSize}
+            brushSoftness={state.brushSoftness}
+            maskTrigger={state.maskTrigger}
+            onBeginMaskChange={actions.pushMaskHistoryCheckpoint}
+            onCommitMask={actions.commitMaskData}
+            onBrushSizeChange={actions.setBrushSize}
+            onBrushSoftnessChange={actions.setBrushSoftness}
+            onCloseRegionEditor={actions.exitRegionMode}
           />
 
           {/* Right panel */}
@@ -182,6 +207,10 @@ export default function CanvasWorkspace() {
             </button>
           )}
         </div>
+
+        {state.activeTool === "region" && state.selectedNode ? (
+          <RegionBrushToolbar workspace={canvas} />
+        ) : null}
 
         {/* ── Modals & overlays ────────────────────────────────────────────── */}
         <QuickEditModal

@@ -6,14 +6,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
 import { readJsonObject, serverError, stringValue } from "../_lib/http";
-
-const emptyCanvas = {
-  schema: "carver-canvas-v1",
-  shapes: [],
-  assets: [],
-};
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
@@ -48,7 +43,7 @@ export async function POST(request: Request) {
     .insert({
       project_id: project.id,
       version: 1,
-      canvas_json: emptyCanvas,
+      canvas_json: createEmptyCanvasSnapshotDocument(),
       created_by: user.id,
     })
     .select()

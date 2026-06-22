@@ -15,6 +15,7 @@ import {
   Paintbrush,
   RotateCw,
   SlidersHorizontal,
+  Brush,
 } from "lucide-react";
 import type { EditorTool } from "../../types/canvas";
 
@@ -28,6 +29,7 @@ type FloatingQuickPanelProps = {
 
 const actions = [
   { label: "Expand Scene", icon: Expand, action: "expand" },
+  { label: "Region Edit", icon: Brush, action: "region" },
   { label: "Adjust Style", icon: Paintbrush, action: "style" },
   { label: "Crop View", icon: Crop, action: "crop" },
   { label: "Flip & Rotate", icon: RotateCw, action: "rotate" },
@@ -64,6 +66,7 @@ export default function FloatingQuickPanel({ viewportZoom = 1, onTool, onMultiAn
               event.stopPropagation();
               if ("action" in action && action.action === "camera") onMultiAngle();
               if ("action" in action && action.action === "reality") onRealityCheck();
+              if ("action" in action && action.action === "region") onTool("region");
               if ("action" in action && ["expand", "style", "crop", "rotate", "customize"].includes(action.action)) onToast(`${action.label} applied`);
             }}
               className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-bold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"

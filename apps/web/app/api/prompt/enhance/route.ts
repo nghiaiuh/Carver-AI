@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { enhancePrompt, type EnhanceMode } from "../../../../lib/prompt-engine";
+import { enhancePrompt, type EnhanceMode } from "@carver/ai/prompt-engine";
 import { badRequest, readJsonObject, stringValue } from "../../_lib/http";
 
 const MODE_VALUES: EnhanceMode[] = [

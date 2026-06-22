@@ -6,7 +6,9 @@
  */
 
 import { NextResponse } from "next/server";
-import { compileFinalPrompt, type PromptMode } from "../../../lib/prompt-engine";
+import { buildSnapshotAwareEditBrief } from "@carver/ai";
+import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
+import { coerceCanvasSnapshotDocument, isCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
 import { badRequest, readJsonObject, stringValue } from "../_lib/http";
 
@@ -16,6 +18,8 @@ const promptModeValue = (value: unknown): PromptMode =>
   typeof value === "string" && promptModes.includes(value as PromptMode) ? (value as PromptMode) : "auto";
 
 const arrayValue = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const snapshotValue = (value: unknown) => (isCanvasSnapshotDocument(value) ? coerceCanvasSnapshotDocument(value) : undefined);
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
@@ -33,6 +37,7 @@ export async function POST(request: Request) {
 
   const promptMode = promptModeValue(body.promptMode);
   const debugPrompt = body.debugPrompt === true;
+  const snapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
 
   const compiledPrompt = compileFinalPrompt({
     rawPrompt,
@@ -43,6 +48,14 @@ export async function POST(request: Request) {
     generationMode: stringValue(body, "generationMode"),
     promptMode,
   });
+
+  const snapshotAwareBrief = snapshot
+    ? buildSnapshotAwareEditBrief({
+        jobType: "generate_concept",
+        prompt: rawPrompt,
+        snapshot,
+      })
+    : undefined;
 
   const promptMeta = {
     userSubmittedPrompt: rawPrompt,
@@ -57,6 +70,7 @@ export async function POST(request: Request) {
     negativeConstraints: compiledPrompt.negativeConstraints,
     formulaUsed: compiledPrompt.formulaUsed,
     editBrief: compiledPrompt.editBrief,
+    snapshotAwareBrief,
     shouldShowReview: compiledPrompt.shouldShowReview,
     ...(promptMode === "expert" || debugPrompt ? { enhancedPromptVisible: compiledPrompt.enhancedPrompt } : {}),
   };

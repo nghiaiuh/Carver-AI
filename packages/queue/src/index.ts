@@ -5,7 +5,13 @@
  * 3. Provide a single import surface for queue code.
  */
 
-export { Queue, Worker, QueueEvents } from "bullmq";
+import { Queue, QueueEvents, Worker } from "bullmq";
+import type { CarverAiJobPayload } from "@carver/shared";
+
+export { Queue, Worker, QueueEvents };
+
+export const AI_JOB_QUEUE_NAME = "carver-ai-jobs";
+export const AI_JOB_QUEUE_EVENT_NAME = "carver-ai-job";
 
 export const defaultQueueOptions = {
   connection: {
@@ -15,3 +21,6 @@ export const defaultQueueOptions = {
     password: process.env.REDIS_PASSWORD,
   },
 };
+
+export const createAiJobQueue = () =>
+  new Queue<CarverAiJobPayload>(AI_JOB_QUEUE_NAME, defaultQueueOptions);

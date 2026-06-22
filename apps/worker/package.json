@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@carver/ai": "*",
+    "@carver/db": "*",
     "@carver/queue": "*"
   },
   "devDependencies": {
