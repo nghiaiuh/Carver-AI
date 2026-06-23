@@ -8,16 +8,9 @@
 "use client";
 
 import {
-  Download,
-  Eraser,
-  ImagePlus,
-  Maximize2,
-  MoreHorizontal,
-  Move,
-  MousePointer2,
-  Scan,
-  Sparkles,
-  WandSparkles,
+  Camera,
+  Crop,
+  Paintbrush,
 } from "lucide-react";
 import type { EditorTool } from "../../types/canvas";
 
@@ -32,24 +25,14 @@ type ContextualToolbarProps = {
 };
 
 const tools = [
-  { label: "Quick Edit", icon: WandSparkles, action: "quick-edit" },
-  { label: "Enhance", icon: Sparkles, action: "enhance" },
-  { label: "Erase", icon: Eraser, tool: "eraser" },
-  { label: "Edit Elements", icon: MousePointer2, tool: "edit-elements" },
-  { label: "Mark Position", icon: Scan, tool: "mark-position" },
-  { label: "Multi-Angles", icon: Maximize2, action: "multi-angle" },
-  { label: "Move Object", icon: Move, tool: "move-object" },
-  { label: "Add Object", icon: ImagePlus, action: "add-object" },
-  { label: "More", icon: MoreHorizontal, action: "more" },
-  { label: "Export", icon: Download, action: "export" },
+  { label: "Region Edit", icon: Paintbrush, tool: "region" },
+  { label: "Multi-Angles", icon: Camera, action: "multi-angle" },
+  { label: "Crop", icon: Crop, action: "crop" },
 ] as const;
 
 export default function ContextualToolbar({
-  itemLabel,
   viewportZoom = 1,
-  onQuickEdit,
   onMultiAngle,
-  onAddObject,
   onTool,
   onToast,
 }: ContextualToolbarProps) {
@@ -57,14 +40,13 @@ export default function ContextualToolbar({
 
   return (
     <div
-      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
+      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-1 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1 shadow-xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
       style={{
-        top: `${-62 * uiScale}px`,
+        top: `${-54 * uiScale}px`,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
     >
-      <span className="mr-0.5 rounded-lg bg-[var(--canvas-theme-active)] px-2.5 py-1.5 text-[11px] font-black text-[var(--canvas-theme-active-text)]">{itemLabel}</span>
       {tools.map((tool) => {
         const Icon = tool.icon;
         return (
@@ -73,16 +55,14 @@ export default function ContextualToolbar({
             title={tool.label}
             onClick={(event) => {
               event.stopPropagation();
-              if ("action" in tool && tool.action === "quick-edit") onQuickEdit();
               if ("action" in tool && tool.action === "multi-angle") onMultiAngle();
-              if ("action" in tool && tool.action === "add-object") onAddObject();
-              if ("action" in tool && tool.action === "enhance") onToast("Enhance applied");
-              if ("action" in tool && tool.action === "export") onToast("Export mock");
+              if ("action" in tool && tool.action === "crop") onToast("Crop tool coming next");
               if ("tool" in tool) onTool(tool.tool);
             }}
-            className="grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 text-xs font-semibold text-black transition hover:border-[var(--canvas-theme-border)] hover:bg-[var(--canvas-theme-hover)]"
           >
-            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+            <Icon className="h-3.5 w-3.5 shrink-0 text-black" aria-hidden="true" />
+            <span className="whitespace-nowrap">{tool.label}</span>
           </button>
         );
       })}

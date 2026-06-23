@@ -12,7 +12,6 @@
 import { Copy, ImagePlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import type { AddedObject, EditorTool, Marker, SelectedItem } from "../../types/canvas";
 import ContextualToolbar from "./ContextualToolbar";
-import FloatingQuickPanel from "./FloatingQuickPanel";
 import MarkerPin from "./MarkerPin";
 
 type SelectableImageProps = {
@@ -86,7 +85,6 @@ export default function SelectableImage({
               onTool={onTool}
               onToast={onToast}
             />
-            <FloatingQuickPanel onTool={onTool} onMultiAngle={onMultiAngle} onRealityCheck={onRealityCheck} onToast={onToast} />
             <SelectionChrome label="Image" size="1522 × 1146" />
           </>
         ) : null}

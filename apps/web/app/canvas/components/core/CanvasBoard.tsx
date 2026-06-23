@@ -20,6 +20,8 @@ import type {
   Marker,
   PenSettings,
   PenStrokeObject,
+  RegionBrushMode,
+  RegionSelectionTool,
   SelectedItem,
   SketchGroup,
   SketchLine,
@@ -37,7 +39,6 @@ import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosit
 type CanvasBoardProps = {
   selectedItem: SelectedItem;
   activeTool: EditorTool;
-  gridVisible: boolean;
   markers: Marker[];
   addedObjects: AddedObject[];
   sketchLines: SketchLine[];
@@ -59,7 +60,6 @@ type CanvasBoardProps = {
   onSelectSketchLine: (id: string, additive: boolean) => void;
   onSelectSketchGroup: (id: string) => void;
   onTool: (tool: EditorTool) => void;
-  onToggleGrid: () => void;
   onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
@@ -80,12 +80,15 @@ type CanvasBoardProps = {
   onConsumePendingLibraryInsert: () => void;
   isResizingPanel?: boolean;
   selectedNode: CanvasNode | null;
-  brushMode: "add" | "subtract";
+  brushMode: RegionBrushMode;
+  regionSelectionTool: RegionSelectionTool;
   brushSize: number;
   brushSoftness: number;
   maskTrigger: { action: "invert" | "clear"; timestamp: number } | null;
   onBeginMaskChange: (nodeId: string) => void;
   onCommitMask: (nodeId: string, mask: MaskData | undefined) => void;
+  onUndoMask: (nodeId: string) => void;
+  onRedoMask: (nodeId: string) => void;
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
@@ -296,7 +299,6 @@ function getPastedImageNodeSize(dimensions: { width: number; height: number } | 
 export default function CanvasBoard({
   selectedItem,
   activeTool,
-  gridVisible,
   markers,
   addedObjects,
   sketchLines,
@@ -318,7 +320,6 @@ export default function CanvasBoard({
   onSelectSketchLine,
   onSelectSketchGroup,
   onTool,
-  onToggleGrid,
   onQuickEdit,
   onMultiAngle,
   onAddObject,
@@ -340,11 +341,14 @@ export default function CanvasBoard({
   isResizingPanel = false,
   selectedNode,
   brushMode,
+  regionSelectionTool,
   brushSize,
   brushSoftness,
   maskTrigger,
   onBeginMaskChange,
   onCommitMask,
+  onUndoMask,
+  onRedoMask,
   onBrushSizeChange,
   onBrushSoftnessChange,
   onCloseRegionEditor,
@@ -1864,11 +1868,14 @@ export default function CanvasBoard({
           key={selectedNode.id}
           node={selectedNode}
           brushMode={brushMode}
+          selectionTool={regionSelectionTool}
           brushSize={brushSize}
           brushSoftness={brushSoftness}
           maskTrigger={maskTrigger}
           onBeginMaskChange={onBeginMaskChange}
           onCommitMask={onCommitMask}
+          onUndoMask={onUndoMask}
+          onRedoMask={onRedoMask}
           onBrushSizeChange={onBrushSizeChange}
           onBrushSoftnessChange={onBrushSoftnessChange}
           onClose={onCloseRegionEditor}
@@ -1903,17 +1910,14 @@ export default function CanvasBoard({
       ) : null}
       <BottomToolDock
         activeTool={activeTool}
-        gridVisible={gridVisible}
         zoom={zoom}
         activeLeftSidebarPanel={activeLeftSidebarPanel}
         miniMapOpen={miniMapOpen}
         onTool={onTool}
-        onToggleGrid={onToggleGrid}
         onToggleLeftSidebarPanel={onToggleLeftSidebarPanel}
         onToggleMiniMap={onToggleMiniMap}
         onAddObject={onAddObject}
         onGenerate={onGenerate}
-        onToast={onToast}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onResetZoom={resetZoom}

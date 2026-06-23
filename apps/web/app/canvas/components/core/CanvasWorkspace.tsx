@@ -119,7 +119,6 @@ export default function CanvasWorkspace() {
           <CanvasBoard
             selectedItem={state.selectedItem}
             activeTool={state.activeTool}
-            gridVisible={state.gridVisible}
             markers={state.markers}
             addedObjects={state.addedObjects}
             nodes={state.nodes}
@@ -141,7 +140,6 @@ export default function CanvasWorkspace() {
             onSelectSketchLine={actions.selectSketchLine}
             onSelectSketchGroup={(id) => actions.handleSelectItem({ type: "sketchGroup", id })}
             onTool={actions.handleTool}
-            onToggleGrid={actions.toggleGrid}
             onQuickEdit={() => actions.setShowQuickEditModal(true)}
             onMultiAngle={() => actions.setShowMultiAngleModal(true)}
             onAddObject={() => actions.setShowAddObjectMenu(true)}
@@ -163,11 +161,14 @@ export default function CanvasWorkspace() {
             isResizingPanel={state.isResizingPanel}
             selectedNode={state.selectedNode}
             brushMode={state.brushMode}
+            regionSelectionTool={state.regionSelectionTool}
             brushSize={state.brushSize}
             brushSoftness={state.brushSoftness}
             maskTrigger={state.maskTrigger}
             onBeginMaskChange={actions.pushMaskHistoryCheckpoint}
             onCommitMask={actions.commitMaskData}
+            onUndoMask={actions.undoMask}
+            onRedoMask={actions.redoMask}
             onBrushSizeChange={actions.setBrushSize}
             onBrushSoftnessChange={actions.setBrushSoftness}
             onCloseRegionEditor={actions.exitRegionMode}

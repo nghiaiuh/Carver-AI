@@ -36,6 +36,9 @@ export type EditorTool =
   | "move-object"
   | "region";
 
+export type RegionBrushMode = "add" | "subtract";
+export type RegionSelectionTool = "brush" | "lasso";
+
 export type SelectedItem =
   | { type: "none" }
   | { type: "image"; id: string; menu?: { x: number; y: number } }

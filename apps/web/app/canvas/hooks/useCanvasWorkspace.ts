@@ -38,6 +38,8 @@ import type {
   Marker,
   PenSettings,
   PenStrokeObject,
+  RegionBrushMode,
+  RegionSelectionTool,
   SelectedItem,
   SketchGroup,
   SketchLine,
@@ -92,7 +94,8 @@ export function useCanvasWorkspace() {
   const [sketchGroups, setSketchGroups] = useState<SketchGroup[]>([]);
   const [penStrokes, setPenStrokes] = useState<PenStrokeObject[]>([]);
   const [penSettings, setPenSettings] = useState<PenSettings>(DEFAULT_PEN_SETTINGS);
-  const [brushMode, setBrushMode] = useState<"add" | "subtract">("add");
+  const [brushMode, setBrushMode] = useState<RegionBrushMode>("add");
+  const [regionSelectionTool, setRegionSelectionTool] = useState<RegionSelectionTool>("brush");
   const [brushSize, setBrushSize] = useState<number>(80);
   const [brushSoftness, setBrushSoftness] = useState<number>(35);
   const [maskTrigger, setMaskTrigger] = useState<{ action: "invert" | "clear", timestamp: number } | null>(null);
@@ -536,6 +539,7 @@ export function useCanvasWorkspace() {
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
       brushMode,
+      regionSelectionTool,
       brushSize,
       brushSoftness,
       maskTrigger,
@@ -585,6 +589,7 @@ export function useCanvasWorkspace() {
 
       // Region Brush
       setBrushMode,
+      setRegionSelectionTool,
       setBrushSize,
       setBrushSoftness,
       pushMaskHistoryCheckpoint,

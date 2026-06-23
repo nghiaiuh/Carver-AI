@@ -1,8 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
-import type { CanvasNode, MaskData } from "../../types/canvas";
+import { Redo2, Undo2, X } from "lucide-react";
+import type {
+  CanvasNode,
+  MaskData,
+  RegionBrushMode,
+  RegionSelectionTool,
+} from "../../types/canvas";
 import {
   MASK_ALPHA,
   MASK_COLOR,
@@ -15,15 +20,19 @@ import {
 
 const MIN_EDITOR_ZOOM = 0.25;
 const MAX_EDITOR_ZOOM = 8;
+const LASSO_CLOSE_DISTANCE = 18;
 
 type RegionMaskLightboxProps = {
   node: CanvasNode;
-  brushMode: "add" | "subtract";
+  brushMode: RegionBrushMode;
+  selectionTool: RegionSelectionTool;
   brushSize: number;
   brushSoftness: number;
   maskTrigger: { action: "invert" | "clear"; timestamp: number } | null;
   onBeginMaskChange: (nodeId: string) => void;
   onCommitMask: (nodeId: string, mask: MaskData | undefined) => void;
+  onUndoMask: (nodeId: string) => void;
+  onRedoMask: (nodeId: string) => void;
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onClose: () => void;
@@ -36,6 +45,21 @@ type Point = {
 
 function getImageSource(node: CanvasNode) {
   return node.sourceImage?.url ?? node.imageUrl;
+}
+
+function isPointNear(a: Point, b: Point, threshold: number) {
+  return Math.hypot(a.x - b.x, a.y - b.y) <= threshold;
+}
+
+function drawClosedPath(context: CanvasRenderingContext2D, points: Point[]) {
+  if (points.length === 0) return;
+
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < points.length; index += 1) {
+    context.lineTo(points[index].x, points[index].y);
+  }
+  context.closePath();
 }
 
 function drawBrushStamp(
@@ -102,11 +126,14 @@ function drawBrushSegment(
 export default function RegionMaskLightbox({
   node,
   brushMode,
+  selectionTool,
   brushSize,
   brushSoftness,
   maskTrigger,
   onBeginMaskChange,
   onCommitMask,
+  onUndoMask,
+  onRedoMask,
   onBrushSizeChange,
   onBrushSoftnessChange,
   onClose,
@@ -133,8 +160,13 @@ export default function RegionMaskLightbox({
     x: 0,
     y: 0,
   });
+  const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
+  const [lassoHoverPoint, setLassoHoverPoint] = useState<Point | null>(null);
 
   const effectiveBrushMode = altPressed ? "subtract" : brushMode;
+  const brushToolActive = selectionTool === "brush";
+  const canUndo = Boolean(node.maskHistory?.past.length);
+  const canRedo = Boolean(node.maskHistory?.future.length);
   const maskSize = useMemo(() => {
     if (node.regionMask) {
       return {
@@ -177,7 +209,7 @@ export default function RegionMaskLightbox({
     onCommitMask(node.id, exportMaskData(maskCanvas));
   }, [node.id, onCommitMask]);
 
-  const getMaskPoint = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+  const getMaskPoint = useCallback((event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const overlayCanvas = overlayCanvasRef.current;
     if (!overlayCanvas) return null;
 
@@ -212,7 +244,7 @@ export default function RegionMaskLightbox({
   }, []);
 
   const applyStrokeSegment = useCallback(
-    (from: Point, to: Point, radius: number, mode: "add" | "subtract") => {
+    (from: Point, to: Point, radius: number, mode: RegionBrushMode) => {
       const maskCanvas = maskCanvasRef.current;
       const overlayCanvas = overlayCanvasRef.current;
       if (!maskCanvas || !overlayCanvas) return;
@@ -226,6 +258,67 @@ export default function RegionMaskLightbox({
     },
     [brushSoftness],
   );
+
+  const applyPolygonSelection = useCallback(
+    (points: Point[], mode: RegionBrushMode) => {
+      const maskCanvas = maskCanvasRef.current;
+      if (!maskCanvas || points.length < 3) return;
+
+      const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+      if (!maskContext) return;
+
+      maskContext.save();
+      if (mode === "subtract") {
+        maskContext.globalCompositeOperation = "destination-out";
+        maskContext.fillStyle = "rgba(0, 0, 0, 1)";
+      } else {
+        maskContext.globalCompositeOperation = "source-over";
+        maskContext.fillStyle = "rgba(255, 255, 255, 1)";
+      }
+      drawClosedPath(maskContext, points);
+      maskContext.fill();
+      maskContext.restore();
+
+      redrawOverlayFromMask();
+    },
+    [redrawOverlayFromMask],
+  );
+
+  const finishLassoSelection = useCallback(
+    (points: Point[]) => {
+      if (points.length < 3) return;
+
+      onBeginMaskChange(node.id);
+      applyPolygonSelection(points, effectiveBrushMode);
+      commitCurrentMask();
+      setLassoPoints([]);
+      setLassoHoverPoint(null);
+    },
+    [applyPolygonSelection, commitCurrentMask, effectiveBrushMode, node.id, onBeginMaskChange],
+  );
+
+  const getLassoCloseThreshold = useCallback(
+    (rect: DOMRect) => (LASSO_CLOSE_DISTANCE / rect.width) * maskSize.width,
+    [maskSize.width],
+  );
+
+  const lassoDisplayPoints = useMemo(
+    () =>
+      lassoPoints.map((point) => ({
+        x: (point.x / maskSize.width) * displayWidth,
+        y: (point.y / maskSize.height) * displayHeight,
+      })),
+    [displayHeight, displayWidth, lassoPoints, maskSize.height, maskSize.width],
+  );
+
+  const lassoHoverDisplayPoint = useMemo(() => {
+    if (!lassoHoverPoint) return null;
+
+    return {
+      x: (lassoHoverPoint.x / maskSize.width) * displayWidth,
+      y: (lassoHoverPoint.y / maskSize.height) * displayHeight,
+    };
+  }, [displayHeight, displayWidth, lassoHoverPoint, maskSize.height, maskSize.width]);
 
   useEffect(() => {
     const image = new window.Image();
@@ -332,6 +425,31 @@ export default function RegionMaskLightbox({
     };
   }, []);
 
+  useEffect(() => {
+    const handleLassoKeyDown = (event: KeyboardEvent) => {
+      if (selectionTool !== "lasso") return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+
+      if (event.key === "Enter" && lassoPoints.length >= 3) {
+        event.preventDefault();
+        event.stopPropagation();
+        finishLassoSelection(lassoPoints);
+      } else if (event.key === "Backspace" && lassoPoints.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLassoPoints((current) => current.slice(0, -1));
+      } else if (event.key === "Escape" && lassoPoints.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLassoPoints([]);
+        setLassoHoverPoint(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleLassoKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleLassoKeyDown, { capture: true });
+  }, [finishLassoSelection, lassoPoints, selectionTool]);
+
   const handleCanvasPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (spacePressed) return;
 
@@ -340,10 +458,26 @@ export default function RegionMaskLightbox({
 
     event.preventDefault();
     event.stopPropagation();
+    syncCursorPosition(event);
+
+    if (selectionTool === "lasso") {
+      setLassoHoverPoint(point);
+
+      if (
+        lassoPoints.length >= 3 &&
+        isPointNear(lassoPoints[0], point, getLassoCloseThreshold(event.currentTarget.getBoundingClientRect()))
+      ) {
+        finishLassoSelection(lassoPoints);
+        return;
+      }
+
+      setLassoPoints((current) => [...current, point]);
+      return;
+    }
+
     onBeginMaskChange(node.id);
     drawingRef.current = true;
     lastPointRef.current = point;
-    syncCursorPosition(event);
 
     const radius = getBrushRadiusInMaskPx(event.currentTarget.getBoundingClientRect());
     applyStrokeSegment(point, point, radius, effectiveBrushMode);
@@ -352,6 +486,11 @@ export default function RegionMaskLightbox({
 
   const handleCanvasPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     syncCursorPosition(event);
+
+    if (selectionTool === "lasso") {
+      setLassoHoverPoint(getMaskPoint(event));
+      return;
+    }
 
     if (!drawingRef.current) return;
     const point = getMaskPoint(event);
@@ -366,6 +505,7 @@ export default function RegionMaskLightbox({
   };
 
   const finishStroke = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (selectionTool === "lasso") return;
     if (!drawingRef.current) return;
 
     event.preventDefault();
@@ -378,6 +518,15 @@ export default function RegionMaskLightbox({
     }
 
     commitCurrentMask();
+  };
+
+  const handleCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (selectionTool !== "lasso") return;
+    if (lassoPoints.length < 3) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    finishLassoSelection(lassoPoints);
   };
 
   const handleStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -475,15 +624,57 @@ export default function RegionMaskLightbox({
               style={{
                 width: `${displayWidth}px`,
                 height: `${displayHeight}px`,
-                cursor: spacePressed ? "grab" : "none",
+                cursor: spacePressed ? "grab" : brushToolActive ? "none" : "crosshair",
               }}
               onPointerDown={handleCanvasPointerDown}
               onPointerMove={handleCanvasPointerMove}
               onPointerUp={finishStroke}
               onPointerCancel={finishStroke}
-              onPointerLeave={() => setCursorState((current) => ({ ...current, visible: false }))}
+              onDoubleClick={handleCanvasDoubleClick}
+              onPointerLeave={() => {
+                setCursorState((current) => ({ ...current, visible: false }));
+                setLassoHoverPoint(null);
+              }}
             />
-            {cursorState.visible && !spacePressed ? (
+            {selectionTool === "lasso" && lassoDisplayPoints.length > 0 ? (
+              <svg
+                className="pointer-events-none absolute inset-0 z-10"
+                viewBox={`0 0 ${displayWidth} ${displayHeight}`}
+                aria-hidden="true"
+              >
+                <polyline
+                  points={[
+                    ...lassoDisplayPoints.map((point) => `${point.x},${point.y}`),
+                    ...(lassoHoverDisplayPoint ? [`${lassoHoverDisplayPoint.x},${lassoHoverDisplayPoint.y}`] : []),
+                  ].join(" ")}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.95)"
+                  strokeWidth="2"
+                  strokeDasharray="8 6"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+                {lassoDisplayPoints.length >= 3 ? (
+                  <polygon
+                    points={lassoDisplayPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                    fill={effectiveBrushMode === "add" ? "rgba(0,212,255,0.14)" : "rgba(248,113,113,0.12)"}
+                    stroke="none"
+                  />
+                ) : null}
+                {lassoDisplayPoints.map((point, index) => (
+                  <circle
+                    key={`${point.x}-${point.y}-${index}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r={index === 0 ? 5 : 4}
+                    fill={index === 0 ? "#22D3EE" : "#FFFFFF"}
+                    stroke="rgba(15,23,42,0.85)"
+                    strokeWidth="1.5"
+                  />
+                ))}
+              </svg>
+            ) : null}
+            {cursorState.visible && !spacePressed && brushToolActive ? (
               <div
                 className="pointer-events-none absolute left-0 top-0 z-20 rounded-full border border-[rgba(15,23,42,0.55)] bg-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.2)]"
                 style={{
@@ -504,33 +695,66 @@ export default function RegionMaskLightbox({
       </div>
 
       <div className="pointer-events-none absolute left-5 top-5 z-20 flex gap-2">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-lg shadow-[var(--canvas-theme-shadow)]">
+          <button
+            type="button"
+            onClick={() => onUndoMask(node.id)}
+            disabled={!canUndo}
+            className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)] disabled:pointer-events-none disabled:opacity-40"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onRedoMask(node.id)}
+            disabled={!canRedo}
+            className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)] disabled:pointer-events-none disabled:opacity-40"
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <Redo2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
         <div className="pointer-events-auto rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)]">
           Zoom {Math.round(editorZoom * 100)}%
+        </div>
+        <div className="pointer-events-auto rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)]">
+          {selectionTool === "lasso" ? "Polygonal lasso" : "Brush"} {effectiveBrushMode === "add" ? "add" : "subtract"}
         </div>
         {node.regionMask?.selectionRatio ? (
           <div className="pointer-events-auto rounded-full border border-[#22D3EE]/25 bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[#0891B2] shadow-lg shadow-[var(--canvas-theme-shadow)]">
             Mask {Math.round(node.regionMask.selectionRatio * 100)}%
           </div>
         ) : null}
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)]">
+        <div
+          className={`pointer-events-auto flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)] ${
+            brushToolActive ? "" : "opacity-45"
+          }`}
+        >
           <span>Size {brushSize}px</span>
           <input
             type="range"
             min="1"
             max="500"
             value={brushSize}
+            disabled={!brushToolActive}
             onChange={(event) => onBrushSizeChange(Number(event.target.value))}
             className="w-28 cursor-pointer accent-[var(--canvas-theme-active)]"
             aria-label="Brush size"
           />
         </div>
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)]">
+        <div
+          className={`pointer-events-auto flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] shadow-lg shadow-[var(--canvas-theme-shadow)] ${
+            brushToolActive ? "" : "opacity-45"
+          }`}
+        >
           <span>Soft {brushSoftness}%</span>
           <input
             type="range"
             min="0"
             max="100"
             value={brushSoftness}
+            disabled={!brushToolActive}
             onChange={(event) => onBrushSoftnessChange(Number(event.target.value))}
             className="w-24 cursor-pointer accent-[var(--canvas-theme-active)]"
             aria-label="Brush softness"

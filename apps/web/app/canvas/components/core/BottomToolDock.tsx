@@ -10,10 +10,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
-  Grid3X3,
   Circle,
   Eraser,
-  ImagePlus,
   Library,
   Map,
   MapPin,
@@ -22,7 +20,6 @@ import {
   Pencil,
   Type,
   WandSparkles,
-  Brush,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -32,17 +29,14 @@ import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv 
 
 type BottomToolDockProps = {
   activeTool: EditorTool;
-  gridVisible: boolean;
   zoom: number;
   activeLeftSidebarPanel: LeftSidebarPanelId | null;
   miniMapOpen: boolean;
   onTool: (tool: EditorTool) => void;
-  onToggleGrid: () => void;
   onToggleLeftSidebarPanel: (panel: LeftSidebarPanelId) => void;
   onToggleMiniMap: () => void;
   onAddObject: () => void;
   onGenerate: () => void;
-  onToast: (message: string) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
@@ -55,29 +49,23 @@ type BottomToolDockProps = {
 const tools = [
   { id: "select", label: "Select", icon: MousePointer2 },
   { id: "mark-position", label: "Mark", icon: MapPin },
-  { id: "add-source", label: "Source", icon: ImagePlus },
-  { id: "grid", label: "Grid", icon: Grid3X3 },
   { id: "pen", label: "Pen", icon: Pencil },
   { id: "eraser", label: "Eraser", icon: Eraser },
   { id: "text-note", label: "Text", icon: Type },
-  { id: "region", label: "Region", icon: Brush },
   { id: "add-object", label: "Object", icon: Box },
   { id: "generate", label: "Generate", icon: WandSparkles },
 ] as const;
 
 export default function BottomToolDock({
   activeTool,
-  gridVisible,
   zoom,
   activeLeftSidebarPanel,
   miniMapOpen,
   onTool,
-  onToggleGrid,
   onToggleLeftSidebarPanel,
   onToggleMiniMap,
   onAddObject,
   onGenerate,
-  onToast,
   onResetZoom,
   canvasThemeColor,
   onCanvasThemeChange,
@@ -331,7 +319,7 @@ export default function BottomToolDock({
       <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-[0_2px_10px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
         {tools.map((tool, index) => {
           const Icon = tool.icon;
-          const selected = activeTool === tool.id || (tool.id === "grid" && gridVisible);
+          const selected = activeTool === tool.id;
           const needsDivider = index === 5 || index === 6;
           return (
             <div key={tool.id} className="flex items-center">
@@ -341,9 +329,7 @@ export default function BottomToolDock({
                 title={tool.label}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (tool.id === "grid") onToggleGrid();
-                  else if (tool.id === "add-object") onAddObject();
-                  else if (tool.id === "add-source") onToast("Source thumbnail added");
+                  if (tool.id === "add-object") onAddObject();
                   else if (tool.id === "generate") onGenerate();
                   else onTool(tool.id);
                 }}

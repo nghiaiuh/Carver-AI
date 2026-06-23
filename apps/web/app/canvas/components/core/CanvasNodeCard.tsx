@@ -11,7 +11,6 @@ import type { AddedObject, CanvasEdge, CanvasNode, EditorTool, InputPort, Marker
 import { getVisibleInputPorts, getDefaultInputPorts } from "../../types/canvas";
 import { Image as ImageIcon, ImagePlus, Copy, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
-import FloatingQuickPanel from "../widgets/FloatingQuickPanel";
 import MarkerPin from "../widgets/MarkerPin";
 import SketchLayer from "../widgets/SketchLayer";
 import { INPUT_PORT_HANDLE_CENTER_OFFSET, INPUT_PORT_GAP, type ImageHandlePosition } from "./imageGraph";
@@ -373,13 +372,6 @@ export default function CanvasNodeCard({
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
               onTool={onTool}
-              onToast={onToast}
-            />
-            <FloatingQuickPanel
-              viewportZoom={viewportZoom}
-              onTool={onTool}
-              onMultiAngle={onMultiAngle}
-              onRealityCheck={onRealityCheck}
               onToast={onToast}
             />
           </div>
