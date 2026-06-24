@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "suite_name": "carver-ai-agent-suite",
+  "shared_rules_file": ".agents/shared.md",
+  "handoff_template_file": ".agents/handoff-template.md",
+  "agents": [
+    {
+      "name": "orchestrator",
+      "file": ".agents/orchestrator.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Break down requests into package-owned work and coordinate handoffs.",
+      "ownership": [
+        "task decomposition",
+        "cross-package coordination",
+        "merge sequencing",
+        "final consistency checks"
+      ],
+      "rules": [
+        "Prefer one owner per task.",
+        "Define contracts before implementation when a change spans packages.",
+        "Require handoff summaries before merge."
+      ],
+      "output": [
+        "execution plan",
+        "assigned agents",
+        "interface contracts and dependencies",
+        "risks or blocks"
+      ]
+    },
+    {
+      "name": "web-ui-canvas",
+      "file": ".agents/web-ui-canvas.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Build and improve the canvas-first web experience.",
+      "ownership": [
+        "apps/web/app",
+        "apps/web/components",
+        "apps/web/lib",
+        "apps/web/data",
+        "UI behavior",
+        "canvas interactions",
+        "page layouts",
+        "route handlers in the web app"
+      ],
+      "rules": [
+        "Do not put database logic in React components.",
+        "Do not put AI orchestration logic in UI unless it is a thin client call.",
+        "Keep canvas state serializable and version-friendly.",
+        "Avoid demo-only shortcuts in production paths.",
+        "Preserve existing design language unless the task requires a redesign."
+      ],
+      "output": [
+        "UI behavior changes",
+        "impacted routes and components",
+        "API or contract needs from other agents"
+      ]
+    },
+    {
+      "name": "ai-prompt-engine",
+      "file": ".agents/ai-prompt-engine.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Build deterministic prompt logic for landscape and garden design.",
+      "ownership": [
+        "packages/ai",
+        "prompt engine logic",
+        "intent routing",
+        "preservation rules",
+        "edit brief generation",
+        "prompt templates and constraint handling"
+      ],
+      "rules": [
+        "Keep prompt assembly deterministic where possible.",
+        "Never erase layout constraints for aesthetic reasons.",
+        "Build outputs that can be audited and versioned.",
+        "Use shared types for prompt inputs and outputs when available."
+      ],
+      "output": [
+        "prompt inputs and outputs",
+        "preservation rules applied",
+        "new schema or type requirements"
+      ]
+    },
+    {
+      "name": "db-security",
+      "file": ".agents/db-security.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Own schema, RLS, Supabase types, and server-side data access patterns.",
+      "ownership": [
+        "packages/db",
+        "SQL schema",
+        "Prisma and Supabase types",
+        "RLS policies",
+        "server-side DB access helpers"
+      ],
+      "rules": [
+        "Never trust user_id, owner_id, or project_id from the client.",
+        "Verify authenticated user before reading or mutating data.",
+        "Enable RLS for all user-owned tables before production.",
+        "Keep storage private by default.",
+        "Prefer stable storage paths over long-lived signed URLs.",
+        "Prevent cross-user access to projects, assets, chat messages, snapshots, jobs, and exports."
+      ],
+      "output": [
+        "schema or policy changes",
+        "ownership and auth assumptions",
+        "migration or backfill steps"
+      ]
+    },
+    {
+      "name": "queue-worker",
+      "file": ".agents/queue-worker.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Own async jobs, queue contracts, and background processors.",
+      "ownership": [
+        "packages/queue",
+        "apps/worker",
+        "BullMQ job contracts",
+        "job processors",
+        "background execution flows"
+      ],
+      "rules": [
+        "Keep job payloads serializable and versioned.",
+        "Avoid embedding UI concerns in job contracts.",
+        "Track job type, user ID, project ID, input snapshot, inputs, prompt reference, status, error, outputs.",
+        "Do not log secrets, tokens, signed URLs, or private paths."
+      ],
+      "output": [
+        "queue contract changes",
+        "worker changes",
+        "retry and failure behavior if relevant"
+      ]
+    },
+    {
+      "name": "shared-contracts",
+      "file": ".agents/shared-contracts.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Own shared types, constants, enums, and reusable helpers.",
+      "ownership": [
+        "packages/shared",
+        "cross-package contract definitions when appropriate"
+      ],
+      "rules": [
+        "Keep shared code framework-agnostic.",
+        "Avoid importing server-only modules into shared code.",
+        "Keep naming stable and explicit.",
+        "Prefer small, composable types over broad utility dumping grounds."
+      ],
+      "output": [
+        "contract changes",
+        "downstream packages that need updates",
+        "breaking changes"
+      ]
+    },
+    {
+      "name": "qa-integration",
+      "file": ".agents/qa-integration.md",
+      "inherits": [
+        ".agents/shared.md",
+        ".agents/handoff-template.md"
+      ],
+      "mission": "Validate changes across packages.",
+      "ownership": [
+        "repo-wide validation",
+        "build checks",
+        "type checks",
+        "lint checks",
+        "merge safety"
+      ],
+      "rules": [
+        "Review changed files and contract boundaries.",
+        "Verify that no package leaked into the wrong layer.",
+        "Check for missing tests or risky assumptions.",
+        "If a command cannot be run, explain why and what risk remains."
+      ],
+      "output": [
+        "findings ordered by severity",
+        "test status",
+        "merge recommendation"
+      ]
+    }
+  ]
+}

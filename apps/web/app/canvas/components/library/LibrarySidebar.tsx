@@ -13,7 +13,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
 import LibraryAssetGrid from "./LibraryAssetGrid";
 import LibraryFolderTabs from "./LibraryFolderTabs";
@@ -52,12 +52,13 @@ const ENVIRONMENT_SLOTS: Array<{ id: EnvironmentSlotId; label: string }> = [
 
 const ENVIRONMENT_TEMPLATE_LIBRARY: Record<EnvironmentSlotId, EnvironmentTemplate[]> = {
   season: [
-    { id: "season-early-spring", label: "Early Spring", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "season-full-bloom", label: "Full Bloom", imageSrc: "/assets/bonsai.png" },
-    { id: "season-lush-summer", label: "Lush Summer", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "season-dry-summer", label: "Dry Summer", imageSrc: "/assets/co_thach.png" },
-    { id: "season-golden-autumn", label: "Golden Autumn", imageSrc: "/assets/waterfall.png" },
-    { id: "season-late-autumn", label: "Late Autumn", imageSrc: "/assets/tai_meo.png" },
+    { id: "season-early-spring", label: "Early Spring", imageSrc: "/assets/early-spring.webp" },
+    { id: "season-full-bloom", label: "Full Bloom", imageSrc: "/assets/full-bloom.webp" },
+    { id: "season-golden-autumn", label: "Golden Autumn", imageSrc: "/assets/golden-autumn.webp" },
+    { id: "season-late-autumn", label: "Late autumn", imageSrc: "/assets/late-autumn.webp" },
+    { id: "season-lush-summer", label: "Lush Summer", imageSrc: "/assets/lush-summer.webp" },
+    { id: "season-sunrise", label: "Sunrise", imageSrc: "/assets/sunrise.webp" },
+    { id: "season-winter", label: "Winter", imageSrc: "/assets/winter.webp" },
   ],
   lighting: [
     { id: "lighting-soft-morning", label: "Soft Morning", imageSrc: "/assets/garden_3d_render.png" },
@@ -464,9 +465,31 @@ function EnvironmentReferenceFlyout({
     { id: "custom", label: "Custom" },
     { id: "pinterest", label: "Pinterest" },
   ];
+  const [isScrollbarVisible, setIsScrollbarVisible] = useState(false);
+  const scrollbarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (scrollbarTimeoutRef.current) {
+        clearTimeout(scrollbarTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const revealScrollbar = () => {
+    setIsScrollbarVisible(true);
+
+    if (scrollbarTimeoutRef.current) {
+      clearTimeout(scrollbarTimeoutRef.current);
+    }
+
+    scrollbarTimeoutRef.current = setTimeout(() => {
+      setIsScrollbarVisible(false);
+    }, 700);
+  };
 
   return (
-    <aside className="absolute left-full top-0 bottom-61 z-[90] flex w-[304px] flex-col border-l border-r border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-text)] shadow-2xl shadow-black/10">
+    <aside className="absolute left-full top-0 z-[90] flex h-[calc(36rem-3px)] w-[304px] min-h-0 flex-col overflow-hidden border-l border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-text)]">
       <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">{slotLabel}</p>
@@ -503,7 +526,13 @@ function EnvironmentReferenceFlyout({
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div
+        onScroll={revealScrollbar}
+        className={[
+          "flyout-scroll-area h-[calc(27rem)] flex-none overflow-y-auto p-3",
+          isScrollbarVisible ? "is-scrolling" : "",
+        ].join(" ")}
+      >
         <div className="grid grid-cols-2 gap-3">
           {templates.map((template) => {
             const selected = template.id === selectedTemplateId;

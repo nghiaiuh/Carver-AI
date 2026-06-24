@@ -51,6 +51,33 @@
     @apply p-1 rounded-md text-[var(--text-secondary)] hover:bg-slate-100 transition-colors flex items-center justify-center;
   }
 
+  .flyout-scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .flyout-scroll-area::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .flyout-scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .flyout-scroll-area::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 220ms ease;
+  }
+
+  .flyout-scroll-area.is-scrolling {
+    scrollbar-color: rgba(107, 114, 128, 0.55) transparent;
+  }
+
+  .flyout-scroll-area.is-scrolling::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.15);
+  }
+
   .sidebar-section {
     @apply p-4;
   }
