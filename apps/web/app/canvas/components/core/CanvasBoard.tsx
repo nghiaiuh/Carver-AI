@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, CircleDot, Download, History, Layers3, Menu, Sparkles, Zap } from "lucide-react";
+import { ChevronDown, CircleDot, Download, Group, History, Layers3, Menu, Sparkles, Ungroup, Zap } from "lucide-react";
 import type {
   AddedObject,
   CanvasEdge,
@@ -392,14 +392,38 @@ export default function CanvasBoard({
     () => marqueeSelectedNodeIds ?? (selectedItem.type === "node" ? [selectedItem.id] : []),
     [marqueeSelectedNodeIds, selectedItem],
   );
+  const getGroupedNodeIds = useCallback((nodeId: string) => {
+    const node = nodes.find((currentNode) => currentNode.id === nodeId);
+    if (!node?.groupId) return [nodeId];
+
+    return nodes
+      .filter((currentNode) => currentNode.groupId === node.groupId)
+      .map((currentNode) => currentNode.id);
+  }, [nodes]);
   const isRegionEditing = activeTool === "region" && Boolean(selectedNode);
   const isMultiNodeSelection = selectedNodeIds.length >= MULTI_SELECT_TOOLBAR_MIN_SELECTION;
+  const selectedNodes = useMemo(
+    () => nodes.filter((node) => selectedNodeIds.includes(node.id)),
+    [nodes, selectedNodeIds],
+  );
+  const selectedGroupIds = useMemo(
+    () => Array.from(new Set(selectedNodes.map((node) => node.groupId).filter((groupId): groupId is string => Boolean(groupId)))),
+    [selectedNodes],
+  );
+  const selectedUngroupedNodeCount = useMemo(
+    () => selectedNodes.filter((node) => !node.groupId).length,
+    [selectedNodes],
+  );
+  const selectedGroupingUnitCount = useMemo(
+    () => selectedGroupIds.length + selectedUngroupedNodeCount,
+    [selectedGroupIds.length, selectedUngroupedNodeCount],
+  );
+  const canGroupSelectedNodes = isMultiNodeSelection && selectedGroupingUnitCount > 1;
+  const canUngroupSelectedNodes = isMultiNodeSelection && selectedGroupIds.length > 0;
   const multiSelectBounds = useMemo(() => {
     if (!isMultiNodeSelection) return null;
 
-    const selectedRects = nodes
-      .filter((node) => selectedNodeIds.includes(node.id))
-      .map((node) => getNodeDisplayBounds(node));
+    const selectedRects = selectedNodes.map((node) => getNodeDisplayBounds(node));
 
     if (selectedRects.length === 0) return null;
 
@@ -414,11 +438,15 @@ export default function CanvasBoard({
       width: maxX - minX,
       height: maxY - minY,
     };
-  }, [isMultiNodeSelection, nodes, selectedNodeIds]);
+  }, [isMultiNodeSelection, selectedNodes]);
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const dragStart = useRef<{ x: number; y: number; nodeX: number; nodeY: number } | null>(null);
+  const dragStart = useRef<{
+    x: number;
+    y: number;
+    nodePositions: Record<string, { x: number; y: number }>;
+  } | null>(null);
   const penPointerId = useRef<number | null>(null);
   const [draftPenStroke, setDraftPenStroke] = useState<PenStrokeObject | null>(null);
   const eraserPointerId = useRef<number | null>(null);
@@ -749,19 +777,70 @@ export default function CanvasBoard({
     if (isResizingPanel) return;
     const node = nodes.find(n => n.id === id);
     if (!node) return;
+    const groupedNodeIds = getGroupedNodeIds(id);
+    const dragNodeIds =
+      groupedNodeIds.length > 1
+        ? groupedNodeIds
+        : selectedNodeIds.includes(id)
+          ? selectedNodeIds
+          : [id];
+    const nodePositions = Object.fromEntries(
+      nodes
+        .filter((currentNode) => dragNodeIds.includes(currentNode.id))
+        .map((currentNode) => [currentNode.id, { x: currentNode.x, y: currentNode.y }]),
+    );
     // Prevent browser text-selection on header/toolbar elements during drag
     event.preventDefault();
     clearMarqueeSelection();
-    setMarqueeSelectedNodeIds(null);
+    if (dragNodeIds.length <= 1) {
+      setMarqueeSelectedNodeIds(null);
+    }
     setDraggingNodeId(id);
     dragStart.current = {
       x: event.clientX,
       y: event.clientY,
-      nodeX: node.x,
-      nodeY: node.y
+      nodePositions,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
+
+  const handleGroupSelectedNodes = useCallback(() => {
+    if (!canGroupSelectedNodes) return;
+
+    const nextGroupId = `node-group-${Date.now()}`;
+    onNodesChange((previousNodes) =>
+      previousNodes.map((node) =>
+        selectedNodeIds.includes(node.id)
+          ? { ...node, groupId: nextGroupId }
+          : node,
+      ),
+    );
+    setMarqueeSelectedNodeIds(selectedNodeIds);
+    onSelect({ type: "node", id: selectedNodeIds[0] });
+    onToast("Grouped selected images");
+  }, [canGroupSelectedNodes, onNodesChange, onSelect, onToast, selectedNodeIds]);
+
+  const handleUngroupSelectedNodes = useCallback(() => {
+    if (!canUngroupSelectedNodes) return;
+
+    const selectedGroupedNodeIds = selectedNodes
+      .filter((node) => node.groupId)
+      .map((node) => node.id);
+
+    if (selectedGroupedNodeIds.length === 0) return;
+
+    const selectedGroupedNodeIdSet = new Set(selectedGroupedNodeIds);
+    onNodesChange((previousNodes) =>
+      previousNodes.map((node) =>
+        selectedGroupedNodeIdSet.has(node.id)
+          ? { ...node, groupId: undefined }
+          : node,
+      ),
+    );
+    setMarqueeSelectedNodeIds(selectedGroupedNodeIds);
+    onSelect({ type: "node", id: selectedGroupedNodeIds[0] });
+    onToast("Ungrouped selected images");
+  }, [canUngroupSelectedNodes, onNodesChange, onSelect, onToast, selectedNodes]);
 
   const handleConnectionHandlePointerDown = useCallback(
     (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => {
@@ -857,10 +936,18 @@ export default function CanvasBoard({
     if (draggingNodeId && dragStart.current) {
       const dx = (event.clientX - dragStart.current.x) / zoom;
       const dy = (event.clientY - dragStart.current.y) / zoom;
-      const newX = dragStart.current.nodeX + dx;
-      const newY = dragStart.current.nodeY + dy;
+      const draggedNodeIds = Object.keys(dragStart.current.nodePositions);
 
-      onNodesChange(prev => prev.map(n => n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n));
+      onNodesChange(prev => prev.map((currentNode) => {
+        const startPosition = dragStart.current?.nodePositions[currentNode.id];
+        if (!startPosition || !draggedNodeIds.includes(currentNode.id)) return currentNode;
+
+        return {
+          ...currentNode,
+          x: startPosition.x + dx,
+          y: startPosition.y + dy,
+        };
+      }));
       return;
     }
 
@@ -1750,9 +1837,10 @@ export default function CanvasBoard({
             x={multiSelectBounds.x + multiSelectBounds.width / 2}
             y={multiSelectBounds.y}
             viewportZoom={zoom}
-            onAutoLayout={() => onToast("Auto Layout applied")}
-            onGroup={() => onToast("Group action coming soon")}
-            onUngroup={() => onToast("Ungroup action coming soon")}
+            canGroup={canGroupSelectedNodes}
+            canUngroup={canUngroupSelectedNodes}
+            onGroup={handleGroupSelectedNodes}
+            onUngroup={handleUngroupSelectedNodes}
             onMerge={() => onToast("Merge action coming soon")}
             onDownload={() => onToast("Download selection mock")}
           />
@@ -1801,8 +1889,22 @@ export default function CanvasBoard({
             viewportZoom={zoom}
             isConnectionTarget={hoveredConnectionTargetId === node.id}
             onSelect={(id) => {
-              setMarqueeSelectedNodeIds(null);
-              onSelect({ type: "node", id });
+              const groupedNodeIds = getGroupedNodeIds(id);
+              const shouldPreserveGroupSelection =
+                marqueeSelectedNodeIds !== null &&
+                marqueeSelectedNodeIds.length > 1 &&
+                marqueeSelectedNodeIds.includes(id);
+
+              if (groupedNodeIds.length > 1) {
+                setMarqueeSelectedNodeIds(groupedNodeIds);
+                onSelect({ type: "node", id: groupedNodeIds[0] });
+                return;
+              }
+
+              if (!shouldPreserveGroupSelection) {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id });
+              }
             }}
             onStartConnection={handleConnectionHandlePointerDown}
             onSelectOverlay={(item) => {
@@ -1816,6 +1918,13 @@ export default function CanvasBoard({
               onSelectSketchGroup(id);
             }}
             onSelectContextMenu={(id, x, y) => {
+              const groupedNodeIds = getGroupedNodeIds(id);
+              if (groupedNodeIds.length > 1) {
+                setMarqueeSelectedNodeIds(groupedNodeIds);
+                onSelect({ type: "node", id: groupedNodeIds[0], menu: { x, y } });
+                return;
+              }
+
               setMarqueeSelectedNodeIds(null);
               onSelect({ type: "node", id, menu: { x, y } });
             }}
@@ -1968,7 +2077,8 @@ function MultiSelectToolbar({
   x,
   y,
   viewportZoom = 1,
-  onAutoLayout,
+  canGroup,
+  canUngroup,
   onGroup,
   onUngroup,
   onMerge,
@@ -1977,7 +2087,8 @@ function MultiSelectToolbar({
   x: number;
   y: number;
   viewportZoom?: number;
-  onAutoLayout: () => void;
+  canGroup: boolean;
+  canUngroup: boolean;
   onGroup: () => void;
   onUngroup: () => void;
   onMerge: () => void;
@@ -1985,12 +2096,11 @@ function MultiSelectToolbar({
 }) {
   const uiScale = 1 / viewportZoom;
   const actions = [
-    { label: "Auto Layout", icon: Menu, onClick: onAutoLayout },
-    { label: "Group", icon: CircleDot, onClick: onGroup },
-    { label: "Ungroup", icon: CircleDot, onClick: onUngroup },
+    ...(canGroup ? [{ label: "Group", icon: Group, onClick: onGroup }] : []),
+    ...(canUngroup ? [{ label: "Ungroup", icon: Ungroup, onClick: onUngroup }] : []),
     { label: "Merge", icon: Zap, onClick: onMerge },
     { label: "Download", icon: Download, onClick: onDownload },
-  ] as const;
+  ];
 
   return (
     <div
@@ -2018,7 +2128,7 @@ function MultiSelectToolbar({
           >
             <Icon className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
             <span>{action.label}</span>
-            {action.label !== "Auto Layout" ? <ChevronDown className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" /> : null}
+            <ChevronDown className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
           </button>
         );
       })}

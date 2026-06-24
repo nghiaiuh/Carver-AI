@@ -178,6 +178,7 @@ export type CanvasNode = {
   y: number;
   width: number;
   height: number;
+  groupId?: string;
   scale?: number;
   imageUrl: string;
   sourceImage?: {
