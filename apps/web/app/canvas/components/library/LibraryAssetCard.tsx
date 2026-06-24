@@ -34,8 +34,10 @@ export default function LibraryAssetCard({
         }
       }}
       className={[
-        "group relative overflow-hidden rounded-2xl border bg-slate-900/60 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
-        selected ? "border-sky-300 shadow-[0_0_0_1px_rgba(125,211,252,0.65)]" : "border-white/8 hover:border-white/20",
+        "group relative overflow-hidden rounded-[20px] border bg-[var(--canvas-theme-surface-panel)] text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-active)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas-theme-surface)]",
+        selected
+          ? "border-[var(--canvas-theme-active)] shadow-[0_0_0_1px_var(--canvas-theme-active)]"
+          : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)] hover:shadow-[0_12px_28px_var(--canvas-theme-shadow)]",
       ].join(" ")}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -45,9 +47,11 @@ export default function LibraryAssetCard({
         className="aspect-[4/3] w-full object-cover"
         draggable={false}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/15 to-transparent opacity-0 transition group-hover:opacity-100" />
-      <div className="absolute inset-x-0 bottom-0 p-2">
-        <p className="truncate text-xs font-semibold text-white">{asset.title ?? "Untitled asset"}</p>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent opacity-0 transition group-hover:opacity-100" />
+      <div className="absolute left-3 top-3 z-10">
+        <span className="rounded-full bg-black/55 px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white backdrop-blur-sm">
+          {asset.source ?? "manual"}
+        </span>
       </div>
       <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 transition group-hover:opacity-100">
         <button
@@ -56,7 +60,7 @@ export default function LibraryAssetCard({
             event.stopPropagation();
             onAddToCanvas();
           }}
-          className="grid h-8 w-8 place-items-center rounded-full bg-white text-slate-900 shadow-lg transition hover:scale-105"
+          className="grid h-9 w-9 place-items-center rounded-full bg-white text-[var(--canvas-theme-surface)] shadow-lg transition hover:scale-105"
           title="Add to canvas"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -67,7 +71,7 @@ export default function LibraryAssetCard({
             event.stopPropagation();
             onPreview();
           }}
-          className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-slate-900 shadow-lg transition hover:scale-105"
+          className="grid h-9 w-9 place-items-center rounded-full bg-white/90 text-[var(--canvas-theme-surface)] shadow-lg transition hover:scale-105"
           title="Preview"
         >
           <Eye className="h-4 w-4" aria-hidden="true" />
@@ -78,11 +82,19 @@ export default function LibraryAssetCard({
             event.stopPropagation();
             onDelete();
           }}
-          className="grid h-8 w-8 place-items-center rounded-full bg-rose-500/90 text-white shadow-lg transition hover:scale-105"
+          className="grid h-9 w-9 place-items-center rounded-full bg-[#B42318] text-white shadow-lg transition hover:scale-105"
           title="Delete from library"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
+      </div>
+      <div className="border-t border-[var(--canvas-theme-border)] px-3 py-3">
+        <p className="truncate text-sm font-semibold text-[var(--canvas-theme-text)]">
+          {asset.title ?? "Untitled asset"}
+        </p>
+        <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
+          {asset.metadata?.categoryHint ?? asset.prompt ?? "Double-click to add this asset to canvas."}
+        </p>
       </div>
     </div>
   );

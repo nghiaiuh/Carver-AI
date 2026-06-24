@@ -24,7 +24,7 @@ export default function LibraryAssetGrid({
   if (assets.length === 0) return <LibraryEmptyState />;
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-4">
       {assets.map((asset) => (
         <LibraryAssetCard
           key={asset.id}
