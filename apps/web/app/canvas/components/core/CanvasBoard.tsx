@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Flow: Renders one interactive canvas workspace component.
  * 1. Receive canvas state and callbacks from the workspace.
  * 2. Render the focused control, overlay, or board UI.
@@ -15,10 +15,13 @@ import type {
   CanvasEdge,
   MaskData,
   CanvasNode,
+  CanvasPresetChild,
+  CanvasPresetGroupNode,
   EditorTool,
   LeftSidebarPanelId,
   Marker,
   PenSettings,
+  PresetGroupCategory,
   PenStrokeObject,
   RegionBrushMode,
   RegionSelectionTool,
@@ -30,11 +33,19 @@ import { getDefaultInputPorts } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
 import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
+import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
 import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
 import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
 import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils";
 import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosition } from "./imageGraph";
+import {
+  buildPresetSourceImage,
+  getPresetGroupNodeSize,
+  isPresetGroupNode,
+  resolvePresetGroupDropTarget,
+  syncPresetGroupPreview,
+} from "../../utils/presetGroup";
 
 type CanvasBoardProps = {
   selectedItem: SelectedItem;
@@ -78,8 +89,18 @@ type CanvasBoardProps = {
   onToggleMiniMap: () => void;
   pendingLibraryInsertAsset: LibraryAsset | null;
   onConsumePendingLibraryInsert: () => void;
+  pendingPresetGroupInsert: {
+    category: PresetGroupCategory;
+    title: string;
+    children: CanvasPresetChild[];
+    sourceFolderId?: string;
+  } | null;
+  onConsumePendingPresetGroupInsert: () => void;
   isResizingPanel?: boolean;
   selectedNode: CanvasNode | null;
+  onSetActivePresetChild: (nodeId: string, childId: string) => void;
+  onRemovePresetChild: (nodeId: string, childId: string) => void;
+  onMovePresetChild: (nodeId: string, childId: string, direction: "left" | "right") => void;
   brushMode: RegionBrushMode;
   regionSelectionTool: RegionSelectionTool;
   brushSize: number;
@@ -338,8 +359,13 @@ export default function CanvasBoard({
   onToggleMiniMap,
   pendingLibraryInsertAsset,
   onConsumePendingLibraryInsert,
+  pendingPresetGroupInsert,
+  onConsumePendingPresetGroupInsert,
   isResizingPanel = false,
   selectedNode,
+  onSetActivePresetChild,
+  onRemovePresetChild,
+  onMovePresetChild,
   brushMode,
   regionSelectionTool,
   brushSize,
@@ -463,9 +489,10 @@ export default function CanvasBoard({
   const [penEraseUndoStack, setPenEraseUndoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
   const [penEraseRedoStack, setPenEraseRedoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
 
-  // ── Edge Creation State ───────────────────────────────────────────────────
+  // -- Edge Creation State
   const [draftEdge, setDraftEdge] = useState<{ sourceId: string; sourceHandle: ImageHandlePosition; targetX: number; targetY: number } | null>(null);
   const [hoveredConnectionTargetId, setHoveredConnectionTargetId] = useState<string | null>(null);
+  const [hoveredPresetChildId, setHoveredPresetChildId] = useState<string | null>(null);
 
   const clearMarqueeSelection = useCallback(() => {
     setMarqueeSelection({
@@ -648,6 +675,71 @@ export default function CanvasBoard({
       onConsumePendingLibraryInsert();
     });
   }, [addImageNode, onConsumePendingLibraryInsert, pendingLibraryInsertAsset]);
+
+  // ── Preset group node creation ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!pendingPresetGroupInsert) return;
+
+    onNodesChange((prev) => {
+      // If a group with this category (and optionally sourceFolderId) already exists, don't create another.
+      const alreadyExists = prev.some(
+        (n) =>
+          isPresetGroupNode(n) &&
+          n.presetGroup.category === pendingPresetGroupInsert.category &&
+          (pendingPresetGroupInsert.sourceFolderId
+            ? n.presetGroup.sourceFolderId === pendingPresetGroupInsert.sourceFolderId
+            : true),
+      );
+      if (alreadyExists) return prev;
+
+      const children = pendingPresetGroupInsert.children.map((child, index) => ({
+        ...child,
+        order: index,
+      }));
+      const { width, height } = getPresetGroupNodeSize(children.length);
+      const container = containerRef.current;
+      const rect = container?.getBoundingClientRect();
+      const viewportCenterX = rect ? rect.width / 2 : 400;
+      const viewportCenterY = rect ? rect.height / 2 : 300;
+      const currentPan = pan;
+      const currentZoom = zoom;
+      const worldCenterX = (viewportCenterX - currentPan.x) / currentZoom;
+      const worldCenterY = (viewportCenterY - currentPan.y) / currentZoom;
+
+      // Place slightly offset from center so it doesn't overlap existing nodes
+      const offsetX = prev.filter((n) => isPresetGroupNode(n)).length * 20;
+      const offsetY = prev.filter((n) => isPresetGroupNode(n)).length * 20;
+
+      const firstChild = children[0];
+      const newNode: CanvasPresetGroupNode = {
+        id: `preset-group-${Date.now()}`,
+        kind: "presetGroup",
+        x: worldCenterX - width / 2 + offsetX,
+        y: worldCenterY - height / 2 + offsetY,
+        width,
+        height,
+        scale: 1,
+        inputPorts: getDefaultInputPorts(),
+        imageUrl: firstChild?.imageSrc ?? "",
+        title: pendingPresetGroupInsert.title,
+        prompt: null,
+        role: "reference",
+        sourceImage: firstChild
+          ? buildPresetSourceImage(firstChild.imageSrc, firstChild.label)
+          : undefined,
+        presetGroup: {
+          category: pendingPresetGroupInsert.category,
+          activeChildId: firstChild?.id ?? null,
+          children,
+          sourceFolderId: pendingPresetGroupInsert.sourceFolderId,
+        },
+      };
+      return [...prev, newNode];
+    });
+
+    onConsumePendingPresetGroupInsert();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPresetGroupInsert]);
 
 
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
@@ -1252,9 +1344,19 @@ export default function CanvasBoard({
   };
 
   const deleteNode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, skipConfirm = false) => {
       const nodeToDelete = nodes.find((node) => node.id === nodeId);
       if (!nodeToDelete) return;
+
+      // Confirm before deleting a preset group folder node
+      if (!skipConfirm && isPresetGroupNode(nodeToDelete)) {
+        const childCount = nodeToDelete.presetGroup.children.length;
+        const confirmed = window.confirm(
+          `Delete "${nodeToDelete.title}" preset folder?\n${childCount} preset${childCount === 1 ? "" : "s"} will be removed from canvas. Assets in your library are not affected.`,
+        );
+        if (!confirmed) return;
+      }
+
       const relatedEdges = edges.filter((edge) => edge.sourceId === nodeId || edge.targetId === nodeId);
 
       setDeletedNodeStack((prev) => [...prev, { node: nodeToDelete, edges: relatedEdges }]);
@@ -1265,7 +1367,7 @@ export default function CanvasBoard({
         onSetActiveNode(nextActiveNode?.id ?? "");
       }
       onSelect({ type: "none" });
-      onToast("Image deleted");
+      onToast(isPresetGroupNode(nodeToDelete) ? "Preset folder removed" : "Image deleted");
     },
     [activeNodeId, edges, nodes, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast],
   );
@@ -1871,75 +1973,106 @@ export default function CanvasBoard({
           draftEdge={draftEdge}
         />
 
-        {nodes.map(node => (
-          <CanvasNodeCard
-            key={node.id}
-            node={node}
-            edges={edges}
-            selected={selectedNodeIds.includes(node.id)}
-            showSelectionTools={!isMultiNodeSelection}
-            selectedItem={selectedItem}
-            activeTool={activeTool}
-            markers={markers}
-            addedObjects={addedObjects}
-            sketchLines={sketchLines}
-            sketchGroups={sketchGroups}
-            selectedSketchLineIds={selectedSketchLineIds}
-            activeNodeId={activeNodeId}
-            viewportZoom={zoom}
-            isConnectionTarget={hoveredConnectionTargetId === node.id}
-            onSelect={(id) => {
-              const groupedNodeIds = getGroupedNodeIds(id);
-              const shouldPreserveGroupSelection =
-                marqueeSelectedNodeIds !== null &&
-                marqueeSelectedNodeIds.length > 1 &&
-                marqueeSelectedNodeIds.includes(id);
-
-              if (groupedNodeIds.length > 1) {
-                setMarqueeSelectedNodeIds(groupedNodeIds);
-                onSelect({ type: "node", id: groupedNodeIds[0] });
-                return;
-              }
-
-              if (!shouldPreserveGroupSelection) {
+        {nodes.map(node =>
+          isPresetGroupNode(node) ? (
+            <CanvasPresetGroupNodeCard
+              key={node.id}
+              node={node}
+              edges={edges}
+              selected={selectedNodeIds.includes(node.id)}
+              selectedItem={selectedItem}
+              viewportZoom={zoom}
+              isConnectionTarget={hoveredConnectionTargetId === node.id}
+              hoveredPresetChildId={hoveredPresetChildId}
+              onSelect={(id) => {
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id });
-              }
-            }}
-            onStartConnection={handleConnectionHandlePointerDown}
-            onSelectOverlay={(item) => {
-              setMarqueeSelectedNodeIds(null);
-              onSelect(item);
-            }}
-            onAddSketchLine={onAddSketchLine}
-            onSelectSketchLine={onSelectSketchLine}
-            onSelectSketchGroup={(id) => {
-              setMarqueeSelectedNodeIds(null);
-              onSelectSketchGroup(id);
-            }}
-            onSelectContextMenu={(id, x, y) => {
-              const groupedNodeIds = getGroupedNodeIds(id);
-              if (groupedNodeIds.length > 1) {
-                setMarqueeSelectedNodeIds(groupedNodeIds);
-                onSelect({ type: "node", id: groupedNodeIds[0], menu: { x, y } });
-                return;
-              }
+              }}
+              onSelectPresetChild={(nodeId, childId) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "presetChild", nodeId, childId });
+              }}
+              onSetActivePresetChild={onSetActivePresetChild}
+              onRemovePresetChild={onRemovePresetChild}
+              onMovePresetChild={onMovePresetChild}
+              onDragStart={handleNodePointerDown}
+              onStartConnection={handleConnectionHandlePointerDown}
+              onSelectContextMenu={(id, x, y) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id, menu: { x, y } });
+              }}
+              onDelete={deleteNode}
+              onPresetChildHover={setHoveredPresetChildId}
+            />
+          ) : (
+            <CanvasNodeCard
+              key={node.id}
+              node={node}
+              edges={edges}
+              selected={selectedNodeIds.includes(node.id)}
+              showSelectionTools={!isMultiNodeSelection}
+              selectedItem={selectedItem}
+              activeTool={activeTool}
+              markers={markers}
+              addedObjects={addedObjects}
+              sketchLines={sketchLines}
+              sketchGroups={sketchGroups}
+              selectedSketchLineIds={selectedSketchLineIds}
+              activeNodeId={activeNodeId}
+              viewportZoom={zoom}
+              isConnectionTarget={hoveredConnectionTargetId === node.id}
+              onSelect={(id) => {
+                const groupedNodeIds = getGroupedNodeIds(id);
+                const shouldPreserveGroupSelection =
+                  marqueeSelectedNodeIds !== null &&
+                  marqueeSelectedNodeIds.length > 1 &&
+                  marqueeSelectedNodeIds.includes(id);
 
-              setMarqueeSelectedNodeIds(null);
-              onSelect({ type: "node", id, menu: { x, y } });
-            }}
-            onDragStart={handleNodePointerDown}
-            onImageAction={onImageAction}
-            onQuickEdit={onQuickEdit}
-            onMultiAngle={onMultiAngle}
-            onAddObject={onAddObject}
-            onTool={onTool}
-            onRealityCheck={onRealityCheck}
-            onToast={onToast}
-            onSetActiveNode={onSetActiveNode}
-            onDelete={deleteNode}
-          />
-        ))}
+                if (groupedNodeIds.length > 1) {
+                  setMarqueeSelectedNodeIds(groupedNodeIds);
+                  onSelect({ type: "node", id: groupedNodeIds[0] });
+                  return;
+                }
+
+                if (!shouldPreserveGroupSelection) {
+                  setMarqueeSelectedNodeIds(null);
+                  onSelect({ type: "node", id });
+                }
+              }}
+              onStartConnection={handleConnectionHandlePointerDown}
+              onSelectOverlay={(item) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect(item);
+              }}
+              onAddSketchLine={onAddSketchLine}
+              onSelectSketchLine={onSelectSketchLine}
+              onSelectSketchGroup={(id) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelectSketchGroup(id);
+              }}
+              onSelectContextMenu={(id, x, y) => {
+                const groupedNodeIds = getGroupedNodeIds(id);
+                if (groupedNodeIds.length > 1) {
+                  setMarqueeSelectedNodeIds(groupedNodeIds);
+                  onSelect({ type: "node", id: groupedNodeIds[0], menu: { x, y } });
+                  return;
+                }
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id, menu: { x, y } });
+              }}
+              onDragStart={handleNodePointerDown}
+              onImageAction={onImageAction}
+              onQuickEdit={onQuickEdit}
+              onMultiAngle={onMultiAngle}
+              onAddObject={onAddObject}
+              onTool={onTool}
+              onRealityCheck={onRealityCheck}
+              onToast={onToast}
+              onSetActiveNode={onSetActiveNode}
+              onDelete={deleteNode}
+            />
+          )
+        )}
 
         <div className="pointer-events-none absolute inset-0 z-[140]">
           <PenStrokeLayer

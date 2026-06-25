@@ -92,6 +92,9 @@ export default function CanvasWorkspace() {
                   actions.setSelectedLibraryAssetId(asset.id);
                   actions.setPendingLibraryInsertAsset(asset);
                 }}
+                onUpsertPresetGroup={({ replaceAllChildren = false, ...params }) => {
+                  actions.upsertPresetGroup(params, replaceAllChildren);
+                }}
                 onUploadAssets={actions.uploadAssetsToFolder}
                 onToast={actions.showToast}
                 onClose={actions.closeLeftSidebar}
@@ -158,8 +161,13 @@ export default function CanvasWorkspace() {
             onToggleMiniMap={actions.toggleMiniMap}
             pendingLibraryInsertAsset={state.pendingLibraryInsertAsset}
             onConsumePendingLibraryInsert={actions.consumePendingLibraryInsert}
+            pendingPresetGroupInsert={state.pendingPresetGroupInsert}
+            onConsumePendingPresetGroupInsert={actions.consumePendingPresetGroupInsert}
             isResizingPanel={state.isResizingPanel}
             selectedNode={state.selectedNode}
+            onSetActivePresetChild={actions.setActivePresetChild}
+            onRemovePresetChild={actions.removePresetChild}
+            onMovePresetChild={actions.movePresetChild}
             brushMode={state.brushMode}
             regionSelectionTool={state.regionSelectionTool}
             brushSize={state.brushSize}

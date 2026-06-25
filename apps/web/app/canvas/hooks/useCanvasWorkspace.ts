@@ -15,10 +15,13 @@ import useResizablePanel from "./useResizablePanel";
 import { gsap } from "../../components/gsapSetup";
 import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
 import {
+  type CanvasPresetChild,
+  type CanvasPresetGroupNode,
   DEFAULT_CANVAS_THEME,
   DEFAULT_LEFT_SIDEBAR_WIDTH,
   DEFAULT_PEN_SETTINGS,
   DEFAULT_RIGHT_PANEL_WIDTH,
+  type PresetGroupCategory,
   LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
   MAX_LEFT_SIDEBAR_WIDTH,
   MAX_RIGHT_PANEL_WIDTH,
@@ -44,14 +47,29 @@ import type {
   SketchGroup,
   SketchLine,
 } from "../types/canvas";
+import {
+  isPresetGroupNode,
+  removePresetChildAndCleanupEdges,
+  reorderPresetChildren,
+  syncPresetGroupPreview,
+  upsertPresetChild,
+} from "../utils/presetGroup";
 
 function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
-  if (selectedItem.type !== "node" && selectedItem.type !== "image") {
+  if (selectedItem.type !== "node" && selectedItem.type !== "image" && selectedItem.type !== "presetChild") {
     return null;
   }
 
-  return nodes.find((node) => node.id === selectedItem.id) ?? null;
+  const nodeId = selectedItem.type === "presetChild" ? selectedItem.nodeId : selectedItem.id;
+  return nodes.find((node) => node.id === nodeId) ?? null;
 }
+
+type PendingPresetGroupInsert = {
+  category: PresetGroupCategory;
+  title: string;
+  children: CanvasPresetChild[];
+  sourceFolderId?: string;
+};
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 
@@ -127,6 +145,8 @@ export function useCanvasWorkspace() {
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
   const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] =
     useState<CanvasLibraryAsset | null>(null);
+  const [pendingPresetGroupInsert, setPendingPresetGroupInsert] =
+    useState<PendingPresetGroupInsert | null>(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -260,6 +280,117 @@ export function useCanvasWorkspace() {
         });
       });
     showToast("Images added to Library");
+  };
+
+  const upsertPresetGroup = (params: PendingPresetGroupInsert, replaceAllChildren = false) => {
+    const existingGroup = nodes.find(
+      (node) =>
+        isPresetGroupNode(node) &&
+        node.presetGroup.category === params.category &&
+        (params.sourceFolderId ? node.presetGroup.sourceFolderId === params.sourceFolderId : true),
+    ) as CanvasPresetGroupNode | undefined;
+
+    if (!existingGroup) {
+      setPendingPresetGroupInsert(params);
+      return;
+    }
+
+    setNodes((current) =>
+      current.map((node) => {
+        if (!isPresetGroupNode(node) || node.id !== existingGroup.id) return node;
+
+        const nextChildren = replaceAllChildren
+          ? params.children.map((child, index) => ({ ...child, order: index }))
+          : params.children.reduce(
+              (children, child) => upsertPresetChild(children, child, true),
+              node.presetGroup.children,
+            );
+        const activeChildId =
+          params.children.at(-1)?.id ??
+          node.presetGroup.activeChildId;
+
+        return syncPresetGroupPreview({
+          ...node,
+          presetGroup: {
+            ...node.presetGroup,
+            category: params.category,
+            sourceFolderId: params.sourceFolderId ?? node.presetGroup.sourceFolderId,
+            activeChildId,
+            children: nextChildren,
+          },
+        });
+      }),
+    );
+    setActiveNodeId(existingGroup.id);
+    setSelectedItem({ type: "node", id: existingGroup.id });
+  };
+
+  const setActivePresetChild = (nodeId: string, childId: string) => {
+    setNodes((current) =>
+      current.map((node) => {
+        if (!isPresetGroupNode(node) || node.id !== nodeId) return node;
+        return syncPresetGroupPreview({
+          ...node,
+          presetGroup: {
+            ...node.presetGroup,
+            activeChildId: childId,
+          },
+        });
+      }),
+    );
+    setActiveNodeId(nodeId);
+    setSelectedItem({ type: "presetChild", nodeId, childId });
+  };
+
+  const removePresetChild = (nodeId: string, childId: string) => {
+    setNodes((current) => {
+      const targetNode = current.find((node) => isPresetGroupNode(node) && node.id === nodeId) as CanvasPresetGroupNode | undefined;
+      if (!targetNode) return current;
+
+      const { children } = removePresetChildAndCleanupEdges(targetNode, childId, edges);
+      if (children.length === 0) {
+        return current.filter((node) => node.id !== nodeId);
+      }
+
+      return current.map((node) => {
+        if (!isPresetGroupNode(node) || node.id !== nodeId) return node;
+        return syncPresetGroupPreview({
+          ...node,
+          presetGroup: {
+            ...node.presetGroup,
+            activeChildId:
+              targetNode.presetGroup.activeChildId === childId
+                ? children[0]?.id ?? null
+                : node.presetGroup.activeChildId,
+            children,
+          },
+        });
+      });
+    });
+    setEdges((current) => current.filter((edge) => !(edge.targetId === nodeId && edge.targetPresetChildId === childId)));
+    setSelectedItem({ type: "node", id: nodeId });
+  };
+
+  const movePresetChild = (nodeId: string, childId: string, direction: "left" | "right") => {
+    setNodes((current) =>
+      current.map((node) => {
+        if (!isPresetGroupNode(node) || node.id !== nodeId) return node;
+        const children = [...node.presetGroup.children].sort((a, b) => a.order - b.order);
+        const childIndex = children.findIndex((child) => child.id === childId);
+        if (childIndex === -1) return node;
+        const swapIndex = direction === "left" ? childIndex - 1 : childIndex + 1;
+        if (swapIndex < 0 || swapIndex >= children.length) return node;
+        const nextIds = children.map((child) => child.id);
+        [nextIds[childIndex], nextIds[swapIndex]] = [nextIds[swapIndex], nextIds[childIndex]];
+        return syncPresetGroupPreview({
+          ...node,
+          presetGroup: {
+            ...node.presetGroup,
+            children: reorderPresetChildren(children, nextIds),
+          },
+        });
+      }),
+    );
   };
 
   const addSketchLine = (line: SketchLine) => {
@@ -538,6 +669,7 @@ export function useCanvasWorkspace() {
       canvasThemeColor,
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
+      pendingPresetGroupInsert,
       brushMode,
       regionSelectionTool,
       brushSize,
@@ -625,6 +757,12 @@ export function useCanvasWorkspace() {
       setSelectedLibraryAssetId,
       setPendingLibraryInsertAsset,
       consumePendingLibraryInsert: () => setPendingLibraryInsertAsset(null),
+      queuePresetGroupInsert: setPendingPresetGroupInsert,
+      consumePendingPresetGroupInsert: () => setPendingPresetGroupInsert(null),
+      upsertPresetGroup,
+      setActivePresetChild,
+      removePresetChild,
+      movePresetChild,
 
       // Theme
       setCanvasThemeColor,

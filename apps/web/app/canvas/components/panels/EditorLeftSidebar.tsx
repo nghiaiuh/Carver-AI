@@ -1,7 +1,7 @@
 "use client";
 
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
-import type { LeftSidebarPanelId } from "../../types/canvas";
+import type { CanvasPresetChild, LeftSidebarPanelId, PresetGroupCategory } from "../../types/canvas";
 import LibrarySidebar from "../library/LibrarySidebar";
 
 type EditorLeftSidebarProps = {
@@ -16,6 +16,13 @@ type EditorLeftSidebarProps = {
   onDeleteFolder: (folderId: string) => void;
   onDeleteAsset: (folderId: string, assetId: string) => void;
   onAddAssetToCanvas: (asset: LibraryAsset) => void;
+  onUpsertPresetGroup: (params: {
+    category: PresetGroupCategory;
+    title: string;
+    children: CanvasPresetChild[];
+    sourceFolderId?: string;
+    replaceAllChildren?: boolean;
+  }) => void;
   onUploadAssets: (folderId: string, files: FileList | File[]) => void;
   onClose: () => void;
   onToast: (message: string) => void;
@@ -39,6 +46,7 @@ export default function EditorLeftSidebar(props: EditorLeftSidebarProps) {
           onDeleteFolder={props.onDeleteFolder}
           onDeleteAsset={props.onDeleteAsset}
           onAddAssetToCanvas={props.onAddAssetToCanvas}
+          onUpsertPresetGroup={props.onUpsertPresetGroup}
           onUploadAssets={props.onUploadAssets}
           onClose={props.onClose}
           onToast={props.onToast}

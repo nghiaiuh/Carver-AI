@@ -43,6 +43,7 @@ export type SelectedItem =
   | { type: "none" }
   | { type: "image"; id: string; menu?: { x: number; y: number } }
   | { type: "reference"; id: string }
+  | { type: "presetChild"; nodeId: string; childId: string }
   | { type: "marker"; id: string }
   | { type: "object"; id: string }
   | { type: "sketchLine"; id: string }
@@ -156,6 +157,44 @@ export type MaskHistory = {
   future: (MaskData | undefined)[];
 };
 
+export type CanvasSourceImage = {
+  url: string;
+  width: number | null;
+  height: number | null;
+  mimeType?: string;
+  sizeBytes?: number;
+  name?: string;
+  quality: "original";
+};
+
+export type PresetGroupCategory = "environment" | "material" | "object";
+
+export type CanvasPresetChild = {
+  id: string;
+  slot: string;
+  label: string;
+  imageSrc: string;
+  prompt: string | null;
+  order: number;
+  assetId?: string;
+  sourceFolderId?: string;
+  sourceImage?: CanvasSourceImage;
+  createdAt?: string;
+  updatedAt?: string;
+  metadata?: {
+    notes?: string;
+    roleHint?: ImageConnectionRole;
+    [key: string]: string | number | boolean | null | undefined;
+  };
+};
+
+export type CanvasPresetGroup = {
+  category: PresetGroupCategory;
+  activeChildId: string | null;
+  children: CanvasPresetChild[];
+  sourceFolderId?: string;
+};
+
 // ── Canvas Graph (Nodes & Edges) ──────────────────────────────────────────────
 
 /**
@@ -172,7 +211,7 @@ export type InputPort = {
 /** Max input ports per node. One shared image-input model keeps the UX simple. */
 export const MAX_INPUT_PORTS_PER_NODE = 5;
 
-export type CanvasNode = {
+type CanvasNodeBase = {
   id: string;
   x: number;
   y: number;
@@ -181,15 +220,7 @@ export type CanvasNode = {
   groupId?: string;
   scale?: number;
   imageUrl: string;
-  sourceImage?: {
-    url: string;
-    width: number | null;
-    height: number | null;
-    mimeType?: string;
-    sizeBytes?: number;
-    name?: string;
-    quality: "original";
-  };
+  sourceImage?: CanvasSourceImage;
   title: string;
   prompt: string | null;
   role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output";
@@ -202,12 +233,25 @@ export type CanvasNode = {
   maskHistory?: MaskHistory;
 };
 
+export type CanvasImageNode = CanvasNodeBase & {
+  kind?: "image";
+  presetGroup?: never;
+};
+
+export type CanvasPresetGroupNode = CanvasNodeBase & {
+  kind: "presetGroup";
+  presetGroup: CanvasPresetGroup;
+};
+
+export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode;
+
 export type CanvasEdge = {
   id: string;
   sourceId: string;
   targetId: string;
   /** Which input port on the target node this edge connects to. */
   targetPortId: string;
+  targetPresetChildId?: string | null;
   label: string;
   fromHandle?: ImageHandlePosition;
   toHandle?: ImageHandlePosition;

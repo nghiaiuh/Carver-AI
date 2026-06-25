@@ -11,6 +11,7 @@ import React from "react";
 import type { CanvasNode, CanvasEdge } from "../../types/canvas";
 import { getVisibleInputPorts } from "../../types/canvas";
 import { buildBezierPath, getImageHandlePoint, getInputPortHandlePoint } from "./imageGraph";
+import { getPresetChildAnchor, isPresetGroupNode } from "../../utils/presetGroup";
 
 type CanvasEdgesProps = {
   nodes: CanvasNode[];
@@ -46,6 +47,12 @@ export default function CanvasEdges({
   const getTargetPortAnchor = (nodeId: string, targetPortId: string) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
+
+    const targetEdge = edges.find((edge) => edge.targetId === nodeId && edge.targetPortId === targetPortId);
+    if (targetEdge?.targetPresetChildId && isPresetGroupNode(node)) {
+      const childAnchor = getPresetChildAnchor(node, targetEdge.targetPresetChildId);
+      if (childAnchor) return childAnchor;
+    }
 
     const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
     const portVisibleIndex = visiblePorts.findIndex((p) => p.id === targetPortId);

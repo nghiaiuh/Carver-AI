@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
+import { type CanvasPresetChild, type PresetGroupCategory } from "../../types/canvas";
 import LibraryAssetGrid from "./LibraryAssetGrid";
 import LibraryFolderTabs from "./LibraryFolderTabs";
 
@@ -28,6 +29,13 @@ type LibrarySidebarProps = {
   onDeleteFolder: (folderId: string) => void;
   onDeleteAsset: (folderId: string, assetId: string) => void;
   onAddAssetToCanvas: (asset: LibraryAsset) => void;
+  onUpsertPresetGroup: (params: {
+    category: PresetGroupCategory;
+    title: string;
+    children: CanvasPresetChild[];
+    sourceFolderId?: string;
+    replaceAllChildren?: boolean;
+  }) => void;
   onUploadAssets: (folderId: string, files: FileList | File[]) => void;
   onClose: () => void;
   onToast: (message: string) => void;
@@ -202,6 +210,7 @@ export default function LibrarySidebar({
   onDeleteFolder,
   onDeleteAsset,
   onAddAssetToCanvas,
+  onUpsertPresetGroup,
   onUploadAssets,
   onClose,
   onToast,
@@ -258,6 +267,25 @@ export default function LibrarySidebar({
   const activeEnvironmentTemplates = activeEnvironmentSlot ? ENVIRONMENT_TEMPLATE_LIBRARY[activeEnvironmentSlot] : [];
   const activeMaterialTemplates = activeMaterialSlot ? MATERIAL_TEMPLATE_LIBRARY[activeMaterialSlot] : [];
 
+  const buildPresetChild = (slot: string, template: ReferenceTemplate): CanvasPresetChild => ({
+    id: template.id,
+    slot,
+    label: template.label,
+    imageSrc: template.imageSrc,
+    prompt: null,
+    order: 0,
+    sourceImage: {
+      url: template.imageSrc,
+      width: null,
+      height: null,
+      name: template.label,
+      quality: "original",
+    },
+    metadata: {
+      roleHint: "style_reference",
+    },
+  });
+
   const requestCreateFolder = () => {
     const title = window.prompt("New folder name", "");
     if (!title?.trim()) return;
@@ -312,6 +340,11 @@ export default function LibrarySidebar({
       [slotId]: template,
     }));
     const slotLabel = ENVIRONMENT_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Environment";
+    onUpsertPresetGroup({
+      category: "environment",
+      title: "Environment",
+      children: [buildPresetChild(slotLabel, template)],
+    });
     onToast(`${slotLabel}: ${template.label}`);
   };
 
@@ -334,7 +367,46 @@ export default function LibrarySidebar({
       [slotId]: template,
     }));
     const slotLabel = MATERIAL_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Material";
+    onUpsertPresetGroup({
+      category: "material",
+      title: "Material",
+      children: [buildPresetChild(slotLabel, template)],
+    });
     onToast(`${slotLabel}: ${template.label}`);
+  };
+
+  const attachActiveFolderAsPresetGroup = () => {
+    if (!activeFolder) return;
+
+    const children = activeFolder.assets.map((asset, index) => ({
+      id: asset.id,
+      slot: activeFolder.title,
+      label: asset.title ?? `Preset ${index + 1}`,
+      imageSrc: asset.thumbnailSrc ?? asset.src,
+      prompt: asset.prompt ?? null,
+      order: index,
+      assetId: asset.id,
+      sourceFolderId: activeFolder.id,
+      sourceImage: {
+        url: asset.src,
+        width: asset.metadata?.originalWidth ?? null,
+        height: asset.metadata?.originalHeight ?? null,
+        name: asset.title,
+        quality: "original" as const,
+      },
+      metadata: {
+        roleHint: "generic_reference" as const,
+      },
+    }));
+
+    onUpsertPresetGroup({
+      category: "object",
+      title: activeFolder.title,
+      sourceFolderId: activeFolder.id,
+      children,
+      replaceAllChildren: true,
+    });
+    onToast(`Added ${activeFolder.title} preset folder to canvas`);
   };
 
   const clearMaterialTemplate = (slotId: MaterialSlotId) => {
@@ -554,6 +626,15 @@ export default function LibrarySidebar({
                 >
                   <Upload className="h-3.5 w-3.5" aria-hidden="true" />
                   Add image
+                </button>
+                <button
+                  type="button"
+                  onClick={attachActiveFolderAsPresetGroup}
+                  disabled={!activeFolder || activeFolder.assets.length === 0}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Box className="h-3.5 w-3.5" aria-hidden="true" />
+                  Add folder node
                 </button>
               </div>
 
