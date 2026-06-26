@@ -2178,25 +2178,30 @@ export default function CanvasBoard({
         <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]" data-canvas-ui="true">
           <div
             ref={miniMapFrameRef}
-            className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-white/80"
+            className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)]"
             onPointerDown={handleMiniMapPointerDown}
             onPointerMove={handleMiniMapPointerMove}
             onPointerUp={handleMiniMapPointerUp}
             onPointerCancel={handleMiniMapPointerUp}
-            style={{ cursor: miniMapDragging ? "grabbing" : "grab" }}
+            style={{
+              cursor: miniMapDragging ? "grabbing" : "grab",
+              backgroundColor: "var(--canvas-theme-canvas)",
+            }}
           >
             {miniMapModel.nodes.map((node) => (
               <div
                 key={node.id}
-                className="absolute rounded-[2px] bg-[#D9D9D9]"
+                className="absolute rounded-[2px]"
                 style={{
                   left: node.left,
                   top: node.top,
                   width: node.widthPx,
                   height: node.heightPx,
+                  backgroundColor: "var(--canvas-theme-surface-muted)",
                 }}
               />
             ))}
+            <div className="pointer-events-none absolute inset-0 border border-white/10" />
           </div>
         </div>
       ) : null}

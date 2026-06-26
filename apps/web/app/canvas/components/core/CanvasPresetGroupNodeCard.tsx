@@ -394,7 +394,7 @@ export default function CanvasPresetGroupNodeCard({
       {/* Gray box — contains thumbnails only */}
       <div
         className={[
-          "absolute inset-x-0 top-0 overflow-hidden rounded-xl transition",
+          "absolute inset-x-0 top-0 overflow-hidden rounded-lg transition",
           selected
             ? "bg-[#D1D5DB] ring-2 ring-[#22D3EE] ring-offset-1"
             : isConnectionTarget

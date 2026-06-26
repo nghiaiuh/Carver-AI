@@ -7,16 +7,12 @@ import {
   Check,
   ChevronDown,
   Mountain,
-  Search,
-  SlidersHorizontal,
-  Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
 import { type CanvasPresetChild, type PresetGroupCategory } from "../../types/canvas";
-import LibraryAssetGrid from "./LibraryAssetGrid";
-import LibraryFolderTabs from "./LibraryFolderTabs";
+
 
 type LibrarySidebarProps = {
   folders: LibraryFolder[];
@@ -64,6 +60,20 @@ type MaterialSlotId =
   | "car"
   | "brick-wall";
 type MaterialTemplate = ReferenceTemplate;
+type ObjectSlotId =
+  | "koi-pond"
+  | "waterfall"
+  | "bonsai-tree"
+  | "bamboo"
+  | "palm-tree"
+  | "garden-stone"
+  | "pavilion"
+  | "bridge"
+  | "lantern"
+  | "topiary"
+  | "fern"
+  | "flower-bed";
+type ObjectTemplate = ReferenceTemplate;
 
 const ENVIRONMENT_SLOTS: Array<{ id: EnvironmentSlotId; label: string }> = [
   { id: "season", label: "Season" },
@@ -199,6 +209,96 @@ const MATERIAL_TEMPLATE_LIBRARY: Record<MaterialSlotId, MaterialTemplate[]> = {
   ],
 };
 
+const OBJECT_SLOTS: Array<{ id: ObjectSlotId; label: string }> = [
+  { id: "koi-pond", label: "Koi Pond" },
+  { id: "waterfall", label: "Waterfall" },
+  { id: "bonsai-tree", label: "Bonsai Tree" },
+  { id: "bamboo", label: "Bamboo" },
+  { id: "palm-tree", label: "Palm Tree" },
+  { id: "garden-stone", label: "Garden Stone" },
+  { id: "pavilion", label: "Pavilion" },
+  { id: "bridge", label: "Bridge" },
+  { id: "lantern", label: "Lantern" },
+  { id: "topiary", label: "Topiary" },
+  { id: "fern", label: "Fern" },
+  { id: "flower-bed", label: "Flower Bed" },
+];
+
+const OBJECT_TEMPLATE_LIBRARY: Record<ObjectSlotId, ObjectTemplate[]> = {
+  "koi-pond": [
+    { id: "koi-pond-1", label: "Classic koi pond", imageSrc: "/assets/waterfall.png" },
+    { id: "koi-pond-2", label: "Pebble-edge pond", imageSrc: "/assets/urban_waterfall.png" },
+    { id: "koi-pond-3", label: "Natural stone pond", imageSrc: "/assets/co_thach.png" },
+    { id: "koi-pond-4", label: "Formal koi pond", imageSrc: "/assets/garden_3d_render.png" },
+  ],
+  "waterfall": [
+    { id: "waterfall-1", label: "Rockery waterfall", imageSrc: "/assets/waterfall.png" },
+    { id: "waterfall-2", label: "Urban waterfall", imageSrc: "/assets/urban_waterfall.png" },
+    { id: "waterfall-3", label: "Stone cascade", imageSrc: "/assets/tai_meo.png" },
+    { id: "waterfall-4", label: "Stream waterfall", imageSrc: "/assets/co_thach.png" },
+  ],
+  "bonsai-tree": [
+    { id: "bonsai-1", label: "Classic bonsai", imageSrc: "/assets/bonsai.png" },
+    { id: "bonsai-2", label: "Ficus bonsai", imageSrc: "/assets/tai_meo.png" },
+    { id: "bonsai-3", label: "Podocarpus bonsai", imageSrc: "/assets/garden_3d_render.png" },
+    { id: "bonsai-4", label: "Juniper bonsai", imageSrc: "/assets/co_thach.png" },
+  ],
+  "bamboo": [
+    { id: "bamboo-1", label: "Slender bamboo", imageSrc: "/assets/bonsai.png" },
+    { id: "bamboo-2", label: "Dense bamboo grove", imageSrc: "/assets/tai_meo.png" },
+    { id: "bamboo-3", label: "Golden bamboo", imageSrc: "/assets/lush-summer.webp" },
+    { id: "bamboo-4", label: "Black bamboo", imageSrc: "/assets/full-bloom.webp" },
+  ],
+  "palm-tree": [
+    { id: "palm-1", label: "Areca palm", imageSrc: "/assets/lush-summer.webp" },
+    { id: "palm-2", label: "Red areca palm", imageSrc: "/assets/full-bloom.webp" },
+    { id: "palm-3", label: "Fan palm", imageSrc: "/assets/bonsai.png" },
+    { id: "palm-4", label: "Tropical cluster", imageSrc: "/assets/garden_3d_render.png" },
+  ],
+  "garden-stone": [
+    { id: "stone-1", label: "Stepping stones", imageSrc: "/assets/co_thach.png" },
+    { id: "stone-2", label: "Boulder cluster", imageSrc: "/assets/tai_meo.png" },
+    { id: "stone-3", label: "Mossy rock", imageSrc: "/assets/waterfall.png" },
+    { id: "stone-4", label: "Flat stone slab", imageSrc: "/assets/garden_3d_render.png" },
+  ],
+  "pavilion": [
+    { id: "pavilion-1", label: "Hexagon gazebo", imageSrc: "/assets/garden_3d_render.png" },
+    { id: "pavilion-2", label: "Open pavilion", imageSrc: "/assets/bonsai.png" },
+    { id: "pavilion-3", label: "Timber shelter", imageSrc: "/assets/urban_waterfall.png" },
+    { id: "pavilion-4", label: "Garden pergola", imageSrc: "/assets/co_thach.png" },
+  ],
+  "bridge": [
+    { id: "bridge-obj-1", label: "Arched wood bridge", imageSrc: "/assets/waterfall.png" },
+    { id: "bridge-obj-2", label: "Stone bridge", imageSrc: "/assets/co_thach.png" },
+    { id: "bridge-obj-3", label: "Flat garden bridge", imageSrc: "/assets/garden_3d_render.png" },
+    { id: "bridge-obj-4", label: "Bamboo bridge", imageSrc: "/assets/tai_meo.png" },
+  ],
+  "lantern": [
+    { id: "lantern-1", label: "Stone lantern", imageSrc: "/assets/garden_3d_render.png" },
+    { id: "lantern-2", label: "Hanging lantern", imageSrc: "/assets/bonsai.png" },
+    { id: "lantern-3", label: "Pillar lantern", imageSrc: "/assets/co_thach.png" },
+    { id: "lantern-4", label: "Floating lantern", imageSrc: "/assets/urban_waterfall.png" },
+  ],
+  "topiary": [
+    { id: "topiary-1", label: "Ball topiary", imageSrc: "/assets/bonsai.png" },
+    { id: "topiary-2", label: "Cone topiary", imageSrc: "/assets/tai_meo.png" },
+    { id: "topiary-3", label: "Cloud pruning", imageSrc: "/assets/full-bloom.webp" },
+    { id: "topiary-4", label: "Spiral topiary", imageSrc: "/assets/lush-summer.webp" },
+  ],
+  "fern": [
+    { id: "fern-1", label: "Tropical fern", imageSrc: "/assets/lush-summer.webp" },
+    { id: "fern-2", label: "Ground fern", imageSrc: "/assets/full-bloom.webp" },
+    { id: "fern-3", label: "Tree fern", imageSrc: "/assets/tai_meo.png" },
+    { id: "fern-4", label: "Moss fern mat", imageSrc: "/assets/bonsai.png" },
+  ],
+  "flower-bed": [
+    { id: "flower-bed-1", label: "Spring bloom bed", imageSrc: "/assets/full-bloom.webp" },
+    { id: "flower-bed-2", label: "Tropical flowers", imageSrc: "/assets/early-spring.webp" },
+    { id: "flower-bed-3", label: "Mixed perennials", imageSrc: "/assets/lush-summer.webp" },
+    { id: "flower-bed-4", label: "Ornamental grasses", imageSrc: "/assets/garden_3d_render.png" },
+  ],
+};
+
 export default function LibrarySidebar({
   folders,
   activeFolderId,
@@ -224,48 +324,25 @@ export default function LibrarySidebar({
   const [activeMaterialSlot, setActiveMaterialSlot] = useState<MaterialSlotId | null>(null);
   const [materialTab, setMaterialTab] = useState<ReferenceTabId>("presets");
   const [selectedMaterialTemplates, setSelectedMaterialTemplates] = useState<
-    Partial<Record<MaterialSlotId, MaterialTemplate>>
+    Partial<Record<MaterialSlotId, MaterialTemplate[]>>
   >({});
-  const [query, setQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | NonNullable<LibraryAsset["source"]>>("all");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const activeFolder = useMemo(
-    () => folders.find((folder) => folder.id === activeFolderId) ?? folders[0] ?? null,
-    [activeFolderId, folders],
-  );
-  const filteredAssets = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return (activeFolder?.assets ?? []).filter((asset) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        (asset.title ?? "").toLowerCase().includes(normalizedQuery) ||
-        (asset.prompt ?? "").toLowerCase().includes(normalizedQuery) ||
-        (asset.metadata?.categoryHint ?? "").toLowerCase().includes(normalizedQuery) ||
-        (asset.metadata?.speciesName ?? "").toLowerCase().includes(normalizedQuery);
-      const matchesSource = sourceFilter === "all" || asset.source === sourceFilter;
-      return matchesQuery && matchesSource;
-    });
-  }, [activeFolder, query, sourceFilter]);
-  const sourceCounts = useMemo(() => {
-    const counts = {
-      all: activeFolder?.assets.length ?? 0,
-      "ai-chat": 0,
-      upload: 0,
-      manual: 0,
-    };
-
-    (activeFolder?.assets ?? []).forEach((asset) => {
-      if (asset.source === "ai-chat") counts["ai-chat"] += 1;
-      if (asset.source === "upload") counts.upload += 1;
-      if (asset.source === "manual") counts.manual += 1;
-    });
-
-    return counts;
-  }, [activeFolder]);
+  const [activeObjectSlot, setActiveObjectSlot] = useState<ObjectSlotId | null>(null);
+  const [objectTab, setObjectTab] = useState<ReferenceTabId>("presets");
+  const [selectedObjectTemplates, setSelectedObjectTemplates] = useState<
+    Partial<Record<ObjectSlotId, ObjectTemplate[]>>
+  >({});
   const activeEnvironmentTemplates = activeEnvironmentSlot ? ENVIRONMENT_TEMPLATE_LIBRARY[activeEnvironmentSlot] : [];
   const activeMaterialTemplates = activeMaterialSlot ? MATERIAL_TEMPLATE_LIBRARY[activeMaterialSlot] : [];
+  const selectedEnvironmentCount = Object.keys(selectedEnvironmentTemplates).length;
+  const selectedMaterialCount = Object.values(selectedMaterialTemplates).reduce(
+    (total, templates) => total + (templates?.length ?? 0),
+    0,
+  );
+  const selectedObjectCount = Object.values(selectedObjectTemplates).reduce(
+    (total, templates) => total + (templates?.length ?? 0),
+    0,
+  );
+  const totalSelectedPresets = selectedEnvironmentCount + selectedMaterialCount + selectedObjectCount;
 
   const buildPresetChild = (slot: string, template: ReferenceTemplate): CanvasPresetChild => ({
     id: template.id,
@@ -286,39 +363,6 @@ export default function LibrarySidebar({
     },
   });
 
-  const requestCreateFolder = () => {
-    const title = window.prompt("New folder name", "");
-    if (!title?.trim()) return;
-    const folder = onCreateFolder(title, "user");
-    if (folder) onToast(`Folder "${folder.title}" created`);
-  };
-
-  const requestRenameFolder = () => {
-    if (!activeFolder) return;
-    const title = window.prompt("Rename folder", activeFolder.title);
-    if (!title?.trim() || title.trim() === activeFolder.title) return;
-    onRenameFolder(activeFolder.id, title);
-    onToast(`Folder renamed to "${title.trim()}"`);
-  };
-
-  const requestDeleteFolder = () => {
-    if (!activeFolder) return;
-    if (!window.confirm(`Delete folder "${activeFolder.title}" and all its assets?`)) return;
-    onDeleteFolder(activeFolder.id);
-    onToast(`Folder "${activeFolder.title}" deleted`);
-  };
-
-  const requestDeleteAsset = (asset: LibraryAsset) => {
-    if (!activeFolder) return;
-    if (!window.confirm(`Delete "${asset.title ?? "this asset"}" from library?`)) return;
-    onDeleteAsset(activeFolder.id, asset.id);
-    onToast(`Removed "${asset.title ?? "asset"}"`);
-  };
-
-  const requestPreviewAsset = (asset: LibraryAsset) => {
-    window.open(asset.src, "_blank", "noopener,noreferrer");
-  };
-
   const toggleSection = (section: SectionId) => {
     setOpenSection((current) => (current === section ? null : section));
     if (section !== "environment") {
@@ -326,6 +370,9 @@ export default function LibrarySidebar({
     }
     if (section !== "material") {
       setActiveMaterialSlot(null);
+    }
+    if (section !== "object") {
+      setActiveObjectSlot(null);
     }
   };
 
@@ -356,57 +403,34 @@ export default function LibrarySidebar({
     });
   };
 
+  const syncMaterialGroup = (slotId: MaterialSlotId, templates: MaterialTemplate[]) => {
+    const slotLabel = MATERIAL_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Material";
+    onUpsertPresetGroup({
+      category: "material",
+      title: "Material",
+      children: templates.map((template) => buildPresetChild(slotLabel, template)),
+      replaceAllChildren: true,
+    });
+    onToast(`${slotLabel}: ${templates.length} preset${templates.length === 1 ? "" : "s"}`);
+  };
+
   const toggleMaterialSlot = (slotId: MaterialSlotId) => {
     setOpenSection("material");
     setActiveMaterialSlot((current) => (current === slotId ? null : slotId));
   };
 
   const selectMaterialTemplate = (slotId: MaterialSlotId, template: MaterialTemplate) => {
+    const currentTemplates = selectedMaterialTemplates[slotId] ?? [];
+    const exists = currentTemplates.some((item) => item.id === template.id);
+    const nextTemplates = exists
+      ? currentTemplates.filter((item) => item.id !== template.id)
+      : [...currentTemplates, template];
+
     setSelectedMaterialTemplates((current) => ({
       ...current,
-      [slotId]: template,
+      [slotId]: nextTemplates,
     }));
-    const slotLabel = MATERIAL_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Material";
-    onUpsertPresetGroup({
-      category: "material",
-      title: "Material",
-      children: [buildPresetChild(slotLabel, template)],
-    });
-    onToast(`${slotLabel}: ${template.label}`);
-  };
-
-  const attachActiveFolderAsPresetGroup = () => {
-    if (!activeFolder) return;
-
-    const children = activeFolder.assets.map((asset, index) => ({
-      id: asset.id,
-      slot: activeFolder.title,
-      label: asset.title ?? `Preset ${index + 1}`,
-      imageSrc: asset.thumbnailSrc ?? asset.src,
-      prompt: asset.prompt ?? null,
-      order: index,
-      assetId: asset.id,
-      sourceFolderId: activeFolder.id,
-      sourceImage: {
-        url: asset.src,
-        width: asset.metadata?.originalWidth ?? null,
-        height: asset.metadata?.originalHeight ?? null,
-        name: asset.title,
-        quality: "original" as const,
-      },
-      metadata: {
-        roleHint: "generic_reference" as const,
-      },
-    }));
-
-    onUpsertPresetGroup({
-      category: "object",
-      title: activeFolder.title,
-      sourceFolderId: activeFolder.id,
-      children,
-      replaceAllChildren: true,
-    });
-    onToast(`Added ${activeFolder.title} preset folder to canvas`);
+    syncMaterialGroup(slotId, nextTemplates);
   };
 
   const clearMaterialTemplate = (slotId: MaterialSlotId) => {
@@ -415,24 +439,55 @@ export default function LibrarySidebar({
       delete next[slotId];
       return next;
     });
+    syncMaterialGroup(slotId, []);
+  };
+
+  const toggleObjectSlot = (slotId: ObjectSlotId) => {
+    setOpenSection("object");
+    setActiveObjectSlot((current) => (current === slotId ? null : slotId));
+  };
+
+  const selectObjectTemplate = (slotId: ObjectSlotId, template: ObjectTemplate) => {
+    const currentTemplates = selectedObjectTemplates[slotId] ?? [];
+    const exists = currentTemplates.some((item) => item.id === template.id);
+    const nextTemplates = exists
+      ? currentTemplates.filter((item) => item.id !== template.id)
+      : [...currentTemplates, template];
+
+    setSelectedObjectTemplates((current) => ({
+      ...current,
+      [slotId]: nextTemplates,
+    }));
+
+    const slotLabel = OBJECT_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Object";
+    onUpsertPresetGroup({
+      category: "object",
+      title: "Object",
+      children: nextTemplates.map((item) => buildPresetChild(slotLabel, item)),
+      replaceAllChildren: true,
+    });
+    onToast(`${slotLabel}: ${nextTemplates.length} preset${nextTemplates.length === 1 ? "" : "s"}`);
+  };
+
+  const clearObjectTemplate = (slotId: ObjectSlotId) => {
+    setSelectedObjectTemplates((current) => {
+      const next = { ...current };
+      delete next[slotId];
+      return next;
+    });
+    const slotLabel = OBJECT_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Object";
+    onUpsertPresetGroup({
+      category: "object",
+      title: "Object",
+      children: [],
+      replaceAllChildren: true,
+    });
+    onToast(`${slotLabel}: cleared`);
   };
 
   return (
-    <div className="relative flex h-full w-full shrink-0 overflow-visible bg-white text-[var(--canvas-theme-text)]">
-      <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-white">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(event) => {
-            if (event.target.files && activeFolder) {
-              onUploadAssets(activeFolder.id, event.target.files);
-            }
-            event.target.value = "";
-          }}
-        />
+    <div className="relative flex h-full w-full shrink-0 overflow-visible bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
+      <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)]">
 
         <div className="border-b border-[var(--canvas-theme-border)] px-4 py-4">
           <div className="flex items-start justify-between gap-3">
@@ -450,7 +505,7 @@ export default function LibrarySidebar({
             <button
               type="button"
               onClick={onClose}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-white text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
               title="Close library"
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -480,47 +535,27 @@ export default function LibrarySidebar({
                       "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
                       selectedTemplate
                         ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]"
-                        : "border-[var(--canvas-theme-border)] bg-[#F9FAFB]",
-                      isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[#ECEFF3]",
+                        : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]",
+                      isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
                     ].join(" ")}
                   >
+                    <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
+                      <p className="block text-[clamp(10px,1vw,17px)] font-semibold tracking-[0.01em] text-[var(--canvas-theme-text-muted)]">
+                        {slot.label}
+                      </p>
+                    </div>
                     {selectedTemplate ? (
-                      <>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={selectedTemplate.imageSrc}
-                          alt={selectedTemplate.label}
-                          className="absolute inset-0 h-full w-full object-cover"
-                          draggable={false}
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center">
-                          <p className="block text-[clamp(10px,0.9vw,12px)] font-semibold tracking-[0.01em] text-white/80">
-                            {slot.label}
-                          </p>
-                          <p className="mt-0.5 text-[clamp(12px,1.05vw,16px)] font-semibold leading-tight text-white">
-                            {selectedTemplate.label}
-                          </p>
-                        </div>
-                        {/* Cancel button */}
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); clearEnvironmentTemplate(slot.id); }}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearEnvironmentTemplate(slot.id); } }}
-                          className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-black/80"
-                          title="Remove preset"
-                        >
-                          <X className="h-3 w-3" aria-hidden="true" />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
-                        <p className="block text-[clamp(10px,1vw,17px)] font-semibold tracking-[0.01em] text-[#6B7280]">
-                          {slot.label}
-                        </p>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); clearEnvironmentTemplate(slot.id); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearEnvironmentTemplate(slot.id); } }}
+                        className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-black/80"
+                        title="Remove preset"
+                      >
+                        <X className="h-3 w-3" aria-hidden="true" />
                       </div>
-                    )}
+                    ) : null}
                   </button>
                 );
               })}
@@ -535,7 +570,8 @@ export default function LibrarySidebar({
           >
             <div className="grid grid-cols-4 gap-2">
               {MATERIAL_SLOTS.map((slot) => {
-                const selectedTemplate = selectedMaterialTemplates[slot.id];
+                const selectedTemplates = selectedMaterialTemplates[slot.id] ?? [];
+                const selectedTemplate = selectedTemplates[0] ?? null;
                 const isActive = activeMaterialSlot === slot.id;
 
                 return (
@@ -548,47 +584,32 @@ export default function LibrarySidebar({
                       "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
                       selectedTemplate
                         ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]"
-                        : "border-[var(--canvas-theme-border)] bg-[#F9FAFB]",
-                      isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[#ECEFF3]",
+                        : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]",
+                      isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
                     ].join(" ")}
-                  >
+                    >
+                    <div className="absolute inset-0 flex items-center justify-center px-2.5 text-center">
+                      <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-[var(--canvas-theme-text-muted)]">
+                        {slot.label}
+                      </p>
+                      {selectedTemplates.length > 0 ? (
+                        <span className="absolute right-1 top-1 rounded-full bg-[var(--canvas-theme-active)] px-1.5 py-0.5 text-[10px] font-black text-[var(--canvas-theme-active-text)]">
+                          {selectedTemplates.length}
+                        </span>
+                      ) : null}
+                    </div>
                     {selectedTemplate ? (
-                      <>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={selectedTemplate.imageSrc}
-                          alt={selectedTemplate.label}
-                          className="absolute inset-0 h-full w-full object-cover"
-                          draggable={false}
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center px-2.5 text-center">
-                          <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-white/80">
-                            {slot.label}
-                          </p>
-                          <p className="mt-0.5 line-clamp-2 text-[clamp(10px,0.9vw,13px)] font-medium leading-tight text-white">
-                            {selectedTemplate.label}
-                          </p>
-                        </div>
-                        {/* Cancel button */}
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); clearMaterialTemplate(slot.id); }}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearMaterialTemplate(slot.id); } }}
-                          className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-black/80"
-                          title="Remove preset"
-                        >
-                          <X className="h-2.5 w-2.5" aria-hidden="true" />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center px-2.5 text-center">
-                        <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-[#6B7280]">
-                          {slot.label}
-                        </p>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); clearMaterialTemplate(slot.id); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearMaterialTemplate(slot.id); } }}
+                        className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-black/80"
+                        title="Remove preset"
+                      >
+                        <X className="h-2.5 w-2.5" aria-hidden="true" />
                       </div>
-                    )}
+                    ) : null}
                   </button>
                 );
               })}
@@ -601,93 +622,51 @@ export default function LibrarySidebar({
             isOpen={openSection === "object"}
             onToggle={() => toggleSection("object")}
           >
-            <div className="space-y-4">
-              <LibraryFolderTabs
-                folders={folders}
-                activeFolderId={activeFolderId}
-                onSelectFolder={onSelectFolder}
-                onCreateFolder={requestCreateFolder}
-                onRenameFolder={requestRenameFolder}
-                onDeleteFolder={requestDeleteFolder}
-              />
+            <div className="grid grid-cols-4 gap-2">
+              {OBJECT_SLOTS.map((slot) => {
+                const selectedTemplates = selectedObjectTemplates[slot.id] ?? [];
+                const selectedTemplate = selectedTemplates[0] ?? null;
+                const isActive = activeObjectSlot === slot.id;
 
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[var(--canvas-theme-text)]">
-                    {activeFolder?.title ?? "Library"}
-                  </p>
-                  <p className="text-xs text-[var(--canvas-theme-text-muted)]">
-                    Double-click an asset to place it on canvas
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!activeFolder}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--canvas-theme-border)] bg-white px-3 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Upload className="h-3.5 w-3.5" aria-hidden="true" />
-                  Add image
-                </button>
-                <button
-                  type="button"
-                  onClick={attachActiveFolderAsPresetGroup}
-                  disabled={!activeFolder || activeFolder.assets.length === 0}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Box className="h-3.5 w-3.5" aria-hidden="true" />
-                  Add folder node
-                </button>
-              </div>
-
-              <div className="flex h-11 items-center gap-3 rounded-2xl border border-[var(--canvas-theme-border)] bg-white px-3">
-                <Search className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search title, prompt, category..."
-                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
-                />
-                <SlidersHorizontal className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: "all", label: "All", count: sourceCounts.all },
-                  { id: "ai-chat", label: "AI", count: sourceCounts["ai-chat"] },
-                  { id: "upload", label: "Uploads", count: sourceCounts.upload },
-                  { id: "manual", label: "Manual", count: sourceCounts.manual },
-                ].map((filter) => {
-                  const active = sourceFilter === filter.id;
-                  return (
-                    <button
-                      key={filter.id}
-                      type="button"
-                      onClick={() => setSourceFilter(filter.id as typeof sourceFilter)}
-                      className={[
-                        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                        active
-                          ? "border-[var(--canvas-theme-active)] bg-[var(--canvas-theme-active)]/10 text-[var(--canvas-theme-text)]"
-                          : "border-[var(--canvas-theme-border)] bg-white text-[var(--canvas-theme-text-muted)] hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]",
-                      ].join(" ")}
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    data-flyout-trigger="true"
+                    onClick={() => toggleObjectSlot(slot.id)}
+                    className={[
+                      "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
+                      selectedTemplate
+                        ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]"
+                        : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]",
+                      isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
+                    ].join(" ")}
                     >
-                      <span>{filter.label}</span>
-                      <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] font-black text-[var(--canvas-theme-text-muted)]">
-                        {filter.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <LibraryAssetGrid
-                assets={filteredAssets}
-                selectedAssetId={selectedAssetId}
-                onSelectAsset={onSelectAsset}
-                onAddToCanvas={onAddAssetToCanvas}
-                onDeleteAsset={requestDeleteAsset}
-                onPreviewAsset={requestPreviewAsset}
-              />
+                    <div className="absolute inset-0 flex items-center justify-center px-2.5 text-center">
+                      <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-[var(--canvas-theme-text-muted)]">
+                        {slot.label}
+                      </p>
+                      {selectedTemplates.length > 0 ? (
+                        <span className="absolute right-1 top-1 rounded-full bg-[var(--canvas-theme-active)] px-1.5 py-0.5 text-[10px] font-black text-[var(--canvas-theme-active-text)]">
+                          {selectedTemplates.length}
+                        </span>
+                      ) : null}
+                    </div>
+                    {selectedTemplate ? (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); clearObjectTemplate(slot.id); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearObjectTemplate(slot.id); } }}
+                        className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-black/80"
+                        title="Remove preset"
+                      >
+                        <X className="h-2.5 w-2.5" aria-hidden="true" />
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
           </AccordionSection>
         </div>
@@ -699,7 +678,7 @@ export default function LibrarySidebar({
           activeTab={environmentTab}
           onTabChange={setEnvironmentTab}
           templates={activeEnvironmentTemplates}
-          selectedTemplateId={selectedEnvironmentTemplates[activeEnvironmentSlot]?.id ?? null}
+          selectedTemplateIds={selectedEnvironmentTemplates[activeEnvironmentSlot]?.id ? [selectedEnvironmentTemplates[activeEnvironmentSlot]!.id] : []}
           onSelectTemplate={(template) => selectEnvironmentTemplate(activeEnvironmentSlot, template)}
           onClose={() => setActiveEnvironmentSlot(null)}
         />
@@ -711,9 +690,21 @@ export default function LibrarySidebar({
           activeTab={materialTab}
           onTabChange={setMaterialTab}
           templates={activeMaterialTemplates}
-          selectedTemplateId={selectedMaterialTemplates[activeMaterialSlot]?.id ?? null}
+          selectedTemplateIds={selectedMaterialTemplates[activeMaterialSlot]?.map((template) => template.id) ?? []}
           onSelectTemplate={(template) => selectMaterialTemplate(activeMaterialSlot, template)}
           onClose={() => setActiveMaterialSlot(null)}
+        />
+      ) : null}
+
+      {activeObjectSlot && openSection === "object" ? (
+        <ReferenceFlyout
+          slotLabel={OBJECT_SLOTS.find((slot) => slot.id === activeObjectSlot)?.label ?? "Object"}
+          activeTab={objectTab}
+          onTabChange={setObjectTab}
+          templates={OBJECT_TEMPLATE_LIBRARY[activeObjectSlot]}
+          selectedTemplateIds={selectedObjectTemplates[activeObjectSlot]?.map((template) => template.id) ?? []}
+          onSelectTemplate={(template) => selectObjectTemplate(activeObjectSlot, template)}
+          onClose={() => setActiveObjectSlot(null)}
         />
       ) : null}
     </div>
@@ -764,7 +755,7 @@ function ReferenceFlyout({
   activeTab,
   onTabChange,
   templates,
-  selectedTemplateId,
+  selectedTemplateIds,
   onSelectTemplate,
   onClose,
 }: {
@@ -772,7 +763,7 @@ function ReferenceFlyout({
   activeTab: ReferenceTabId;
   onTabChange: (tab: ReferenceTabId) => void;
   templates: ReferenceTemplate[];
-  selectedTemplateId: string | null;
+  selectedTemplateIds: string[];
   onSelectTemplate: (template: ReferenceTemplate) => void;
   onClose: () => void;
 }) {
@@ -824,7 +815,7 @@ function ReferenceFlyout({
   };
 
   return (
-    <aside ref={flyoutRef} className="absolute left-full top-0 z-[90] flex h-[calc(36rem-3px)] w-[304px] min-h-0 flex-col overflow-hidden border-l border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-text)]">
+    <aside ref={flyoutRef} className="absolute left-full top-0 z-[90] flex h-[calc(36rem-3px)] w-[304px] min-h-0 flex-col overflow-hidden border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">{slotLabel}</p>
@@ -833,7 +824,7 @@ function ReferenceFlyout({
         <button
           type="button"
           onClick={onClose}
-          className="grid h-9 w-9 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+          className="grid h-9 w-9 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
           title="Close flyout"
         >
           <X className="h-4 w-4" aria-hidden="true" />
@@ -870,7 +861,7 @@ function ReferenceFlyout({
       >
         <div className="grid grid-cols-2 gap-3">
           {templates.map((template) => {
-            const selected = template.id === selectedTemplateId;
+            const selected = selectedTemplateIds.includes(template.id);
 
             return (
               <button
