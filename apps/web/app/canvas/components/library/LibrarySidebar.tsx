@@ -403,15 +403,18 @@ export default function LibrarySidebar({
     });
   };
 
-  const syncMaterialGroup = (slotId: MaterialSlotId, templates: MaterialTemplate[]) => {
-    const slotLabel = MATERIAL_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Material";
+  const syncMaterialGroup = (selections: Partial<Record<MaterialSlotId, MaterialTemplate[]>>) => {
+    const children = MATERIAL_SLOTS.flatMap((slot) => {
+      const slotLabel = slot.label;
+      return (selections[slot.id] ?? []).map((template) => buildPresetChild(slotLabel, template));
+    });
     onUpsertPresetGroup({
       category: "material",
       title: "Material",
-      children: templates.map((template) => buildPresetChild(slotLabel, template)),
+      children,
       replaceAllChildren: true,
     });
-    onToast(`${slotLabel}: ${templates.length} preset${templates.length === 1 ? "" : "s"}`);
+    onToast(`Material: ${children.length} preset${children.length === 1 ? "" : "s"}`);
   };
 
   const toggleMaterialSlot = (slotId: MaterialSlotId) => {
@@ -426,20 +429,20 @@ export default function LibrarySidebar({
       ? currentTemplates.filter((item) => item.id !== template.id)
       : [...currentTemplates, template];
 
-    setSelectedMaterialTemplates((current) => ({
-      ...current,
+    const nextSelections = {
+      ...selectedMaterialTemplates,
       [slotId]: nextTemplates,
-    }));
-    syncMaterialGroup(slotId, nextTemplates);
+    };
+
+    setSelectedMaterialTemplates(nextSelections);
+    syncMaterialGroup(nextSelections);
   };
 
   const clearMaterialTemplate = (slotId: MaterialSlotId) => {
-    setSelectedMaterialTemplates((current) => {
-      const next = { ...current };
-      delete next[slotId];
-      return next;
-    });
-    syncMaterialGroup(slotId, []);
+    const nextSelections = { ...selectedMaterialTemplates };
+    delete nextSelections[slotId];
+    setSelectedMaterialTemplates(nextSelections);
+    syncMaterialGroup(nextSelections);
   };
 
   const toggleObjectSlot = (slotId: ObjectSlotId) => {
@@ -454,35 +457,41 @@ export default function LibrarySidebar({
       ? currentTemplates.filter((item) => item.id !== template.id)
       : [...currentTemplates, template];
 
-    setSelectedObjectTemplates((current) => ({
-      ...current,
+    const nextSelections = {
+      ...selectedObjectTemplates,
       [slotId]: nextTemplates,
-    }));
+    };
 
-    const slotLabel = OBJECT_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Object";
+    setSelectedObjectTemplates(nextSelections);
+
+    const children = OBJECT_SLOTS.flatMap((slot) => {
+      const slotLabel = slot.label;
+      return (nextSelections[slot.id] ?? []).map((item) => buildPresetChild(slotLabel, item));
+    });
     onUpsertPresetGroup({
       category: "object",
       title: "Object",
-      children: nextTemplates.map((item) => buildPresetChild(slotLabel, item)),
+      children,
       replaceAllChildren: true,
     });
-    onToast(`${slotLabel}: ${nextTemplates.length} preset${nextTemplates.length === 1 ? "" : "s"}`);
+    onToast(`Object: ${children.length} preset${children.length === 1 ? "" : "s"}`);
   };
 
   const clearObjectTemplate = (slotId: ObjectSlotId) => {
-    setSelectedObjectTemplates((current) => {
-      const next = { ...current };
-      delete next[slotId];
-      return next;
+    const nextSelections = { ...selectedObjectTemplates };
+    delete nextSelections[slotId];
+    setSelectedObjectTemplates(nextSelections);
+    const children = OBJECT_SLOTS.flatMap((slot) => {
+      const slotLabel = slot.label;
+      return (nextSelections[slot.id] ?? []).map((item) => buildPresetChild(slotLabel, item));
     });
-    const slotLabel = OBJECT_SLOTS.find((slot) => slot.id === slotId)?.label ?? "Object";
     onUpsertPresetGroup({
       category: "object",
       title: "Object",
-      children: [],
+      children,
       replaceAllChildren: true,
     });
-    onToast(`${slotLabel}: cleared`);
+    onToast(`Object: ${children.length} preset${children.length === 1 ? "" : "s"}`);
   };
 
   return (
