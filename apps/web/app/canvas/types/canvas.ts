@@ -252,6 +252,8 @@ export type CanvasEdge = {
   /** Which input port on the target node this edge connects to. */
   targetPortId: string;
   targetPresetChildId?: string | null;
+  /** Set when the source is a specific preset child thumbnail. */
+  sourcePresetChildId?: string | null;
   label: string;
   fromHandle?: ImageHandlePosition;
   toHandle?: ImageHandlePosition;

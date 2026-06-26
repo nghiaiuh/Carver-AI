@@ -474,6 +474,7 @@ export default function LibrarySidebar({
                   <button
                     key={slot.id}
                     type="button"
+                    data-flyout-trigger="true"
                     onClick={() => toggleEnvironmentSlot(slot.id)}
                     className={[
                       "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
@@ -541,6 +542,7 @@ export default function LibrarySidebar({
                   <button
                     key={slot.id}
                     type="button"
+                    data-flyout-trigger="true"
                     onClick={() => toggleMaterialSlot(slot.id)}
                     className={[
                       "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
@@ -774,6 +776,7 @@ function ReferenceFlyout({
   onSelectTemplate: (template: ReferenceTemplate) => void;
   onClose: () => void;
 }) {
+  const flyoutRef = useRef<HTMLElement>(null);
   const tabs: Array<{ id: ReferenceTabId; label: string }> = [
     { id: "presets", label: "Presets" },
     { id: "custom", label: "Custom" },
@@ -781,6 +784,24 @@ function ReferenceFlyout({
   ];
   const [isScrollbarVisible, setIsScrollbarVisible] = useState(false);
   const scrollbarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!flyoutRef.current) return;
+      const target = event.target as HTMLElement | null;
+      // Do not close if clicking on a slot button (let the button handle the toggle)
+      if (target?.closest('[data-flyout-trigger="true"]')) return;
+      // Close if clicking outside the flyout
+      if (!flyoutRef.current.contains(target)) {
+        onClose();
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [onClose]);
 
   useEffect(() => {
     return () => {
@@ -803,7 +824,7 @@ function ReferenceFlyout({
   };
 
   return (
-    <aside className="absolute left-full top-0 z-[90] flex h-[calc(36rem-3px)] w-[304px] min-h-0 flex-col overflow-hidden border-l border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-text)]">
+    <aside ref={flyoutRef} className="absolute left-full top-0 z-[90] flex h-[calc(36rem-3px)] w-[304px] min-h-0 flex-col overflow-hidden border-l border-[var(--canvas-theme-border)] bg-[#F5F5F5] text-[var(--canvas-theme-text)]">
       <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-4">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">{slotLabel}</p>

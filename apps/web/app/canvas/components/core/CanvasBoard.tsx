@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Flow: Renders one interactive canvas workspace component.
  * 1. Receive canvas state and callbacks from the workspace.
  * 2. Render the focused control, overlay, or board UI.
@@ -41,6 +41,7 @@ import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils
 import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosition } from "./imageGraph";
 import {
   buildPresetSourceImage,
+  getPresetChildRightAnchor,
   getPresetGroupNodeSize,
   isPresetGroupNode,
   resolvePresetGroupDropTarget,
@@ -490,7 +491,14 @@ export default function CanvasBoard({
   const [penEraseRedoStack, setPenEraseRedoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
 
   // -- Edge Creation State
-  const [draftEdge, setDraftEdge] = useState<{ sourceId: string; sourceHandle: ImageHandlePosition; targetX: number; targetY: number } | null>(null);
+  const [draftEdge, setDraftEdge] = useState<{
+    sourceId: string;
+    sourceHandle: ImageHandlePosition;
+    targetX: number;
+    targetY: number;
+    /** Set when the connection originates from a preset child thumbnail */
+    sourcePresetChildId?: string;
+  } | null>(null);
   const [hoveredConnectionTargetId, setHoveredConnectionTargetId] = useState<string | null>(null);
   const [hoveredPresetChildId, setHoveredPresetChildId] = useState<string | null>(null);
 
@@ -955,6 +963,34 @@ export default function CanvasBoard({
     [isResizingPanel, nodes],
   );
 
+  /**
+   * Initiates a connection drag directly from a preset child thumbnail.
+   * The draft line starts from the right-center anchor of that child's thumbnail rect.
+   */
+  const handlePresetChildConnectionStart = useCallback(
+    (nodeId: string, childId: string, event: React.PointerEvent<HTMLElement>) => {
+      if (isResizingPanel) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const sourceNode = nodes.find((n) => n.id === nodeId);
+      if (!sourceNode || !isPresetGroupNode(sourceNode)) return;
+
+      const anchor = getPresetChildRightAnchor(sourceNode, childId);
+      if (!anchor) return;
+
+      setDraftEdge({
+        sourceId: nodeId,
+        sourceHandle: "right",
+        targetX: anchor.x,
+        targetY: anchor.y,
+        sourcePresetChildId: childId,
+      });
+      setHoveredConnectionTargetId(null);
+    },
+    [isResizingPanel, nodes],
+  );
+
   // ── Edge Draft logic ──────────────────────────────────────────────────────
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (isRegionEditing) return;
@@ -1198,12 +1234,23 @@ export default function CanvasBoard({
         if (targetNode) {
           const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
           const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
-          // Rule: only 1 connection line between any 2 images (check both directions)
-          const edgeExists = edges.some(
-            (edge) =>
-              (edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id) ||
-              (edge.sourceId === targetNode.id && edge.targetId === draftEdge.sourceId),
-          );
+
+          // Duplicate check:
+          // - If originating from a specific preset child → allow multiple connections from the
+          //   same group node but not from the same child to the same target.
+          // - Otherwise → 1 connection between any 2 nodes (existing behaviour).
+          const edgeExists = draftEdge.sourcePresetChildId
+            ? edges.some(
+                (edge) =>
+                  edge.sourceId === draftEdge.sourceId &&
+                  edge.sourcePresetChildId === draftEdge.sourcePresetChildId &&
+                  edge.targetId === targetNode.id,
+              )
+            : edges.some(
+                (edge) =>
+                  (edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id) ||
+                  (edge.sourceId === targetNode.id && edge.targetId === draftEdge.sourceId),
+              );
 
           if (edgeExists) {
             onToast("These two images are already connected");
@@ -1225,6 +1272,8 @@ export default function CanvasBoard({
               role,
               label: role.replace("_reference", "").replaceAll("_", " "),
               createdAt: new Date().toISOString(),
+              // Store which child originated this edge so CanvasEdges can anchor correctly
+              ...(draftEdge.sourcePresetChildId ? { sourcePresetChildId: draftEdge.sourcePresetChildId } : {}),
             };
             onEdgesChange(prev => [...prev, newEdge]);
             setMarqueeSelectedNodeIds(null);
@@ -1997,6 +2046,7 @@ export default function CanvasBoard({
               onMovePresetChild={onMovePresetChild}
               onDragStart={handleNodePointerDown}
               onStartConnection={handleConnectionHandlePointerDown}
+              onStartChildConnection={handlePresetChildConnectionStart}
               onSelectContextMenu={(id, x, y) => {
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });

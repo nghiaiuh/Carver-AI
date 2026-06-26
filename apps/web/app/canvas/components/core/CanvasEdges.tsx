@@ -11,7 +11,7 @@ import React from "react";
 import type { CanvasNode, CanvasEdge } from "../../types/canvas";
 import { getVisibleInputPorts } from "../../types/canvas";
 import { buildBezierPath, getImageHandlePoint, getInputPortHandlePoint } from "./imageGraph";
-import { getPresetChildAnchor, isPresetGroupNode } from "../../utils/presetGroup";
+import { getPresetChildAnchor, getPresetChildRightAnchor, isPresetGroupNode } from "../../utils/presetGroup";
 
 type CanvasEdgesProps = {
   nodes: CanvasNode[];
@@ -26,6 +26,8 @@ type CanvasEdgesProps = {
     targetY: number;
     snappedPortId?: string | null;
     snappedNodeId?: string | null;
+    /** When the drag started from a preset child thumbnail */
+    sourcePresetChildId?: string;
   } | null;
 };
 
@@ -66,10 +68,19 @@ export default function CanvasEdges({
   };
 
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible" }}>
+    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible", zIndex: 10 }}>
       {/* Render established edges */}
       {edges.map((edge) => {
-        const sourceCenter = getSourceAnchor(edge.sourceId, edge.fromHandle ?? "right");
+        let sourceCenter: { x: number; y: number } | null = null;
+        if (edge.sourcePresetChildId) {
+          const sourceNode = nodes.find((n) => n.id === edge.sourceId);
+          if (sourceNode && isPresetGroupNode(sourceNode)) {
+            sourceCenter = getPresetChildRightAnchor(sourceNode, edge.sourcePresetChildId);
+          }
+        }
+        if (!sourceCenter) {
+          sourceCenter = getSourceAnchor(edge.sourceId, edge.fromHandle ?? "right");
+        }
         const targetCenter = getTargetPortAnchor(edge.targetId, edge.targetPortId);
         
         if (!sourceCenter || !targetCenter) return null;
@@ -125,7 +136,20 @@ export default function CanvasEdges({
 
       {/* Render draft edge if dragging */}
       {draftEdge && (() => {
-        const sourceCenter = getSourceAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
+        // Resolve source anchor: preset child right-center OR generic node handle
+        let sourceCenter: { x: number; y: number } | null = null;
+
+        if (draftEdge.sourcePresetChildId) {
+          const sourceNode = nodes.find((n) => n.id === draftEdge.sourceId);
+          if (sourceNode && isPresetGroupNode(sourceNode)) {
+            sourceCenter = getPresetChildRightAnchor(sourceNode, draftEdge.sourcePresetChildId);
+          }
+        }
+
+        if (!sourceCenter) {
+          sourceCenter = getSourceAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
+        }
+
         if (!sourceCenter) return null;
 
         // If we have a snapped port, use its anchor; otherwise follow cursor

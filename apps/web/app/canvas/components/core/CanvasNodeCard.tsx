@@ -136,7 +136,6 @@ export default function CanvasNodeCard({
 }: CanvasNodeCardProps) {
   const isOutput = node.role === "output";
   const isActiveNode = node.id === activeNodeId;
-  const uiScale = 1 / viewportZoom;
   const objectScale = node.scale ?? 1;
   const displayWidth = node.width * objectScale;
   const displayHeight = node.height * objectScale;
@@ -156,7 +155,8 @@ export default function CanvasNodeCard({
         left: node.x,
         top: node.y,
         width: displayWidth,
-        zIndex: selected ? 80 : 10,
+        height: displayHeight,
+        zIndex: selected ? 80 : 15,
       }}
       onPointerDown={(e) => {
         // Prevent canvas pan and suppress browser text-selection on header/toolbar
@@ -326,11 +326,7 @@ export default function CanvasNodeCard({
 
         <div
           className="px-1 pb-1 text-center"
-          style={{
-            marginTop: `${12 * uiScale}px`,
-            transform: `scale(${uiScale})`,
-            transformOrigin: "top center",
-          }}
+          style={{ marginTop: "12px" }}
         >
           <h3 className="text-sm font-black text-[var(--canvas-theme-text)]">{node.title}</h3>
           {isOutput ? (
