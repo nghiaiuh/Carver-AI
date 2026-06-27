@@ -561,7 +561,7 @@ export default function LibrarySidebar({
 
   const renderSlotGrid = (slots: SlotConfig[], categoryId: PresetGroupCategory) => {
     return (
-      <div className="grid grid-cols-3 gap-2">
+      <div className={categoryId === "environment" ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>
         {slots.map((slot) => {
           const selectedForSlot = (selectedTemplates[categoryId] ?? {})[slot.id] ?? [];
           const selectedTemplate = selectedForSlot[0] ?? null;
@@ -637,7 +637,7 @@ export default function LibrarySidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,transparent,rgba(17,24,39,0.015))]">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FFFFFF]">
           {PRESET_STRUCTURE.map((section) => (
             <AccordionSection
               key={section.id}
@@ -766,12 +766,12 @@ function ReferenceFlyout({
   return (
     <section
       ref={flyoutRef}
-      className="absolute bottom-0 left-full top-0 z-[9999] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_30px_80px_var(--canvas-theme-shadow)] backdrop-blur-xl transition-transform"
+      className="absolute bottom-0 left-full top-0 z-[9999] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[var(--canvas-theme-border)] bg-[#F5F5F5] shadow-[0_30px_80px_var(--canvas-theme-shadow)] backdrop-blur-0 transition-transform"
       style={{
         boxShadow: "20px 0 25px -5px rgb(0 0 0 / 0.1), 8px 0 10px -6px rgb(0 0 0 / 0.1)",
       }}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--canvas-theme-border)] bg-transparent px-4 py-3">
         <h3 className="text-sm font-semibold text-[var(--canvas-theme-text)]">{translateCanvasLabel(slotLabel, language)}</h3>
         <button
           type="button"
@@ -782,7 +782,7 @@ function ReferenceFlyout({
         </button>
       </div>
 
-      <div className="shrink-0 border-b border-[var(--canvas-theme-border)] px-4 pt-3">
+      <div className="shrink-0 border-b border-[var(--canvas-theme-border)] bg-transparent px-4 pt-3">
         <div className="flex gap-4">
           {tabs.map((tab) => (
             <button
@@ -833,7 +833,7 @@ function ReferenceFlyout({
                     alt={template.label}
                     className="absolute inset-0 h-full w-full object-cover"
                   />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6">
+                  <div className="absolute inset-x-0 bottom-0 bg-transparent p-2 pt-6">
                     <p className="text-[10px] font-medium text-white">{template.label}</p>
                   </div>
                   {isSelected ? (

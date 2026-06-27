@@ -45,6 +45,13 @@ type PromptAttachment = {
   id: string;
   name: string;
   url: string;
+  dataUrl: string;
+};
+
+type ChatInputImage = {
+  imageUrl: string;
+  label: string;
+  source: "attachment" | "canvas-target" | "canvas-reference" | "preset-reference";
 };
 
 type ChatMessage = {
@@ -99,7 +106,14 @@ function buildPromptContent(params: {
   connectedImageReferences: CanvasGenerationImageReference[];
   connectedPresetReferences: CanvasGenerationPresetReference[];
 }) {
-  const trimmedPrompt = params.prompt.trim();
+  const imageCount =
+    params.attachments.length +
+    (params.targetTitle ? 1 : 0) +
+    params.connectedImageReferences.length +
+    params.connectedPresetReferences.length;
+  const trimmedPrompt =
+    params.prompt.trim() ||
+    (imageCount > 0 ? "Describe these image references for landscape design context." : "");
   const canvasTargetSummary = params.targetTitle
     ? `Canvas linked image: ${params.targetTitle}`
     : "";
@@ -126,6 +140,66 @@ function buildPromptContent(params: {
     .filter(Boolean)
     .join("\n\n")
     .trim();
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Unable to read image attachment."));
+    };
+    reader.onerror = () => reject(new Error("Unable to read image attachment."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Unable to read image blob."));
+    };
+    reader.onerror = () => reject(new Error("Unable to read image blob."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function resolveImageUrlForChat(imageUrl: string) {
+  if (imageUrl.startsWith("data:")) {
+    return imageUrl;
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const normalizedUrl = new URL(imageUrl, window.location.origin);
+      const isSameOrigin = normalizedUrl.origin === window.location.origin;
+
+      if (imageUrl.startsWith("blob:") || isSameOrigin) {
+        const response = await fetch(normalizedUrl.toString());
+        if (!response.ok) {
+          throw new Error("Unable to load image reference.");
+        }
+
+        return blobToDataUrl(await response.blob());
+      }
+
+      return normalizedUrl.toString();
+    } catch {
+      return imageUrl;
+    }
+  }
+
+  return imageUrl;
 }
 
 export default function EditorRightPanel({
@@ -237,17 +311,22 @@ export default function EditorRightPanel({
     };
   }, []);
 
-  const addAttachments = (files: File[] | FileList) => {
+  const addAttachments = async (files: File[] | FileList) => {
     const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
 
-    setAttachments((prev) => [
-      ...prev,
-      ...imageFiles.map((file) => ({
+    const nextAttachments = await Promise.all(
+      imageFiles.map(async (file) => ({
         id: `att_${Date.now()}_${file.name || "pasted"}`,
         name: file.name || "Pasted Image",
         url: URL.createObjectURL(file),
+        dataUrl: await fileToDataUrl(file),
       })),
+    );
+
+    setAttachments((prev) => [
+      ...prev,
+      ...nextAttachments,
     ]);
     onToast(`${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"} attached`);
   };
@@ -354,6 +433,52 @@ export default function EditorRightPanel({
     });
     if (!content) return;
 
+    const imageMap = new Map<string, ChatInputImage>();
+
+    attachments.forEach((attachment) => {
+      imageMap.set(`attachment:${attachment.id}`, {
+        imageUrl: attachment.dataUrl,
+        label: attachment.name,
+        source: "attachment",
+      });
+    });
+
+    const imageCandidates: ChatInputImage[] = [
+      ...[...imageMap.values()],
+      ...(targetImageUrl
+        ? [
+            {
+              imageUrl: targetImageUrl,
+              label: targetTitle ?? "Selected canvas image",
+              source: "canvas-target" as const,
+            },
+          ]
+        : []),
+      ...connectedImageReferences.map((reference) => ({
+        imageUrl: reference.imageUrl,
+        label: reference.title,
+        source: "canvas-reference" as const,
+      })),
+      ...connectedPresetReferences.map((reference) => ({
+        imageUrl: reference.imageSrc,
+        label: formatPresetReferenceLabel(reference),
+        source: "preset-reference" as const,
+      })),
+    ];
+
+    const resolvedImages = await Promise.all(
+      imageCandidates.map(async (image) => ({
+        ...image,
+        imageUrl: await resolveImageUrlForChat(image.imageUrl),
+      })),
+    );
+
+    const images = Array.from(
+      new Map(
+        resolvedImages.map((image) => [`${image.source}:${image.imageUrl}`, image]),
+      ).values(),
+    );
+
     const optimisticUserMessage: ChatMessage = {
       id: `local_user_${Date.now()}`,
       role: "user",
@@ -378,6 +503,7 @@ export default function EditorRightPanel({
           canvasId,
           projectId,
           content,
+          images,
         }),
       });
 
@@ -510,7 +636,9 @@ export default function EditorRightPanel({
           multiple
           className="hidden"
           onChange={(event) => {
-            if (event.target.files) addAttachments(event.target.files);
+            if (event.target.files) {
+              void addAttachments(event.target.files);
+            }
             event.target.value = "";
           }}
         />
@@ -610,7 +738,7 @@ export default function EditorRightPanel({
 
                     if (files.length > 0) {
                       event.preventDefault();
-                      addAttachments(files);
+                      void addAttachments(files);
                       return;
                     }
                   }}
@@ -638,7 +766,7 @@ export default function EditorRightPanel({
               </div>
             ) : attachments.length > 0 ? (
               <p className="mb-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-                Attached image names will be included with your prompt. Full image understanding can be added later.
+                Attached images will be sent to Carver AI as real image inputs for analysis.
               </p>
             ) : null}
 

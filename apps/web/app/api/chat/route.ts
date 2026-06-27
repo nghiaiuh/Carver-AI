@@ -8,7 +8,37 @@ import {
   getChatHistoryForCanvas,
   type ChatHistoryRecord,
 } from "../../../lib/server/chatHistory";
-import { createChatCompletion } from "../../../lib/server/openaiChat";
+import { createChatCompletion, type ChatInputImage } from "../../../lib/server/openaiChat";
+
+function readChatInputImages(body: Record<string, unknown>) {
+  const value = body.images;
+  if (!Array.isArray(value)) {
+    return [] as ChatInputImage[];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const imageUrl = typeof candidate.imageUrl === "string" ? candidate.imageUrl.trim() : "";
+    const label = typeof candidate.label === "string" ? candidate.label.trim() : undefined;
+    const source =
+      candidate.source === "attachment" ||
+      candidate.source === "canvas-target" ||
+      candidate.source === "canvas-reference" ||
+      candidate.source === "preset-reference"
+        ? candidate.source
+        : undefined;
+
+    if (!imageUrl) {
+      return [];
+    }
+
+    return [{ imageUrl, label, source } satisfies ChatInputImage];
+  });
+}
 
 function getCanvasIdFromUrl(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -33,19 +63,24 @@ export async function POST(request: Request) {
   const content = stringValue(body, "content");
   const canvasId = stringValue(body, "canvasId") ?? "canvas-main";
   const projectId = stringValue(body, "projectId");
+  const images = readChatInputImages(body);
 
-  if (!content) {
-    return badRequest("content is required");
+  if (!content && images.length === 0) {
+    return badRequest("content or images are required");
   }
 
   const history = await getChatHistoryForCanvas(canvasId, projectId);
 
   try {
+    const messageContent =
+      content ?? "Describe these image references for landscape design context.";
+
     const assistantContent = await createChatCompletion({
-      message: content,
+      message: messageContent,
       history,
       canvasId,
       projectId,
+      images,
     });
 
     const createdAt = new Date().toISOString();
@@ -54,7 +89,7 @@ export async function POST(request: Request) {
       canvasId,
       projectId,
       role: "user",
-      content,
+      content: messageContent,
       createdAt,
     };
     const assistantMessage: ChatHistoryRecord = {

@@ -26,6 +26,30 @@ type OpenAIResponse = {
   };
 };
 
+type OpenAIInputTextBlock = {
+  type: "input_text";
+  text: string;
+};
+
+type OpenAIInputImageBlock = {
+  type: "input_image";
+  image_url: string;
+};
+
+type OpenAIOutputTextBlock = {
+  type: "output_text";
+  text: string;
+};
+
+type OpenAIInputBlock = OpenAIInputTextBlock | OpenAIInputImageBlock;
+type OpenAIAssistantBlock = OpenAIOutputTextBlock;
+
+export type ChatInputImage = {
+  imageUrl: string;
+  label?: string;
+  source?: "attachment" | "canvas-target" | "canvas-reference" | "preset-reference";
+};
+
 function getAssistantText(payload: OpenAIResponse) {
   if (typeof payload.output_text === "string" && payload.output_text.trim().length > 0) {
     return payload.output_text.trim();
@@ -44,10 +68,7 @@ export async function createOpenAITextResponse(params: {
   model?: string;
   input: Array<{
     role: "system" | "user" | "assistant";
-    content: Array<{
-      type: "input_text";
-      text: string;
-    }>;
+    content: OpenAIInputBlock[] | OpenAIAssistantBlock[];
   }>;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -88,13 +109,11 @@ export async function createChatCompletion(params: {
   history: ChatHistoryRecord[];
   canvasId?: string;
   projectId?: string;
+  images?: ChatInputImage[];
 }) {
   const conversation: Array<{
     role: "system" | "user" | "assistant";
-    content: Array<{
-      type: "input_text";
-      text: string;
-    }>;
+    content: OpenAIInputBlock[] | OpenAIAssistantBlock[];
   }> = [
     {
       role: "system",
@@ -108,18 +127,23 @@ export async function createChatCompletion(params: {
     ...params.history.slice(-16).map(
       (entry): {
         role: "user" | "assistant";
-        content: Array<{
-          type: "input_text";
-          text: string;
-        }>;
+        content: OpenAIInputBlock[] | OpenAIAssistantBlock[];
       } => ({
         role: entry.role,
-        content: [
-          {
-            type: "input_text",
-            text: entry.content,
-          },
-        ],
+        content:
+          entry.role === "assistant"
+            ? [
+                {
+                  type: "output_text",
+                  text: entry.content,
+                },
+              ]
+            : [
+                {
+                  type: "input_text",
+                  text: entry.content,
+                },
+              ],
       }),
     ),
     {
@@ -129,6 +153,12 @@ export async function createChatCompletion(params: {
           type: "input_text",
           text: params.message,
         },
+        ...(params.images ?? []).map(
+          (image): OpenAIInputImageBlock => ({
+            type: "input_image",
+            image_url: image.imageUrl,
+          }),
+        ),
       ],
     },
   ];
