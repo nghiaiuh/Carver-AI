@@ -32,8 +32,8 @@ export default function ResizeHandle({
     >
       <div
         className={[
-          "mx-auto h-full w-px transition-colors",
-          isResizing ? "bg-[#3B82F6]" : "bg-transparent hover:bg-[#60A5FA]/70",
+          "mx-auto h-full w-px rounded-full transition-all",
+          isResizing ? "bg-[#2563EB] shadow-[0_0_18px_rgba(37,99,235,0.35)]" : "bg-transparent hover:w-[3px] hover:bg-[#60A5FA]/70",
         ].join(" ")}
       />
     </div>

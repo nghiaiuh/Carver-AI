@@ -5,7 +5,7 @@
  * 3. Let web and worker speak the same job language.
  */
 
-import type { CanvasSnapshotDocument } from "./snapshot";
+import type { CanvasReferenceRole, CanvasSnapshotDocument } from "./snapshot";
 
 export type CarverJobKind =
   | "generate_concept"
@@ -33,6 +33,41 @@ export type CarverEditBrief = {
   lockSummaries: string[];
 };
 
+export type CanvasGenerationTarget = {
+  nodeId: string;
+  title: string;
+  imageUrl: string;
+  role: string;
+  prompt: string | null;
+};
+
+export type CanvasGenerationImageReference = {
+  nodeId: string;
+  title: string;
+  imageUrl: string;
+  role: CanvasReferenceRole | string;
+  sourcePresetChildId?: string | null;
+};
+
+export type CanvasGenerationPresetReference = {
+  nodeId: string;
+  category: string;
+  childId?: string | null;
+  slot?: string | null;
+  label: string;
+  imageSrc: string;
+  role: CanvasReferenceRole | string;
+};
+
+export type CanvasGenerationContext = {
+  target: CanvasGenerationTarget;
+  imageReferences: CanvasGenerationImageReference[];
+  presetReferences: CanvasGenerationPresetReference[];
+  preserveRules: string[];
+  referenceSummary: string;
+  connectionSummary: string;
+};
+
 export type CreateAiJobRequest = {
   projectId: string;
   jobType: CarverJobKind;
@@ -42,6 +77,8 @@ export type CreateAiJobRequest = {
   promptMode?: "auto" | "review" | "expert";
   referenceAssetIds?: string[];
   selection?: Partial<CanvasSnapshotDocument["selection"]>;
+  targetNodeId?: string;
+  canvasGraphContext?: CanvasGenerationContext;
 };
 
 export type CarverAiJobPayload = {
@@ -55,4 +92,6 @@ export type CarverAiJobPayload = {
   promptMode: "auto" | "review" | "expert";
   snapshot: CanvasSnapshotDocument;
   referenceAssetIds: string[];
+  targetNodeId?: string;
+  canvasGraphContext?: CanvasGenerationContext;
 };

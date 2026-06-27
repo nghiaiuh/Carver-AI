@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
@@ -32,6 +32,7 @@ import {
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
+import { buildCanvasGenerationContext, buildCanvasSnapshotWithGraph } from "../utils/generationContext";
 import type {
   AddedObject,
   CanvasEdge,
@@ -124,6 +125,7 @@ export function useCanvasWorkspace() {
 
   // ── Generation / AI ─────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
+  const [activeGenerationTargetId, setActiveGenerationTargetId] = useState<string | null>(null);
   const [mockConcepts, setMockConcepts] = useState<string[]>([]);
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
@@ -176,6 +178,20 @@ export function useCanvasWorkspace() {
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
   const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
+  const activeGenerationTarget =
+    activeGenerationTargetId
+      ? nodes.find((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node)) ?? null
+      : null;
+  const activeGenerationContext =
+    activeGenerationTarget
+      ? buildCanvasGenerationContext(activeGenerationTarget.id, nodes, edges, promptText)
+      : null;
+
+  useEffect(() => {
+    if (!activeGenerationTargetId) return;
+    if (nodes.some((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node))) return;
+    setActiveGenerationTargetId(null);
+  }, [activeGenerationTargetId, nodes]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -211,6 +227,17 @@ export function useCanvasWorkspace() {
     if (item.type !== "sketchLine") {
       setSelectedSketchLineIds([]);
     }
+
+    if (item.type === "node" || item.type === "image") {
+      const nextNode = nodes.find((node) => node.id === item.id);
+      if (nextNode && !isPresetGroupNode(nextNode)) {
+        setActiveGenerationTargetId(nextNode.id);
+        setPromptText(nextNode.prompt ?? "");
+        return;
+      }
+    }
+
+    setActiveGenerationTargetId(null);
   };
 
   const addPenStroke = (stroke: PenStrokeObject) => {
@@ -482,7 +509,20 @@ export function useCanvasWorkspace() {
     return { targetSummary, referenceSummary };
   };
 
-  const generateConcept = () => {
+  const updatePromptText = (value: string) => {
+    setPromptText(value);
+    if (!activeGenerationTargetId) return;
+
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === activeGenerationTargetId
+          ? { ...node, prompt: value }
+          : node,
+      ),
+    );
+  };
+
+  const generateConcept = async () => {
     if (activeTool === "region" && !selectedNode) {
       showToast("Select an image first");
       return;
@@ -498,7 +538,32 @@ export function useCanvasWorkspace() {
       return;
     }
 
-    const generationContext = buildGenerationContext();
+    const targetNode =
+      activeGenerationTargetId
+        ? nodes.find((node) => node.id === activeGenerationTargetId) ?? null
+        : null;
+
+    if (!targetNode) {
+      showToast("Select a target image first");
+      return;
+    }
+
+    if (isPresetGroupNode(targetNode)) {
+      showToast("Preset groups cannot be generated directly");
+      return;
+    }
+
+    const generationContext = buildCanvasGenerationContext(
+      targetNode.id,
+      nodes,
+      edges,
+      promptText,
+    );
+    if (!generationContext) {
+      showToast("Unable to build generation context");
+      return;
+    }
+
     const regionPayload =
       activeTool === "region" && selectedNode?.regionMask
         ? {
@@ -510,36 +575,77 @@ export function useCanvasWorkspace() {
 
     setIsGeneratingRegion(activeTool === "region");
     setMockConcepts([]);
-    setNodes((items) =>
-      items.map((node) =>
-        node.role === "output"
-          ? {
-              ...node,
-              prompt: [
-                promptText || "Canvas generation request",
-                generationContext.targetSummary,
-                generationContext.referenceSummary,
-                regionPayload
-                  ? `Region edit payload: ${JSON.stringify({
-                      imageId: regionPayload.imageId,
-                      prompt: regionPayload.prompt,
-                      mask: {
-                        width: regionPayload.mask.width,
-                        height: regionPayload.mask.height,
-                        selectionRatio: Number(regionPayload.mask.selectionRatio.toFixed(4)),
-                      },
-                    })}`
-                  : "Region edit target: none.",
-              ].join("\n"),
-            }
-          : node,
-      ),
-    );
-    window.setTimeout(() => {
+    try {
+      const snapshot = buildCanvasSnapshotWithGraph({
+        nodes,
+        edges,
+        activeGenerationTargetId,
+      });
+      const payload = {
+        prompt: promptText || generationContext.target.prompt || "Canvas generation request",
+        rawPrompt: promptText || generationContext.target.prompt || "Canvas generation request",
+        generationMode: "image_editing",
+        canvasGraphContext: generationContext,
+        targetNodeId: targetNode.id,
+        snapshot,
+        imageContext: {
+          directEditTarget: generationContext.target,
+          imageReferences: generationContext.imageReferences,
+          presetReferences: generationContext.presetReferences,
+          regionPayload,
+        },
+        referenceImages: [
+          ...generationContext.imageReferences.map((reference) => ({
+            label: reference.title,
+            role: reference.role,
+            url: reference.imageUrl,
+          })),
+          ...generationContext.presetReferences.map((reference) => ({
+            label: reference.label,
+            role: reference.role,
+            url: reference.imageSrc,
+          })),
+        ],
+        projectContext: {
+          connectionSummary: generationContext.connectionSummary,
+          preserveRules: generationContext.preserveRules,
+        },
+      };
+
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        promptMeta?: { enhancedPromptVisible?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to generate from current canvas context.");
+      }
+
+      setNodes((items) =>
+        items.map((node) =>
+          node.role === "output"
+            ? {
+                ...node,
+                prompt: result.promptMeta?.enhancedPromptVisible ?? payload.prompt,
+              }
+            : node,
+        ),
+      );
       setMockConcepts(["Concept A", "Concept B", "Concept C"]);
-      setIsGeneratingRegion(false);
       animateIn(".output-thumb");
-    }, 850);
+      showToast("Generation context prepared");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to generate from current canvas context.");
+    } finally {
+      setIsGeneratingRegion(false);
+    }
   };
 
   const generateAngles = () => {
@@ -662,6 +768,7 @@ export function useCanvasWorkspace() {
       nodes,
       edges,
       promptText,
+      activeGenerationTargetId,
       mockConcepts,
       outputAngles,
       activeNodeId,
@@ -684,6 +791,8 @@ export function useCanvasWorkspace() {
       canvasThemeStyle,
       isResizingPanel,
       selectedNode,
+      activeGenerationTarget,
+      activeGenerationContext,
     },
 
     // ── Modal visibility ──────────────────────────────────────────────────────
@@ -749,7 +858,8 @@ export function useCanvasWorkspace() {
       setActiveNodeId,
 
       // Prompt
-      setPromptText,
+      setPromptText: updatePromptText,
+      setActiveGenerationTargetId,
 
       // Generation
       generateConcept,

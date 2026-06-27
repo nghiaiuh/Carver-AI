@@ -574,11 +574,11 @@ export default function LibrarySidebar({
               data-flyout-trigger="true"
               onClick={() => toggleSlot(slot.id)}
               className={[
-                "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
+                "group relative aspect-square overflow-hidden rounded-[18px] border text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition",
                 selectedTemplate
-                  ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]"
-                  : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]",
-                isActive ? "ring-2 ring-[var(--canvas-theme-active)]/40" : "hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
+                  ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/92"
+                  : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]/88",
+                isActive ? "ring-2 ring-[var(--canvas-theme-active)]/18" : "hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
               ].join(" ")}
             >
               <div className="absolute inset-0 flex items-center justify-center px-2.5 text-center">
@@ -613,7 +613,7 @@ export default function LibrarySidebar({
   return (
     <div className="relative flex h-full w-full shrink-0 overflow-visible bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
       <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)]">
-        <div className="border-b border-[var(--canvas-theme-border)] px-4 py-4">
+        <div className="border-b border-[var(--canvas-theme-border)] px-4 py-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">
@@ -637,7 +637,7 @@ export default function LibrarySidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,transparent,rgba(17,24,39,0.015))]">
           {PRESET_STRUCTURE.map((section) => (
             <AccordionSection
               key={section.id}
@@ -691,11 +691,11 @@ function AccordionSection({
   children,
 }: AccordionSectionProps) {
   return (
-    <section className="border-b border-[var(--canvas-theme-border)]">
+    <section className="border-b border-[var(--canvas-theme-border)]/90">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-[var(--canvas-theme-hover)]"
+        className="flex w-full items-center gap-2 px-4 py-3.5 text-left transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Icon className="h-4 w-4 shrink-0 text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -709,7 +709,7 @@ function AccordionSection({
           aria-hidden="true"
         />
       </button>
-      {isOpen ? <div className="px-4 pb-5 pt-3">{children}</div> : null}
+      {isOpen ? <div className="px-4 pb-6 pt-4">{children}</div> : null}
     </section>
   );
 }
@@ -766,7 +766,7 @@ function ReferenceFlyout({
   return (
     <section
       ref={flyoutRef}
-      className="absolute bottom-0 left-full top-0 z-[9999] flex w-[320px] flex-col overflow-hidden rounded-r-xl border border-l-0 border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] shadow-2xl transition-transform"
+      className="absolute bottom-0 left-full top-0 z-[9999] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_30px_80px_var(--canvas-theme-shadow)] backdrop-blur-xl transition-transform"
       style={{
         boxShadow: "20px 0 25px -5px rgb(0 0 0 / 0.1), 8px 0 10px -6px rgb(0 0 0 / 0.1)",
       }}

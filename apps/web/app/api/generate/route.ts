@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { buildSnapshotAwareEditBrief } from "@carver/ai";
+import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
 import { coerceCanvasSnapshotDocument, isCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
@@ -38,6 +38,10 @@ export async function POST(request: Request) {
   const promptMode = promptModeValue(body.promptMode);
   const debugPrompt = body.debugPrompt === true;
   const snapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
+  const canvasGraphContext =
+    body.canvasGraphContext && typeof body.canvasGraphContext === "object" && !Array.isArray(body.canvasGraphContext)
+      ? body.canvasGraphContext
+      : undefined;
 
   const compiledPrompt = compileFinalPrompt({
     rawPrompt,
@@ -56,6 +60,13 @@ export async function POST(request: Request) {
         snapshot,
       })
     : undefined;
+  const connectedBrief =
+    snapshotAwareBrief && canvasGraphContext
+      ? buildConnectedGenerationBrief(
+          snapshotAwareBrief,
+          canvasGraphContext as Parameters<typeof buildConnectedGenerationBrief>[1],
+        )
+      : snapshotAwareBrief;
 
   const promptMeta = {
     userSubmittedPrompt: rawPrompt,
@@ -70,7 +81,8 @@ export async function POST(request: Request) {
     negativeConstraints: compiledPrompt.negativeConstraints,
     formulaUsed: compiledPrompt.formulaUsed,
     editBrief: compiledPrompt.editBrief,
-    snapshotAwareBrief,
+    snapshotAwareBrief: connectedBrief,
+    canvasGraphContext,
     shouldShowReview: compiledPrompt.shouldShowReview,
     ...(promptMode === "expert" || debugPrompt ? { enhancedPromptVisible: compiledPrompt.enhancedPrompt } : {}),
   };

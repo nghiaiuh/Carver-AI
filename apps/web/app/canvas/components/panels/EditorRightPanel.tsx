@@ -7,6 +7,10 @@
 
 "use client";
 
+import type {
+  CanvasGenerationImageReference,
+  CanvasGenerationPresetReference,
+} from "@carver/shared";
 import {
   ArrowRight,
   LoaderCircle,
@@ -24,8 +28,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type EditorRightPanelProps = {
   canvasId?: string;
   projectId?: string;
+  targetTitle?: string | null;
+  targetImageUrl?: string | null;
+  targetReferenceCount?: number;
+  targetPresetCount?: number;
+  connectedImageReferences?: CanvasGenerationImageReference[];
+  connectedPresetReferences?: CanvasGenerationPresetReference[];
   draft: string;
   onDraftChange: (value: string) => void;
+  onClearLinkedImage: () => void;
   onClose: () => void;
   onToast: (message: string) => void;
 };
@@ -73,21 +84,62 @@ type EnhancePromptResult = {
 
 const DEFAULT_CANVAS_ID = "canvas-main";
 
-function buildPromptContent(prompt: string, attachments: PromptAttachment[]) {
-  const trimmedPrompt = prompt.trim();
+function formatPresetReferenceLabel(reference: CanvasGenerationPresetReference) {
+  if (reference.slot?.trim()) {
+    return `${reference.label} (${reference.slot})`;
+  }
+
+  return `${reference.label} (${reference.category})`;
+}
+
+function buildPromptContent(params: {
+  prompt: string;
+  attachments: PromptAttachment[];
+  targetTitle?: string | null;
+  connectedImageReferences: CanvasGenerationImageReference[];
+  connectedPresetReferences: CanvasGenerationPresetReference[];
+}) {
+  const trimmedPrompt = params.prompt.trim();
+  const canvasTargetSummary = params.targetTitle
+    ? `Canvas linked image: ${params.targetTitle}`
+    : "";
+  const connectedImageSummary =
+    params.connectedImageReferences.length > 0
+      ? `Connected canvas image references: ${params.connectedImageReferences.map((reference) => reference.title).join(", ")}`
+      : "";
+  const connectedPresetSummary =
+    params.connectedPresetReferences.length > 0
+      ? `Connected preset references: ${params.connectedPresetReferences.map(formatPresetReferenceLabel).join(", ")}`
+      : "";
   const attachmentSummary =
-    attachments.length > 0
-      ? `Attached local image names: ${attachments.map((attachment) => attachment.name).join(", ")}`
+    params.attachments.length > 0
+      ? `Attached local image names: ${params.attachments.map((attachment) => attachment.name).join(", ")}`
       : "";
 
-  return [trimmedPrompt, attachmentSummary].filter(Boolean).join("\n\n").trim();
+  return [
+    trimmedPrompt,
+    canvasTargetSummary,
+    connectedImageSummary,
+    connectedPresetSummary,
+    attachmentSummary,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
 }
 
 export default function EditorRightPanel({
   canvasId = DEFAULT_CANVAS_ID,
   projectId,
+  targetTitle,
+  targetImageUrl,
+  targetReferenceCount = 0,
+  targetPresetCount = 0,
+  connectedImageReferences = [],
+  connectedPresetReferences = [],
   draft,
   onDraftChange,
+  onClearLinkedImage,
   onClose,
   onToast,
 }: EditorRightPanelProps) {
@@ -99,22 +151,24 @@ export default function EditorRightPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastOriginalPrompt, setLastOriginalPrompt] = useState<string | null>(null);
   const [enhanceMeta, setEnhanceMeta] = useState<EnhancePromptResult | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerInputRef = useRef<HTMLSpanElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<PromptAttachment[]>([]);
+  const hasCanvasLinkedImage = Boolean(targetImageUrl);
 
-  const canSend = useMemo(() => !isSending && (draft.trim().length > 0 || attachments.length > 0), [attachments.length, draft, isSending]);
+  const canSend = useMemo(
+    () => !isSending && (draft.trim().length > 0 || attachments.length > 0 || hasCanvasLinkedImage),
+    [attachments.length, draft, hasCanvasLinkedImage, isSending],
+  );
   const canEnhance = !isEnhancing && draft.trim().length > 0;
 
-  const autosize = () => {
-    const el = textareaRef.current;
+  useEffect(() => {
+    const el = composerInputRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  };
-
-  useEffect(() => autosize(), [draft]);
+    if (el.textContent === draft) return;
+    el.textContent = draft;
+  }, [draft]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -196,20 +250,6 @@ export default function EditorRightPanel({
       })),
     ]);
     onToast(`${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"} attached`);
-  };
-
-  const handlePromptPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const files: File[] = [];
-    Array.from(event.clipboardData.items).forEach((item) => {
-      if (!item.type.startsWith("image/")) return;
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    });
-
-    if (files.length === 0) return;
-
-    event.preventDefault();
-    addAttachments(files);
   };
 
   const removeAttachment = (attachmentId: string) => {
@@ -305,7 +345,13 @@ export default function EditorRightPanel({
   };
 
   const send = async () => {
-    const content = buildPromptContent(draft, attachments);
+    const content = buildPromptContent({
+      prompt: draft,
+      attachments,
+      targetTitle,
+      connectedImageReferences,
+      connectedPresetReferences,
+    });
     if (!content) return;
 
     const optimisticUserMessage: ChatMessage = {
@@ -387,7 +433,7 @@ export default function EditorRightPanel({
 
   return (
     <aside className="flex h-full w-full shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
-      <div className="flex h-12 items-center justify-between px-3">
+      <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-3">
         <h2 className="text-sm font-semibold tracking-[-0.02em]">AI Chat</h2>
         <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
           <IconButton label="New chat" icon={Plus} onClick={() => void clearChat()} />
@@ -396,6 +442,18 @@ export default function EditorRightPanel({
       </div>
 
       <div className="relative flex-1 overflow-y-auto px-4 pb-[164px] pt-5">
+        <div className="mb-4 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/88 px-3 py-3 text-xs text-[var(--canvas-theme-text-muted)] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">Generation target</p>
+          <p className="mt-1 text-sm font-semibold text-[var(--canvas-theme-text)]">
+            {targetTitle ?? "No image selected"}
+          </p>
+          <p className="mt-1">
+            {targetTitle
+              ? `${targetReferenceCount} image reference(s) / ${targetPresetCount} preset reference(s)`
+              : "Click an image on the canvas to bind this prompt to that target."}
+          </p>
+        </div>
+
         {historyLoading ? (
           <div className="grid h-full place-items-center">
             <div className="flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-sm text-[var(--canvas-theme-text-soft)]">
@@ -418,12 +476,12 @@ export default function EditorRightPanel({
               <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
                 <div
                   className={[
-                    "whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-6",
+                    "whitespace-pre-wrap rounded-[22px] px-4 py-3 text-[13px] leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]",
                     message.role === "user"
-                      ? "bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-text)]"
+                      ? "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text)]"
                       : message.status === "error"
                         ? "border border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]"
-                        : "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
+                        : "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 text-[var(--canvas-theme-text-soft)]",
                   ].join(" ")}
                 >
                   {message.content}
@@ -433,7 +491,7 @@ export default function EditorRightPanel({
 
             {isSending ? (
               <div className="mr-auto max-w-[92%]">
-                <div className="flex items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-panel)] px-4 py-3 text-[13px] leading-6 text-[var(--canvas-theme-text-soft)]">
+                <div className="flex items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 px-4 py-3 text-[13px] leading-6 text-[var(--canvas-theme-text-soft)] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                   Carver AI is thinking...
                 </div>
@@ -457,41 +515,109 @@ export default function EditorRightPanel({
           }}
         />
 
-        <div className="overflow-hidden rounded-[20px] bg-[var(--canvas-theme-surface-soft)] shadow-[0_2px_14px_var(--canvas-theme-shadow)]">
-          <div className="rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2.5">
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(event) => onDraftChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-              onPaste={handlePromptPaste}
-              placeholder="Describe what you want to design, preserve, or change..."
-              rows={3}
-              className="min-h-[72px] w-full resize-none bg-transparent text-sm leading-6 text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
-            />
+        <div className="overflow-hidden rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/72 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl">
+          <div className="rounded-[22px] bg-[var(--canvas-theme-surface-panel)]/92 px-3 py-3">
+            <div
+              className="flex min-h-[72px] flex-wrap items-start gap-0 text-sm leading-6"
+              onClick={() => composerInputRef.current?.focus()}
+            >
+              {targetImageUrl ? (
+                <button
+                  type="button"
+                  onClick={onClearLinkedImage}
+                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+                  title={targetTitle ?? "Selected canvas image"}
+                >
+                  <span className="relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-[4px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
+                    <Image
+                      src={targetImageUrl}
+                      alt={targetTitle ?? "Selected canvas image"}
+                      fill
+                      sizes="14px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </span>
+                  <span className="truncate leading-none">Image</span>
+                  <X className="h-3 w-3 shrink-0 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+                </button>
+              ) : null}
 
-            {attachments.length > 0 ? (
-              <div className="mb-2.5 flex gap-1.5 overflow-x-auto">
-                {attachments.map((attachment) => (
-                  <div key={attachment.id} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
-                    <Image src={attachment.url} alt={attachment.name} fill sizes="64px" className="object-cover" unoptimized />
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(attachment.id)}
-                      className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white"
-                      title="Remove image"
-                    >
-                      <X className="h-2.5 w-2.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
+              {attachments.map((attachment) => (
+                <button
+                  key={attachment.id}
+                  type="button"
+                  onClick={() => removeAttachment(attachment.id)}
+                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+                  title={attachment.name}
+                >
+                  <span className="relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-[4px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
+                    <Image
+                      src={attachment.url}
+                      alt={attachment.name}
+                      fill
+                      sizes="14px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </span>
+                  <span className="truncate leading-none">Image</span>
+                  <X className="h-3 w-3 shrink-0 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+                </button>
+              ))}
+
+              <div className="relative flex-1 min-w-0">
+                {!draft && !targetImageUrl && attachments.length === 0 ? (
+                  <span className="pointer-events-none absolute left-0 top-0 text-sm leading-6 text-[var(--canvas-theme-text-muted)]">
+                    Describe what you want to design, preserve, or change...
+                  </span>
+                ) : null}
+
+                <span
+                  ref={composerInputRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-multiline="true"
+                  onInput={(event) => onDraftChange(event.currentTarget.textContent ?? "")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Backspace" && draft.length === 0) {
+                      if (attachments.length > 0) {
+                        event.preventDefault();
+                        removeAttachment(attachments[attachments.length - 1]?.id ?? "");
+                        return;
+                      }
+
+                      if (targetImageUrl) {
+                        event.preventDefault();
+                        onClearLinkedImage();
+                        return;
+                      }
+                    }
+
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                  onPaste={(event) => {
+                    const files: File[] = [];
+                    Array.from(event.clipboardData.items).forEach((item) => {
+                      if (!item.type.startsWith("image/")) return;
+                      const file = item.getAsFile();
+                      if (file) files.push(file);
+                    });
+
+                    if (files.length > 0) {
+                      event.preventDefault();
+                      addAttachments(files);
+                      return;
+                    }
+                  }}
+                  className="block min-h-[24px] w-full whitespace-pre-wrap break-words bg-transparent text-sm leading-6 text-[var(--canvas-theme-text)] outline-none"
+                />
               </div>
-            ) : null}
+            </div>
 
             {errorMessage ? (
               <p className="mb-2 text-xs leading-5 text-[#B42318]">{errorMessage}</p>

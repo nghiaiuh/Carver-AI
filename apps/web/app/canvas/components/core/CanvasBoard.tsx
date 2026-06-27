@@ -83,6 +83,7 @@ type CanvasBoardProps = {
   onToast: (message: string) => void;
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
+  activeGenerationTargetId: string | null;
   activeNodeId: string;
   onSetActiveNode: (id: string) => void;
   canvasThemeColor: string;
@@ -355,6 +356,7 @@ export default function CanvasBoard({
   onToast,
   onNodesChange,
   onEdgesChange,
+  activeGenerationTargetId,
   activeNodeId,
   onSetActiveNode,
   canvasThemeColor,
@@ -1240,6 +1242,7 @@ export default function CanvasBoard({
         if (targetNode) {
           const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
           const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
+          const sourceIsPresetGroup = sourceNode ? isPresetGroupNode(sourceNode) : false;
 
           // Duplicate check:
           // - If originating from a specific preset child → allow multiple connections from the
@@ -1252,6 +1255,13 @@ export default function CanvasBoard({
                   edge.sourcePresetChildId === draftEdge.sourcePresetChildId &&
                   edge.targetId === targetNode.id,
               )
+            : sourceIsPresetGroup
+              ? edges.some(
+                  (edge) =>
+                    edge.sourceId === draftEdge.sourceId &&
+                    edge.targetId === targetNode.id &&
+                    !edge.sourcePresetChildId,
+                )
             : edges.some(
                 (edge) =>
                   (edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id) ||
@@ -1661,6 +1671,16 @@ export default function CanvasBoard({
       onPointerCancel={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
+      <div
+        aria-hidden="true"
+        className="hidden"
+        style={{
+          background: [
+            "linear-gradient(180deg, rgba(255,255,255,0.16), transparent 20%)",
+            "radial-gradient(circle at top center, rgba(255,255,255,0.14), transparent 28%)",
+          ].join(", "),
+        }}
+      />
       <input
         ref={importImagesInputRef}
         type="file"
@@ -1846,7 +1866,7 @@ export default function CanvasBoard({
         </div>
       </div>
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
-        <div className="flex h-12 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-[var(--canvas-theme-text-soft)]" data-canvas-ui="true">
+        <div className="flex h-12 items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/84 px-3 text-[var(--canvas-theme-text-soft)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
@@ -1900,7 +1920,7 @@ export default function CanvasBoard({
         {projectMenuOpen ? (
           <div
             role="menu"
-            className="mt-3 w-64 overflow-hidden rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
+            className="mt-3 w-64 overflow-hidden rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_28px_70px_var(--canvas-theme-shadow)] backdrop-blur-xl"
           >
             <MenuSection
               items={[
@@ -1970,7 +1990,7 @@ export default function CanvasBoard({
         ) : null}
       </div>
 
-      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)]" data-canvas-ui="true">
+      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/84 px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
         <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <span>30</span>
         <button
@@ -2075,6 +2095,7 @@ export default function CanvasBoard({
               node={node}
               edges={edges}
               selected={selectedNodeIds.includes(node.id)}
+              isGenerationTarget={activeGenerationTargetId === node.id}
               showSelectionTools={!isMultiNodeSelection}
               selectedItem={selectedItem}
               activeTool={activeTool}
@@ -2190,7 +2211,7 @@ export default function CanvasBoard({
       ) : null}
 
       {miniMapOpen ? (
-        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-lg shadow-[var(--canvas-theme-shadow)]" data-canvas-ui="true">
+        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
           <div
             ref={miniMapFrameRef}
             className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)]"
@@ -2241,7 +2262,7 @@ export default function CanvasBoard({
       />
 
       {mockConcepts.length > 0 || angleResults.length > 0 ? (
-        <div className="output-tray absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100%-2rem)] overflow-hidden rounded-[32px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
+        <div className="output-tray absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100%-2rem)] overflow-hidden rounded-[32px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/94 shadow-[0_30px_70px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
           <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--canvas-theme-text-muted)]">{language === "vi" ? "Khay output" : "Output Tray"}</p>

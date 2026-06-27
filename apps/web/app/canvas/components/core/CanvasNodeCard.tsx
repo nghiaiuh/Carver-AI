@@ -59,6 +59,7 @@ type CanvasNodeCardProps = {
   node: CanvasNode;
   edges: CanvasEdge[];
   selected: boolean;
+  isGenerationTarget?: boolean;
   showSelectionTools?: boolean;
   selectedItem: SelectedItem;
   activeTool: EditorTool;
@@ -101,6 +102,7 @@ export default function CanvasNodeCard({
   node,
   edges,
   selected,
+  isGenerationTarget = false,
   showSelectionTools = true,
   selectedItem,
   activeTool,
@@ -182,12 +184,14 @@ export default function CanvasNodeCard({
         <div className="relative">
           <div
             className={[
-              "relative overflow-hidden rounded-xl border bg-[#F7F8FA] transition-colors",
+              "relative overflow-hidden rounded-[20px] border bg-[var(--canvas-theme-surface-muted)] shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-colors",
               selected
-                ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/15"
+                ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/12"
+                : isGenerationTarget
+                  ? "border-[#111827] ring-2 ring-[#111827]/10"
                 : isConnectionTarget
                   ? "border-[#22D3EE] ring-4 ring-[#22D3EE]/10"
-                  : "border-transparent",
+                  : "border-white/50",
             ].join(" ")}
             style={{ height: displayHeight }}
             onClick={(e) => {
@@ -216,7 +220,7 @@ export default function CanvasNodeCard({
                 <ImagePlus className="w-8 h-8 opacity-50" />
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-white/5 pointer-events-none" />
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent_18%,transparent_72%,rgba(15,23,42,0.12))]" />
 
             {/* Overlays: only rendered on the active node */}
             {isActiveNode && (
@@ -256,7 +260,7 @@ export default function CanvasNodeCard({
 
             {selected ? (
               <SelectionChrome
-                label={node.role === "output" ? "Image" : "Reference"}
+                label={isGenerationTarget ? "Target" : node.role === "output" ? "Image" : "Reference"}
                 size={`${Math.round(displayWidth)} × ${Math.round(displayHeight)}`}
                 viewportZoom={viewportZoom}
               />

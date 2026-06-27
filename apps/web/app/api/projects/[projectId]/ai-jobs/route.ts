@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { buildSnapshotAwareEditBrief } from "@carver/ai";
+import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type { CarverAiJobPayload, CreateAiJobRequest } from "@carver/shared";
 import { coerceCanvasSnapshotDocument } from "@carver/shared";
@@ -79,6 +79,8 @@ export async function POST(
   const selection = normalizeSelection(body.selection);
   const promptMode = normalizePromptMode(body.promptMode);
   const jobType = normalizeJobType(body.jobType);
+  const targetNodeId = stringValue(body, "targetNodeId");
+  const canvasGraphContext = objectValue(body.canvasGraphContext);
 
   const { supabase, user } = context;
 
@@ -118,11 +120,17 @@ export async function POST(
     },
   };
 
-  const editBrief = buildSnapshotAwareEditBrief({
+  const snapshotEditBrief = buildSnapshotAwareEditBrief({
     jobType,
     prompt,
     snapshot: mergedSnapshot,
   });
+  const editBrief = canvasGraphContext
+    ? buildConnectedGenerationBrief(
+        snapshotEditBrief,
+        canvasGraphContext as NonNullable<CreateAiJobRequest["canvasGraphContext"]>,
+      )
+    : snapshotEditBrief;
 
   const { data: aiJob, error: aiJobError } = await supabase
     .from("ai_jobs")
@@ -144,8 +152,10 @@ export async function POST(
           regionCount: mergedSnapshot.regions.length,
           lockCount: mergedSnapshot.locks.length,
         },
+        targetNodeId,
+        canvasGraphContext: canvasGraphContext ?? null,
         editBrief,
-      },
+      } as never,
     })
     .select("id, project_id, status, job_type, input_snapshot_id, created_at")
     .single();
@@ -165,6 +175,8 @@ export async function POST(
     promptMode,
     snapshot: mergedSnapshot,
     referenceAssetIds,
+    targetNodeId: targetNodeId ?? undefined,
+    canvasGraphContext: canvasGraphContext as CreateAiJobRequest["canvasGraphContext"],
   };
 
   const queue = createAiJobQueue();

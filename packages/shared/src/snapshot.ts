@@ -95,9 +95,73 @@ export type CanvasRegion = {
   metadata?: { [key: string]: SerializableJson | undefined };
 };
 
+export type CanvasGraphSourceImage = {
+  url: string;
+  width?: number | null;
+  height?: number | null;
+  mimeType?: string;
+  sizeBytes?: number;
+  name?: string;
+  quality?: "original";
+};
+
+export type CanvasGraphPresetChild = {
+  id: string;
+  slot: string;
+  label: string;
+  imageSrc: string;
+  prompt?: string | null;
+  order: number;
+  assetId?: string;
+  sourceFolderId?: string;
+  sourceImage?: CanvasGraphSourceImage;
+  metadata?: { [key: string]: SerializableJson | undefined };
+};
+
+export type CanvasGraphNodeSnapshot = {
+  id: string;
+  kind: "image" | "presetGroup";
+  title: string;
+  role: string;
+  imageUrl: string;
+  prompt?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale?: number;
+  sourceImage?: CanvasGraphSourceImage;
+  presetGroup?: {
+    category: string;
+    activeChildId?: string | null;
+    sourceFolderId?: string;
+    children: CanvasGraphPresetChild[];
+  };
+};
+
+export type CanvasGraphEdgeSnapshot = {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  targetPortId: string;
+  targetPresetChildId?: string | null;
+  sourcePresetChildId?: string | null;
+  label: string;
+  role?: CanvasReferenceRole | string;
+  fromHandle?: "left" | "right";
+  toHandle?: "left" | "right";
+  createdAt?: string;
+};
+
+export type CanvasGraphSnapshot = {
+  nodes: CanvasGraphNodeSnapshot[];
+  edges: CanvasGraphEdgeSnapshot[];
+  activeGenerationTargetId: string | null;
+};
+
 export type CanvasSnapshotDocument = {
-  schema: "carver-canvas-v2";
-  snapshotVersion: 2;
+  schema: "carver-canvas-v3";
+  snapshotVersion: 3;
   backgroundAssetId?: string;
   camera: CanvasCameraState;
   objects: CanvasAssetPlacement[];
@@ -105,12 +169,13 @@ export type CanvasSnapshotDocument = {
   locks: SpatialLock[];
   references: CanvasReferenceImage[];
   selection: CanvasSelectionState;
+  graph: CanvasGraphSnapshot;
   metadata: { [key: string]: SerializableJson | undefined };
 };
 
 export const createEmptyCanvasSnapshotDocument = (): CanvasSnapshotDocument => ({
-  schema: "carver-canvas-v2",
-  snapshotVersion: 2,
+  schema: "carver-canvas-v3",
+  snapshotVersion: 3,
   camera: {},
   objects: [],
   regions: [],
@@ -121,6 +186,11 @@ export const createEmptyCanvasSnapshotDocument = (): CanvasSnapshotDocument => (
     regionIds: [],
     activeAssetIds: [],
   },
+  graph: {
+    nodes: [],
+    edges: [],
+    activeGenerationTargetId: null,
+  },
   metadata: {},
 });
 
@@ -130,7 +200,7 @@ export const isCanvasSnapshotDocument = (value: unknown): value is CanvasSnapsho
   }
 
   const snapshot = value as Partial<CanvasSnapshotDocument>;
-  return snapshot.schema === "carver-canvas-v2" && snapshot.snapshotVersion === 2;
+  return snapshot.schema === "carver-canvas-v3" && snapshot.snapshotVersion === 3;
 };
 
 export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocument => {
@@ -143,9 +213,33 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
     return fallback;
   }
 
+  const legacy = value as {
+    schema?: string;
+    snapshotVersion?: number;
+    backgroundAssetId?: string;
+    camera?: CanvasCameraState;
+    objects?: CanvasAssetPlacement[];
+    regions?: CanvasRegion[];
+    locks?: SpatialLock[];
+    references?: CanvasReferenceImage[];
+    selection?: Partial<CanvasSelectionState>;
+    metadata?: { [key: string]: SerializableJson | undefined };
+  };
+
   return {
     ...fallback,
-    metadata: {
+    backgroundAssetId: legacy.backgroundAssetId,
+    camera: legacy.camera ?? fallback.camera,
+    objects: legacy.objects ?? fallback.objects,
+    regions: legacy.regions ?? fallback.regions,
+    locks: legacy.locks ?? fallback.locks,
+    references: legacy.references ?? fallback.references,
+    selection: {
+      objectIds: legacy.selection?.objectIds ?? fallback.selection.objectIds,
+      regionIds: legacy.selection?.regionIds ?? fallback.selection.regionIds,
+      activeAssetIds: legacy.selection?.activeAssetIds ?? fallback.selection.activeAssetIds,
+    },
+    metadata: legacy.metadata ?? {
       legacyCanvas: value as SerializableJson,
     },
   };

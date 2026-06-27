@@ -6,7 +6,7 @@
  */
 
 import { Worker } from "bullmq";
-import { buildSnapshotAwareEditBrief } from "@carver/ai";
+import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
 import { getSupabaseAdmin } from "@carver/db/server";
 import { AI_JOB_QUEUE_NAME, defaultQueueOptions } from "@carver/queue";
@@ -30,7 +30,10 @@ const imageWorker = new Worker<CarverAiJobPayload>(
         })
         .eq("id", job.data.jobId);
 
-      const editBrief = buildSnapshotAwareEditBrief(job.data);
+      const snapshotBrief = buildSnapshotAwareEditBrief(job.data);
+      const editBrief = job.data.canvasGraphContext
+        ? buildConnectedGenerationBrief(snapshotBrief, job.data.canvasGraphContext)
+        : snapshotBrief;
       const shouldCompilePrompt =
         job.data.jobType === "generate_concept" || job.data.jobType === "refine_concept";
 
@@ -43,9 +46,13 @@ const imageWorker = new Worker<CarverAiJobPayload>(
               selectedObjectIds: job.data.snapshot.selection.objectIds,
               selectedRegionIds: job.data.snapshot.selection.regionIds,
               lockCount: job.data.snapshot.locks.length,
+              connectionSummary: job.data.canvasGraphContext?.connectionSummary,
             },
             imageContext: {
               referenceAssetIds: job.data.referenceAssetIds,
+              targetNodeId: job.data.targetNodeId,
+              imageReferences: job.data.canvasGraphContext?.imageReferences,
+              presetReferences: job.data.canvasGraphContext?.presetReferences,
             },
           })
         : null;

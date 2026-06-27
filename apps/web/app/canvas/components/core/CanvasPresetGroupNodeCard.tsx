@@ -177,7 +177,7 @@ function PresetThumb({
       title={label}
       aria-label={`Preset: ${label}`}
       className={[
-        "absolute overflow-hidden rounded-md border-2 transition cursor-grab active:cursor-grabbing",
+        "absolute overflow-hidden rounded-xl border-2 shadow-[0_10px_22px_rgba(15,23,42,0.1)] transition cursor-grab active:cursor-grabbing",
         isActive
           ? "border-[#22D3EE] shadow-[0_0_0_2px_rgba(34,211,238,0.25)]"
           : "border-transparent hover:border-white/60",
@@ -333,7 +333,7 @@ export default function CanvasPresetGroupNodeCard({
 
   const handleBaseClass = [
     "absolute z-20 flex h-7 w-4 cursor-crosshair items-center justify-center",
-    "rounded-full border border-[#CBD5E1] bg-white shadow-sm transition",
+    "rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_8px_18px_rgba(15,23,42,0.12)] backdrop-blur-md transition",
     "opacity-0 group-hover:opacity-100",
     "hover:border-[#22D3EE] hover:bg-[#F0FDFE]",
   ].join(" ");
@@ -394,12 +394,12 @@ export default function CanvasPresetGroupNodeCard({
       {/* Gray box — contains thumbnails only */}
       <div
         className={[
-          "absolute inset-x-0 top-0 overflow-hidden rounded-lg transition",
+          "absolute inset-x-0 top-0 overflow-hidden rounded-[24px] border shadow-[0_18px_42px_rgba(15,23,42,0.1)] transition",
           selected
-            ? "bg-[#D1D5DB] ring-2 ring-[#22D3EE] ring-offset-1"
+            ? "border-[#C7D2DA] bg-[#E6E9EC] ring-2 ring-[#22D3EE] ring-offset-1"
             : isConnectionTarget
-              ? "bg-[#D1D5DB] ring-2 ring-[#22D3EE]/60"
-              : "bg-[#D1D5DB] hover:bg-[#C8CCD4]",
+              ? "border-[#C7D2DA] bg-[#E6E9EC] ring-2 ring-[#22D3EE]/60"
+              : "border-white/55 bg-[#E6E9EC] hover:bg-[#DCE1E5]",
         ].join(" ")}
         style={{ height: boxHeight }}
       >

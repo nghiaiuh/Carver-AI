@@ -63,9 +63,23 @@ export default function CanvasWorkspace() {
   return (
     <div
       ref={rootRef}
-      className="min-h-screen bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
+      className="relative min-h-screen overflow-hidden bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       style={state.canvasThemeStyle}
     >
+      <div
+        aria-hidden="true"
+        className="hidden"
+        style={{
+          background: [
+            // Top-left warm bloom — ivory light refraction
+            "radial-gradient(ellipse 60% 40% at 0% 0%, rgba(255,252,245,0.55), transparent 60%)",
+            // Top-right cool atmospheric depth
+            "radial-gradient(ellipse 45% 30% at 100% 0%, rgba(12,15,20,0.05), transparent 55%)",
+            // Subtle bottom vignette for depth
+            "radial-gradient(ellipse 80% 40% at 50% 100%, rgba(20,14,8,0.04), transparent 70%)",
+          ].join(", "),
+        }}
+      />
       {/* ── Desktop layout ──────────────────────────────────────────────────── */}
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
@@ -112,7 +126,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={actions.openLeftSidebar}
-              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
+              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 text-[var(--canvas-theme-icon)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-md"
               title={`Open ${LEFT_SIDEBAR_PANEL_LABELS[state.leftSidebar.panel]}`}
             >
               <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
@@ -154,6 +168,7 @@ export default function CanvasWorkspace() {
             onToast={actions.showToast}
             onNodesChange={actions.setNodes}
             onEdgesChange={actions.setEdges}
+            activeGenerationTargetId={state.activeGenerationTargetId}
             activeNodeId={state.activeNodeId}
             onSetActiveNode={actions.setActiveNodeId}
             canvasThemeColor={state.canvasThemeColor}
@@ -195,8 +210,15 @@ export default function CanvasWorkspace() {
             >
               <EditorRightPanel
                 canvasId="canvas-main"
+                targetTitle={state.activeGenerationTarget?.title ?? null}
+                targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
+                targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}
+                targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
+                connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
+                connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
                 draft={state.promptText}
                 onDraftChange={actions.setPromptText}
+                onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}
                 onClose={actions.closeRightPanel}
                 onToast={actions.showToast}
               />
@@ -212,7 +234,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={actions.openRightPanel}
-              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
+              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 text-[var(--canvas-theme-icon)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-md"
               title={state.language === "vi" ? "Mở chat" : "Open chat"}
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
@@ -234,7 +256,7 @@ export default function CanvasWorkspace() {
         />
 
         {state.selectedSketchLineIds.length > 0 && (
-          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur">
+          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/94 px-4 py-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl">
             <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">
               {state.selectedSketchLineIds.length} sketch line
               {state.selectedSketchLineIds.length === 1 ? "" : "s"} selected
@@ -242,7 +264,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={() => actions.setShowGroupNameModal(true)}
-              className="rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-black text-[var(--canvas-theme-active-text)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
+              className="rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-black text-[var(--canvas-theme-active-text)] shadow-[0_12px_24px_var(--canvas-theme-shadow)]"
             >
               Group + Name Tag
             </button>
