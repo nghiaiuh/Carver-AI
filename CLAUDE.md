@@ -2,12 +2,29 @@
 
 Carver AI is a solo-user MVP for AI landscape design: users create a project, upload yard/reference images, chat with an AI agent, and save generated or refined concepts on an infinite canvas.
 
+## Fast Startup
+
+Read `context.md` at the repo root before doing broad exploration.
+
+It summarizes:
+- the current product direction
+- package ownership
+- preset-group and graph context architecture
+- chat image-input flow
+- the shortest file-reading path for common tasks
+
 ## Architecture
 - Monorepo: npm workspaces with Turborepo.
 - Web/API: `apps/web` with Next.js App Router, Tailwind, and server route handlers.
 - AI core: `packages/ai` with LangGraph state, router, and future generation/refinement nodes.
 - Database: `packages/db` with Supabase clients, generated-style TypeScript types, and SQL migrations.
 - Queue: `packages/queue` and `apps/worker` for long-running AI/image jobs.
+
+Current implementation notes:
+- The canvas now includes graph-like nodes and edges for image/preset context.
+- Presets are represented on the canvas through `presetGroup` nodes.
+- Chat can send selected canvas images and local attachments to OpenAI as image inputs.
+- Shared snapshot contracts already include graph state.
 
 ## Security Rules
 - Supabase Auth is the identity source. Do not create a parallel user table.
@@ -53,3 +70,11 @@ Optional infrastructure variables:
 - Shared DB access belongs in `packages/db`.
 - AI state and routing changes belong in `packages/ai/src`.
 - Long-running image generation/refinement belongs in the worker, not the request path.
+
+High-value files for most tasks:
+- `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
+- `apps/web/app/canvas/components/core/CanvasWorkspace.tsx`
+- `apps/web/app/canvas/components/core/CanvasBoard.tsx`
+- `apps/web/app/canvas/components/library/LibrarySidebar.tsx`
+- `apps/web/app/canvas/components/panels/EditorRightPanel.tsx`
+- `apps/web/lib/server/openaiChat.ts`

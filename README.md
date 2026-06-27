@@ -8,18 +8,48 @@ CarverAI is being built as an **AI Landscape Architect Co-Pilot** rather than a 
 
 The current repository is a TypeScript monorepo with a Next.js web app, shared database utilities, early AI orchestration packages, and a worker scaffold for future long-running image jobs.
 
+## Fast Agent Start
+
+If you are an agent or onboarding contributor, read [context.md](/E:/Carver-AI/context.md) first.
+
+That file summarizes:
+- product intent
+- package ownership
+- canvas architecture
+- preset-group workflow
+- graph-aware generation context
+- chat image-input flow
+- the most important files to inspect first for each task
+
+## Current Implementation Status
+
+The repo has moved beyond a simple demo canvas in several important areas:
+
+- Canvas graph context exists.
+  Image nodes, preset-group nodes, and edges are used to build generation context.
+- Preset library uses `presetGroup` nodes.
+  Presets are no longer treated as single dropped images on the canvas.
+- Chat can now bind to the selected canvas image.
+  The right chat panel can attach the selected canvas image plus connected references as AI context.
+- Chat image understanding is partially implemented.
+  The chat route now supports sending image inputs to OpenAI for image description and analysis.
+- Snapshot schema includes graph data.
+  Shared snapshot types now support graph nodes, graph edges, and active generation target state.
+- Generation pipeline is MVP-level, not finished.
+  Graph-aware generation contracts exist, but the full production image pipeline is still incomplete.
+
 ## Key Features
 
 | Area                   | Current / Planned Capability                                                                                                                                                                    |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Project workspace      | Project creation route and database model for landscape projects, briefs, chat threads, assets, snapshots, AI jobs, design versions, and exports.                                               |
 | Infinite canvas        | Desktop canvas with pan, zoom, cursor-centered zoom, image nodes, marquee selection, drag, pen strokes, markers, editable/locked regions, and contextual tooling.                               |
-| Reference workflow     | Users can paste or import images into the canvas and add local library-style references. Full remote asset persistence is planned through Supabase storage.                                     |
-| AI chat assistant      | Canvas chat panel connected to `/api/chat`, using OpenAI Responses API for landscape design guidance.                                                                                           |
+| Reference workflow     | Users can paste or import images, build graph connections, and use preset-group reference nodes on the canvas. Full remote asset persistence is still evolving.                                 |
+| AI chat assistant      | Canvas chat panel connected to `/api/chat`, using OpenAI Responses API for landscape design guidance and image-aware chat input.                                                                 |
 | Prompt engine          | Deterministic landscape prompt compiler that detects task type, edit scope, target area/object, risk level, preservation rules, negative constraints, and edit brief metadata.                  |
 | Spatial lock system    | Canvas supports editable and locked regions as a product concept; database schema includes tables for future spatial constraints, but a dedicated `spatial_locks` table is not yet implemented. |
-| Versioned canvas state | Database schema stores `canvas_snapshots` as versioned JSON rows. Current canvas UI is mostly local/demo state and still needs full persistence wiring.                                         |
-| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` scaffold LangGraph, BullMQ, and worker execution. Image generation/refinement jobs are not yet fully implemented.                            |
+| Versioned canvas state | Database schema stores `canvas_snapshots` as versioned JSON rows. Shared snapshot schema already includes graph state; full end-to-end persistence wiring is still in progress.                  |
+| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` now include graph-aware generation contracts and brief-building helpers. The full production image pipeline is still not fully implemented.    |
 | Gallery / review pages | Static marketing and project review pages exist under `apps/web/app`, including gallery, reviews, submit, engineers, styles, and project detail routes.                                         |
 
 ## Product Vision

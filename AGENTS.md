@@ -16,6 +16,19 @@ Done, Nghĩa IT.
 
 Carver AI is an AI Landscape Architect Co-Pilot for landscape and garden design.
 
+## Fast Startup
+
+Before scanning the repo broadly, read `context.md` at the repository root.
+
+Use it to quickly understand:
+
+* package ownership
+* canvas architecture
+* preset-group workflow
+* generation graph context
+* chat image-input flow
+* the most relevant files for each type of task
+
 The product is not a generic image generator. Its core value is helping users design and edit landscape concepts while preserving real-world layout constraints such as object position, scale, camera angle, pond shape, house placement, garden paths, and locked design areas.
 
 Primary users:
@@ -51,6 +64,14 @@ The user should be able to:
 * Export results.
 
 Canvas state must be serializable, restorable, and versionable.
+
+Current implemented direction:
+
+* Selected canvas images can act as the active generation/chat target.
+* Preset library items create or update `presetGroup` nodes on the canvas.
+* Connection lines between images and preset references are used as generation context.
+* Chat now supports image-aware input through the OpenAI Responses API path.
+* Shared snapshot types include graph state and active generation target support.
 
 ### Spatial Lock System
 
@@ -114,11 +135,12 @@ Keep changes inside the package that owns the behavior.
 
 Before editing:
 
-1. Inspect the relevant files and package.
-2. Understand the current product behavior.
-3. Check whether the code is demo-only or production-intended.
-4. Avoid changing unrelated packages.
-5. Avoid large rewrites unless the task clearly requires it.
+1. Read `context.md` first unless the task is extremely small.
+2. Inspect the relevant files and package.
+3. Understand the current product behavior.
+4. Check whether the code is demo-only or production-intended.
+5. Avoid changing unrelated packages.
+6. Avoid large rewrites unless the task clearly requires it.
 
 While editing:
 
@@ -146,6 +168,7 @@ Canvas features may include:
 
 * Image upload.
 * Image paste from clipboard.
+* Image-to-image connection lines.
 * Pan.
 * Zoom.
 * Zoom to cursor.
@@ -245,6 +268,16 @@ Common preservation rules:
 * Preserve lawn island shapes.
 * Preserve stepping stone path.
 * Preserve object scale and proportions.
+
+## Current Architecture Notes
+
+Important current implementation details:
+
+* `apps/web/app/canvas/hooks/useCanvasWorkspace.ts` is the center of canvas state and actions.
+* `apps/web/app/canvas/utils/generationContext.ts` builds graph-aware generation context.
+* `apps/web/app/canvas/components/library/LibrarySidebar.tsx` owns preset library and preset flyout UI.
+* `apps/web/app/canvas/components/panels/EditorRightPanel.tsx` owns chat composer behavior, including linked canvas image context.
+* `apps/web/lib/server/openaiChat.ts` and `apps/web/app/api/chat/route.ts` own OpenAI chat integration.
 
 ## Backend Guidelines
 

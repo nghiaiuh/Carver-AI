@@ -14,6 +14,20 @@ The MVP should let authenticated users create projects, upload site images or re
 
 Carver AI must not behave like a generic image generator only. Its core value is controlled landscape design: keeping object positions, proportions, layout logic, camera angle, and user-defined constraints stable while AI improves the design.
 
+## Fast Startup
+
+Before scanning the codebase broadly, read `context.md` at the repository root.
+
+That file is the preferred low-token context source for:
+
+* current product direction
+* package ownership
+* canvas architecture
+* preset-group workflow
+* graph-aware generation context
+* chat image-input flow
+* the most important files to open first
+
 ## Product Principles
 
 1. Preserve layout before beautifying.
@@ -68,6 +82,15 @@ Users should be able to:
 
 Canvas interactions should feel closer to a design tool than a chatbot.
 
+Current implementation status:
+
+* Canvas image nodes and preset-group nodes already exist.
+* Connection lines already influence generation context.
+* The selected image can act as the active generation target.
+* The chat composer can already send image inputs to OpenAI for image description and analysis.
+* Snapshot contracts already include graph state.
+* The full production image generation pipeline is still in progress.
+
 ### 3. Prompt Engine
 
 The prompt engine should help transform rough user instructions into clear AI-ready prompts.
@@ -118,15 +141,16 @@ The app should support:
 ## Workflow
 
 1. Inspect the relevant package before editing.
-2. Understand the product behavior before changing code.
-3. Keep changes inside the package boundary that owns the behavior.
-4. Remove demo-only code before implementing production behavior.
-5. Prefer Supabase-first data access for MVP persistence.
-6. Keep AI jobs asynchronous when generation, refinement, analysis, or export may run longer than a request.
-7. Keep canvas state serializable and versionable.
-8. Avoid hidden state that cannot be restored from a saved project.
-9. Run `npm run build`, `npm run typecheck`, and `npm run lint` before handoff when feasible.
-10. When unable to run checks, clearly mention what was not verified.
+2. Read `context.md` first unless the task is tiny.
+3. Understand the product behavior before changing code.
+4. Keep changes inside the package boundary that owns the behavior.
+5. Remove demo-only code before implementing production behavior.
+6. Prefer Supabase-first data access for MVP persistence.
+7. Keep AI jobs asynchronous when generation, refinement, analysis, or export may run longer than a request.
+8. Keep canvas state serializable and versionable.
+9. Avoid hidden state that cannot be restored from a saved project.
+10. Run `npm run build`, `npm run typecheck`, and `npm run lint` before handoff when feasible.
+11. When unable to run checks, clearly mention what was not verified.
 
 ## File Ownership
 
@@ -137,6 +161,20 @@ The app should support:
 * Worker processors and background job execution: `apps/worker`.
 * Shared types, constants, and product contracts: `packages/shared` if available.
 * UI primitives and reusable components: `packages/ui` if available.
+
+## High-Value Entry Files
+
+Use these as your first read for common tasks:
+
+* Canvas shell/layout: `apps/web/app/canvas/components/core/CanvasWorkspace.tsx`
+* Canvas state/actions: `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
+* Canvas interaction/rendering: `apps/web/app/canvas/components/core/CanvasBoard.tsx`
+* Preset library and flyouts: `apps/web/app/canvas/components/library/LibrarySidebar.tsx`
+* Preset-group geometry/helpers: `apps/web/app/canvas/utils/presetGroup.ts`
+* Graph-aware generation context: `apps/web/app/canvas/utils/generationContext.ts`
+* Chat composer: `apps/web/app/canvas/components/panels/EditorRightPanel.tsx`
+* OpenAI chat bridge: `apps/web/lib/server/openaiChat.ts`
+* Chat API route: `apps/web/app/api/chat/route.ts`
 
 ## Frontend Guidelines
 
