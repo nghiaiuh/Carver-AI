@@ -2,9 +2,11 @@
 
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
 import type { CanvasPresetChild, LeftSidebarPanelId, PresetGroupCategory } from "../../types/canvas";
+import type { CanvasLanguage } from "../../i18n";
 import LibrarySidebar from "../library/LibrarySidebar";
 
 type EditorLeftSidebarProps = {
+  language: CanvasLanguage;
   panel: LeftSidebarPanelId;
   folders: LibraryFolder[];
   activeFolderId: string;
@@ -36,6 +38,7 @@ export default function EditorLeftSidebar(props: EditorLeftSidebarProps) {
     default:
       return (
         <LibrarySidebar
+          language={props.language}
           folders={props.folders}
           activeFolderId={props.activeFolderId}
           selectedAssetId={props.selectedAssetId}

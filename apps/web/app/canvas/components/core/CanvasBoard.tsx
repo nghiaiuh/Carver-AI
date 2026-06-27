@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, CircleDot, Download, Group, History, Layers3, Menu, Sparkles, Ungroup, Zap } from "lucide-react";
+import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type {
   AddedObject,
   CanvasEdge,
@@ -49,6 +50,8 @@ import {
 } from "../../utils/presetGroup";
 
 type CanvasBoardProps = {
+  language: CanvasLanguage;
+  onLanguageChange: (language: CanvasLanguage) => void;
   selectedItem: SelectedItem;
   activeTool: EditorTool;
   markers: Marker[];
@@ -319,6 +322,8 @@ function getPastedImageNodeSize(dimensions: { width: number; height: number } | 
 }
 
 export default function CanvasBoard({
+  language,
+  onLanguageChange,
   selectedItem,
   activeTool,
   markers,
@@ -380,6 +385,7 @@ export default function CanvasBoard({
   onBrushSoftnessChange,
   onCloseRegionEditor,
 }: CanvasBoardProps) {
+  const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
   const worldLayerRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -397,9 +403,9 @@ export default function CanvasBoard({
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const wheelZoomTimeout = useRef<number | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [projectName, setProjectName] = useState("Untitled");
+  const [projectName, setProjectName] = useState(text.common.untitled);
   const [editingProjectName, setEditingProjectName] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState("Untitled");
+  const [projectNameDraft, setProjectNameDraft] = useState(text.common.untitled);
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
@@ -1845,10 +1851,10 @@ export default function CanvasBoard({
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
             className="grid h-8 w-8 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
-            title={projectMenuOpen ? "Close menu" : "Open menu"}
+            title={projectMenuOpen ? text.menu.closeMenu : text.menu.openMenu}
             aria-haspopup="menu"
             aria-expanded={projectMenuOpen}
-            aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
+            aria-label={projectMenuOpen ? text.menu.closeProjectMenu : text.menu.openProjectMenu}
           >
             {projectMenuOpen ? <Menu className="h-4 w-4" aria-hidden="true" /> : <CircleDot className="h-5 w-5" aria-hidden="true" />}
           </button>
@@ -1863,14 +1869,14 @@ export default function CanvasBoard({
                 if (e.key === "Escape") cancelProjectName();
               }}
               className="w-24 bg-transparent text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)] outline-none"
-              aria-label="Project name"
+              aria-label={text.menu.projectName}
             />
           ) : (
             <button
               type="button"
               onClick={startEditingProjectName}
               className="max-w-[120px] truncate text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)]"
-              title="Edit project name"
+              title={text.menu.editProjectName}
             >
               {projectName}
             </button>
@@ -1878,10 +1884,10 @@ export default function CanvasBoard({
           <button
             type="button"
             className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-icon-muted)] hover:bg-[var(--canvas-theme-hover)]"
-            title="Project mode"
+            title={text.menu.projectMode}
             onClick={(event) => {
               event.stopPropagation();
-              onToast("Project mode");
+              onToast(text.toast.projectMode);
             }}
           >
             <span className="relative grid h-5 w-5 place-items-center rounded-full border border-[var(--canvas-theme-border-strong)] text-[10px] font-semibold">
@@ -1898,7 +1904,7 @@ export default function CanvasBoard({
           >
             <MenuSection
               items={[
-                { label: "Home", onSelect: () => router.push("/") },
+                { label: text.menu.home, onSelect: () => router.push("/") },
                 { label: projectName, onSelect: startEditingProjectName },
               ]}
               onSelect={handleMenuSelect}
@@ -1906,47 +1912,56 @@ export default function CanvasBoard({
             <MenuSection
               items={[
                 {
-                  label: "New Project",
+                  label: text.menu.languageLabel,
+                  onSelect: () => onLanguageChange(language === "vi" ? "en" : "vi"),
+                },
+              ]}
+              onSelect={handleMenuSelect}
+            />
+            <MenuSection
+              items={[
+                {
+                  label: text.menu.newProject,
                   onSelect: () => {
-                    setProjectName("Untitled");
+                    setProjectName(text.common.untitled);
                     onNodesChange([]);
                     onEdgesChange([]);
                     setDeletedNodeStack([]);
                     resetZoom();
-                    onToast("New project created");
+                    onToast(text.toast.newProjectCreated);
                   },
                 },
                 {
-                  label: "Delete Project",
+                  label: text.menu.deleteProject,
                   tone: "danger",
                   onSelect: () => {
                     onNodesChange([]);
                     onEdgesChange([]);
                     setDeletedNodeStack([]);
                     resetZoom();
-                    onToast("Project cleared");
+                    onToast(text.toast.projectCleared);
                   },
                 },
               ]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
-              items={[{ label: "Import Images", onSelect: () => importImagesInputRef.current?.click() }]}
+              items={[{ label: text.menu.importImages, onSelect: () => importImagesInputRef.current?.click() }]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
               items={[
-                { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
-                { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: true },
-                { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
+                { label: text.menu.undo, shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
+                { label: text.menu.redo, shortcut: "Ctrl+Shift+Z", disabled: true },
+                { label: text.menu.duplicateSelection, shortcut: "Ctrl+D", disabled: true },
               ]}
               onSelect={handleMenuSelect}
             />
             <MenuSection
               items={[
-                { label: "Zoom to Fit", shortcut: "Shift+1", onSelect: resetZoom },
-                { label: "Zoom In", shortcut: "Ctrl++", onSelect: zoomIn },
-                { label: "Zoom Out", shortcut: "Ctrl+-", onSelect: zoomOut },
+                { label: text.menu.zoomToFit, shortcut: "Shift+1", onSelect: resetZoom },
+                { label: text.menu.zoomIn, shortcut: "Ctrl++", onSelect: zoomIn },
+                { label: text.menu.zoomOut, shortcut: "Ctrl+-", onSelect: zoomOut },
               ]}
               onSelect={handleMenuSelect}
               noDivider
@@ -1961,10 +1976,10 @@ export default function CanvasBoard({
         <button
           type="button"
           className="relative grid h-8 w-8 place-items-center rounded-full bg-[#2F80ED] text-white"
-          title="Time credits"
+          title={text.menu.timeCredits}
           onClick={(event) => {
             event.stopPropagation();
-            onToast("30 credits");
+            onToast(text.toast.credits);
           }}
         >
           <span className="text-sm font-bold">↻</span>
@@ -2206,6 +2221,7 @@ export default function CanvasBoard({
         </div>
       ) : null}
       <BottomToolDock
+        language={language}
         activeTool={activeTool}
         zoom={zoom}
         activeLeftSidebarPanel={activeLeftSidebarPanel}
@@ -2228,15 +2244,15 @@ export default function CanvasBoard({
         <div className="output-tray absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100%-2rem)] overflow-hidden rounded-[32px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
           <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--canvas-theme-text-muted)]">Output Tray</p>
-              <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">Latest concept directions</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--canvas-theme-text-muted)]">{language === "vi" ? "Khay output" : "Output Tray"}</p>
+              <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">{language === "vi" ? "Các hướng concept mới nhất" : "Latest concept directions"}</p>
             </div>
             <button
               type="button"
-              onClick={() => onToast("Compare outputs is the next refinement step")}
+              onClick={() => onToast(text.toast.compareOutputsNext)}
               className="rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)]"
             >
-              Compare
+              {text.menu.compare}
             </button>
           </div>
           <div className="flex gap-3 overflow-x-auto p-4">

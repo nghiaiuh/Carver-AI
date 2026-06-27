@@ -11,6 +11,7 @@
 import { useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
+import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
 import { gsap } from "../../components/gsapSetup";
 import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
@@ -142,6 +143,7 @@ export function useCanvasWorkspace() {
   const [miniMapOpen, setMiniMapOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
+  const [language, setLanguage] = useState(DEFAULT_CANVAS_LANGUAGE);
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
   const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] =
     useState<CanvasLibraryAsset | null>(null);
@@ -667,6 +669,7 @@ export function useCanvasWorkspace() {
       miniMapOpen,
       rightPanelOpen,
       canvasThemeColor,
+      language,
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
       pendingPresetGroupInsert,
@@ -766,6 +769,7 @@ export function useCanvasWorkspace() {
 
       // Theme
       setCanvasThemeColor,
+      setLanguage,
 
       // Modal toggles
       setShowQuickEditModal,

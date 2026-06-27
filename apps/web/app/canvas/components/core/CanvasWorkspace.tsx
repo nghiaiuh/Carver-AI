@@ -78,6 +78,7 @@ export default function CanvasWorkspace() {
               data-canvas-ui="true"
             >
               <EditorLeftSidebar
+                language={state.language}
                 panel={state.leftSidebar.panel}
                 folders={library.folders}
                 activeFolderId={library.activeFolderId}
@@ -120,6 +121,8 @@ export default function CanvasWorkspace() {
 
           {/* Canvas board */}
           <CanvasBoard
+            language={state.language}
+            onLanguageChange={actions.setLanguage}
             selectedItem={state.selectedItem}
             activeTool={state.activeTool}
             markers={state.markers}
@@ -210,7 +213,7 @@ export default function CanvasWorkspace() {
               type="button"
               onClick={actions.openRightPanel}
               className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-lg shadow-[var(--canvas-theme-shadow)]"
-              title="Open chat"
+              title={state.language === "vi" ? "Mở chat" : "Open chat"}
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
             </button>

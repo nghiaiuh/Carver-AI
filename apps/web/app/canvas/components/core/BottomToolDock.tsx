@@ -23,11 +23,13 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type { EditorTool, LeftSidebarPanelId, PenSettings } from "../../types/canvas";
 import PenSettingsPopover from "../canvas/PenSettingsPopover";
 import { clamp, formatRgbLabel, hueToHex, hsvToHex, normalizeHexColor, rgbToHsv } from "../widgets/colorPickerUtils";
 
 type BottomToolDockProps = {
+  language: CanvasLanguage;
   activeTool: EditorTool;
   zoom: number;
   activeLeftSidebarPanel: LeftSidebarPanelId | null;
@@ -57,6 +59,7 @@ const tools = [
 ] as const;
 
 export default function BottomToolDock({
+  language,
   activeTool,
   zoom,
   activeLeftSidebarPanel,
@@ -72,6 +75,7 @@ export default function BottomToolDock({
   penSettings,
   onPenSettingsChange,
 }: BottomToolDockProps) {
+  const text = getCanvasText(language);
   const zoomLabel = `${Math.round(zoom * 100)}%`;
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [penPopoverOpen, setPenPopoverOpen] = useState(false);
@@ -136,10 +140,10 @@ export default function BottomToolDock({
           data-canvas-ui="true"
         >
           <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-5">
-            <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">Theme</h2>
+            <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">{text.dock.theme}</h2>
             <button
               type="button"
-              title="Close theme picker"
+              title={text.dock.closeThemePicker}
               onClick={(event) => {
                 event.stopPropagation();
                 setThemePickerOpen(false);
@@ -159,7 +163,7 @@ export default function BottomToolDock({
               }}
               role="slider"
               tabIndex={0}
-              aria-label="Pick canvas theme color"
+              aria-label={text.dock.pickCanvasThemeColor}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(themeHsv.s * 100)}
@@ -197,7 +201,7 @@ export default function BottomToolDock({
               className="relative block h-4 rounded-full bg-[linear-gradient(90deg,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)]"
               role="slider"
               tabIndex={0}
-              aria-label="Adjust theme hue"
+              aria-label={text.dock.adjustThemeHue}
               aria-valuemin={0}
               aria-valuemax={360}
               aria-valuenow={Math.round(themeHsv.h)}
@@ -238,7 +242,7 @@ export default function BottomToolDock({
                   <button
                     key={color}
                     type="button"
-                    title={`Set theme ${color}`}
+                    title={`${text.dock.setTheme} ${color}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       onCanvasThemeChange(color);
@@ -264,7 +268,7 @@ export default function BottomToolDock({
                   }
                 }}
                 className="w-full bg-transparent font-mono uppercase outline-none"
-                aria-label="Theme hex color"
+                aria-label={text.dock.themeHexColor}
               />
               <span className="whitespace-nowrap text-xs">{themeRgbLabel}</span>
             </div>
@@ -284,19 +288,19 @@ export default function BottomToolDock({
         <div className="flex h-8 items-center gap-2 px-2">
           <DockIcon
             buttonRef={themeTriggerRef}
-            label="Theme"
+            label={text.dock.theme}
             icon={Palette}
             active={themePickerOpen}
             onClick={() => setThemePickerOpen((value) => !value)}
           />
           <DockIcon
-            label="Library"
+            label={text.common.library}
             icon={Library}
             active={activeLeftSidebarPanel === "library"}
             onClick={() => onToggleLeftSidebarPanel("library")}
           />
           <DockIcon
-            label="Mini map"
+            label={text.dock.miniMap}
             icon={Map}
             active={miniMapOpen}
             onClick={onToggleMiniMap}
@@ -305,7 +309,7 @@ export default function BottomToolDock({
         <span className="h-5 w-px bg-[var(--canvas-theme-border-strong)]" aria-hidden="true" />
         <button
           type="button"
-          title="Reset zoom"
+          title={text.dock.resetZoom}
           onClick={(event) => {
             event.stopPropagation();
             onResetZoom();
@@ -326,7 +330,15 @@ export default function BottomToolDock({
               {needsDivider ? <span className="mx-1 h-5 w-px bg-[var(--canvas-theme-border)]" aria-hidden="true" /> : null}
               <button
                 type="button"
-                title={tool.label}
+                title={
+                  tool.id === "select" ? text.dock.toolLabels.select
+                    : tool.id === "mark-position" ? text.dock.toolLabels.mark
+                      : tool.id === "pen" ? text.dock.toolLabels.pen
+                        : tool.id === "eraser" ? text.dock.toolLabels.eraser
+                          : tool.id === "text-note" ? text.dock.toolLabels.text
+                            : tool.id === "add-object" ? text.dock.toolLabels.object
+                              : text.dock.toolLabels.generate
+                }
                 onClick={(event) => {
                   event.stopPropagation();
                   if (tool.id === "add-object") onAddObject();
@@ -354,7 +366,7 @@ export default function BottomToolDock({
               setPenPopoverOpen((value) => !value);
             }}
             className="flex items-center gap-2 rounded-2xl bg-[var(--canvas-theme-surface-soft)] px-2 py-1.5 text-sm font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
-            title="Open pen settings"
+            title={text.dock.openPenSettings}
           >
             <span
               className="h-6 w-6 rounded-full border border-white shadow-[0_0_0_1px_rgba(17,24,39,0.12)]"

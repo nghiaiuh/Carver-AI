@@ -167,7 +167,17 @@ export type CanvasSourceImage = {
   quality: "original";
 };
 
-export type PresetGroupCategory = "environment" | "material" | "object";
+export type PresetGroupCategory =
+  | "environment"
+  | "material"
+  | "garden-styles"
+  | "plants"
+  | "water-features"
+  | "hardscape"
+  | "rocks-terrain"
+  | "decor"
+  | "lighting"
+  | "planting-zones";
 
 export type CanvasPresetChild = {
   id: string;
