@@ -290,6 +290,10 @@ export function useCanvasWorkspace() {
     animateIn(".added-object");
   };
 
+  const undoCanvas = () => false;
+
+  const redoCanvas = () => false;
+
   const uploadAssetsToFolder = (folderId: string, files: FileList | File[]) => {
     Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
@@ -855,6 +859,8 @@ export function useCanvasWorkspace() {
       // Nodes & edges (passthrough setters for CanvasBoard)
       setNodes,
       setEdges,
+      undoCanvas,
+      redoCanvas,
       setActiveNodeId,
 
       // Prompt

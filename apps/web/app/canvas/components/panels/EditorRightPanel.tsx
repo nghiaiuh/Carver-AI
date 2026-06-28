@@ -558,8 +558,8 @@ export default function EditorRightPanel({
   };
 
   return (
-    <aside className="flex h-full w-full shrink-0 flex-col border-l border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
-      <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-3">
+    <aside className="flex h-full w-full shrink-0 flex-col bg-[#FFFFFF] text-[var(--canvas-theme-text)]">
+      <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3">
         <h2 className="text-sm font-semibold tracking-[-0.02em]">AI Chat</h2>
         <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
           <IconButton label="New chat" icon={Plus} onClick={() => void clearChat()} />
@@ -568,7 +568,7 @@ export default function EditorRightPanel({
       </div>
 
       <div className="relative flex-1 overflow-y-auto px-4 pb-[164px] pt-5">
-        <div className="mb-4 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/88 px-3 py-3 text-xs text-[var(--canvas-theme-text-muted)] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+        <div className="mb-4 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-3 text-xs text-[var(--canvas-theme-text-muted)] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">Generation target</p>
           <p className="mt-1 text-sm font-semibold text-[var(--canvas-theme-text)]">
             {targetTitle ?? "No image selected"}
@@ -582,7 +582,7 @@ export default function EditorRightPanel({
 
         {historyLoading ? (
           <div className="grid h-full place-items-center">
-            <div className="flex items-center gap-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-sm text-[var(--canvas-theme-text-soft)]">
+            <div className="flex items-center gap-2 rounded-[12px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-sm text-[var(--canvas-theme-text-soft)]">
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
               Loading chat history...
             </div>
@@ -602,12 +602,12 @@ export default function EditorRightPanel({
               <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
                 <div
                   className={[
-                    "whitespace-pre-wrap rounded-[22px] px-4 py-3 text-[13px] leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]",
+                    "whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]",
                     message.role === "user"
                       ? "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text)]"
                       : message.status === "error"
                         ? "border border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]"
-                        : "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 text-[var(--canvas-theme-text-soft)]",
+                        : "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text-soft)]",
                   ].join(" ")}
                 >
                   {message.content}
@@ -617,7 +617,7 @@ export default function EditorRightPanel({
 
             {isSending ? (
               <div className="mr-auto max-w-[92%]">
-                <div className="flex items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 px-4 py-3 text-[13px] leading-6 text-[var(--canvas-theme-text-soft)] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 text-[13px] leading-6 text-[var(--canvas-theme-text-soft)] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                   <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                   Carver AI is thinking...
                 </div>
@@ -643,8 +643,8 @@ export default function EditorRightPanel({
           }}
         />
 
-        <div className="overflow-hidden rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/72 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl">
-          <div className="rounded-[22px] bg-[var(--canvas-theme-surface-panel)]/92 px-3 py-3">
+        <div className="overflow-hidden rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_16px_36px_var(--canvas-theme-shadow)]">
+          <div className="rounded-[16px] bg-[var(--canvas-theme-surface-panel)] px-3 py-3">
             <div
               className="flex min-h-[72px] flex-wrap items-start gap-0 text-sm leading-6"
               onClick={() => composerInputRef.current?.focus()}
@@ -653,7 +653,7 @@ export default function EditorRightPanel({
                 <button
                   type="button"
                   onClick={onClearLinkedImage}
-                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
                   title={targetTitle ?? "Selected canvas image"}
                 >
                   <span className="relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-[4px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
@@ -676,7 +676,7 @@ export default function EditorRightPanel({
                   key={attachment.id}
                   type="button"
                   onClick={() => removeAttachment(attachment.id)}
-                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+                  className="mr-1 inline-flex h-6 max-w-full items-center gap-1.5 rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2 align-middle text-xs font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
                   title={attachment.name}
                 >
                   <span className="relative h-3.5 w-3.5 shrink-0 overflow-hidden rounded-[4px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]">
@@ -751,11 +751,11 @@ export default function EditorRightPanel({
               <p className="mb-2 text-xs leading-5 text-[#B42318]">{errorMessage}</p>
             ) : enhanceMeta ? (
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-                <span className="rounded-full bg-[var(--canvas-theme-surface-muted)] px-2.5 py-1 font-medium text-[var(--canvas-theme-text)]">
+                <span className="rounded-[10px] bg-[var(--canvas-theme-surface-muted)] px-2.5 py-1 font-medium text-[var(--canvas-theme-text)]">
                   {enhanceMeta.usedAiFallback ? "Enhanced by AI" : "Enhanced by rules"}
                 </span>
                 {enhanceMeta.attemptedAiFallback && !enhanceMeta.usedAiFallback ? (
-                  <span className="rounded-full bg-[#FEF3F2] px-2.5 py-1 font-medium text-[#B42318]">
+                  <span className="rounded-[10px] bg-[#FEF3F2] px-2.5 py-1 font-medium text-[#B42318]">
                     AI fallback failed
                   </span>
                 ) : null}
@@ -778,7 +778,7 @@ export default function EditorRightPanel({
                   onClick={() => void enhancePrompt()}
                   disabled={!canEnhance}
                   className={[
-                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                    "inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition",
                     canEnhance
                       ? "bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]"
                       : "bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)] opacity-60",
@@ -792,7 +792,7 @@ export default function EditorRightPanel({
                   <button
                     type="button"
                     onClick={restoreOriginalPrompt}
-                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+                    className="inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-semibold text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
                     title="Restore original prompt"
                   >
                     <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
@@ -806,7 +806,7 @@ export default function EditorRightPanel({
                 onClick={() => void send()}
                 disabled={!canSend}
                 className={[
-                  "grid h-8 w-8 place-items-center rounded-full transition",
+                  "grid h-8 w-8 place-items-center rounded-[12px] transition",
                   canSend
                     ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
                     : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] opacity-60",
@@ -833,7 +833,7 @@ function IconButton({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="grid h-7 w-7 place-items-center rounded-full hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
+    <button type="button" className="grid h-7 w-7 place-items-center rounded-[10px] hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
     </button>
   );
@@ -849,7 +849,7 @@ function ComposerIcon({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="grid h-8 w-8 place-items-center rounded-full hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
+    <button type="button" className="grid h-8 w-8 place-items-center rounded-[10px] hover:bg-[var(--canvas-theme-hover)]" title={label} onClick={onClick}>
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
   );

@@ -179,10 +179,10 @@ function PresetThumb({
       className={[
         "absolute overflow-hidden rounded-xl border-2 shadow-[0_10px_22px_rgba(15,23,42,0.1)] transition cursor-grab active:cursor-grabbing",
         isActive
-          ? "border-[#22D3EE] shadow-[0_0_0_2px_rgba(34,211,238,0.25)]"
+          ? "border-[#202833] shadow-[0_0_0_2px_rgba(32,40,51,0.12)]"
           : "border-transparent hover:border-white/60",
         isHovered ? "scale-105" : "",
-        isSelectedChild ? "border-[#22D3EE]/70" : "",
+        isSelectedChild ? "border-[#202833]/70" : "",
       ].join(" ")}
       style={{
         left,
@@ -243,11 +243,11 @@ function PresetThumb({
       />
 
       {/* Drag-to-connect visual hint — subtle right-edge glow on hover */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-1 rounded-r-md bg-[#22D3EE]/0 transition-all group-hover:bg-[#22D3EE]/30" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-1 rounded-r-md bg-[#202833]/0 transition-all group-hover:bg-[#202833]/16" />
 
       {/* Active star — bottom-right corner */}
       {isActive ? (
-        <div className="absolute bottom-1 right-1 z-10 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#22D3EE] text-white">
+        <div className="absolute bottom-1 right-1 z-10 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#202833] text-white">
           <Star className="h-2 w-2 fill-current" aria-hidden="true" />
         </div>
       ) : null}
@@ -335,7 +335,7 @@ export default function CanvasPresetGroupNodeCard({
     "absolute z-20 flex h-7 w-4 cursor-crosshair items-center justify-center",
     "rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_8px_18px_rgba(15,23,42,0.12)] backdrop-blur-md transition",
     "opacity-0 group-hover:opacity-100",
-    "hover:border-[#22D3EE] hover:bg-[#F0FDFE]",
+    "hover:border-[#202833] hover:bg-[#F5F5F2]",
   ].join(" ");
 
   return (
@@ -394,12 +394,12 @@ export default function CanvasPresetGroupNodeCard({
       {/* Gray box — contains thumbnails only */}
       <div
         className={[
-          "absolute inset-x-0 top-0 overflow-hidden rounded-[24px] border shadow-[0_18px_42px_rgba(15,23,42,0.1)] transition",
+          "absolute inset-x-0 top-0 overflow-hidden rounded-[18px] border shadow-[0_12px_30px_rgba(15,23,42,0.08)] transition",
           selected
-            ? "border-[#C7D2DA] bg-[#E6E9EC] ring-2 ring-[#22D3EE] ring-offset-1"
+            ? "border-[#C9CED6] bg-[#ECEEEB] ring-2 ring-[#202833]/12 ring-offset-1"
             : isConnectionTarget
-              ? "border-[#C7D2DA] bg-[#E6E9EC] ring-2 ring-[#22D3EE]/60"
-              : "border-white/55 bg-[#E6E9EC] hover:bg-[#DCE1E5]",
+              ? "border-[#C9CED6] bg-[#ECEEEB] ring-2 ring-[#202833]/10"
+              : "border-white/55 bg-[#ECEEEB] hover:bg-[#E4E7E3]",
         ].join(" ")}
         style={{ height: boxHeight }}
       >
@@ -449,7 +449,7 @@ export default function CanvasPresetGroupNodeCard({
         className="absolute inset-x-0 flex items-center justify-center"
         style={{ top: boxHeight, height: PRESET_GROUP_TITLE_HEIGHT * objectScale }}
       >
-        <p className="whitespace-nowrap text-center text-[14px] font-semibold leading-tight text-[#374151]">
+        <p className="whitespace-nowrap text-center text-[14px] font-semibold leading-tight text-[#2F3742]">
           {node.title}
         </p>
       </div>

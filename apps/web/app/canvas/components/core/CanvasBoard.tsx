@@ -118,6 +118,8 @@ type CanvasBoardProps = {
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
+  onUndoCanvas: () => boolean;
+  onRedoCanvas: () => boolean;
 };
 
 type DeletedNodeSnapshot = {
@@ -386,6 +388,8 @@ export default function CanvasBoard({
   onBrushSizeChange,
   onBrushSoftnessChange,
   onCloseRegionEditor,
+  onUndoCanvas,
+  onRedoCanvas,
 }: CanvasBoardProps) {
   const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
@@ -409,6 +413,8 @@ export default function CanvasBoard({
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(text.common.untitled);
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
+  const [createdNodeStack, setCreatedNodeStack] = useState<CanvasNode[]>([]);
+  const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<DeletedNodeSnapshot[]>([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
   const [miniMapDragging, setMiniMapDragging] = useState(false);
@@ -614,6 +620,7 @@ export default function CanvasBoard({
       const pastePan = pan;
       const pasteZoom = zoom;
       const dimensions = await loadImageDimensions(imageUrl);
+      let createdNode: CanvasNode | null = null;
       onNodesChange((prev) => {
         const isFirst = prev.length === 0;
         const { width: nodeWidth, height: nodeHeight } = getPastedImageNodeSize(dimensions);
@@ -646,8 +653,13 @@ export default function CanvasBoard({
           prompt: null,
           role: nodeRole,
         };
+        createdNode = newNode;
         return [...prev, newNode];
       });
+      if (createdNode) {
+        setCreatedNodeStack((current) => [...current, createdNode as CanvasNode]);
+        setCreatedNodeRedoStack([]);
+      }
       onToast("Image added to canvas");
     },
     [onNodesChange, onToast, pan, zoom],
@@ -696,6 +708,7 @@ export default function CanvasBoard({
   useEffect(() => {
     if (!pendingPresetGroupInsert) return;
 
+    let createdNode: CanvasPresetGroupNode | null = null;
     onNodesChange((prev) => {
       // If a group with this category (and optionally sourceFolderId) already exists, don't create another.
       const alreadyExists = prev.some(
@@ -750,9 +763,14 @@ export default function CanvasBoard({
           sourceFolderId: pendingPresetGroupInsert.sourceFolderId,
         },
       };
+      createdNode = newNode;
       return [...prev, newNode];
     });
 
+    if (createdNode) {
+      setCreatedNodeStack((current) => [...current, createdNode as CanvasPresetGroupNode]);
+      setCreatedNodeRedoStack([]);
+    }
     onConsumePendingPresetGroupInsert();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPresetGroupInsert]);
@@ -1413,15 +1431,6 @@ export default function CanvasBoard({
       const nodeToDelete = nodes.find((node) => node.id === nodeId);
       if (!nodeToDelete) return;
 
-      // Confirm before deleting a preset group folder node
-      if (!skipConfirm && isPresetGroupNode(nodeToDelete)) {
-        const childCount = nodeToDelete.presetGroup.children.length;
-        const confirmed = window.confirm(
-          `Delete "${nodeToDelete.title}" preset folder?\n${childCount} preset${childCount === 1 ? "" : "s"} will be removed from canvas. Assets in your library are not affected.`,
-        );
-        if (!confirmed) return;
-      }
-
       const relatedEdges = edges.filter((edge) => edge.sourceId === nodeId || edge.targetId === nodeId);
 
       setDeletedNodeStack((prev) => [...prev, { node: nodeToDelete, edges: relatedEdges }]);
@@ -1440,8 +1449,7 @@ export default function CanvasBoard({
   const undoDeleteNode = useCallback(() => {
     const snapshot = deletedNodeStack.at(-1);
     if (!snapshot) {
-      onToast("Nothing to undo");
-      return;
+      return false;
     }
 
     setDeletedNodeStack((prev) => prev.slice(0, -1));
@@ -1455,7 +1463,45 @@ export default function CanvasBoard({
     onSetActiveNode(snapshot.node.id);
     onSelect({ type: "node", id: snapshot.node.id });
     onToast("Image restored");
+    return true;
   }, [deletedNodeStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
+
+  const undoCreateNode = useCallback(() => {
+    const nodeToRemove = createdNodeStack.at(-1);
+    if (!nodeToRemove) {
+      return false;
+    }
+
+    const relatedEdges = edges.filter((edge) => edge.sourceId === nodeToRemove.id || edge.targetId === nodeToRemove.id);
+    setCreatedNodeStack((current) => current.slice(0, -1));
+    setCreatedNodeRedoStack((current) => [...current, { node: nodeToRemove, edges: relatedEdges }]);
+    onNodesChange((current) => current.filter((node) => node.id !== nodeToRemove.id));
+    onEdgesChange((current) => current.filter((edge) => edge.sourceId !== nodeToRemove.id && edge.targetId !== nodeToRemove.id));
+    onSelect({ type: "none" });
+    onToast(isPresetGroupNode(nodeToRemove) ? "Preset folder undone" : "Image addition undone");
+    return true;
+  }, [createdNodeStack, edges, onEdgesChange, onNodesChange, onSelect, onToast]);
+
+  const redoCreateNode = useCallback(() => {
+    const snapshot = createdNodeRedoStack.at(-1);
+    if (!snapshot) {
+      return false;
+    }
+
+    setCreatedNodeRedoStack((current) => current.slice(0, -1));
+    setCreatedNodeStack((current) => [...current, snapshot.node]);
+    onNodesChange((current) =>
+      current.some((node) => node.id === snapshot.node.id) ? current : [...current, snapshot.node],
+    );
+    onEdgesChange((current) => [
+      ...current,
+      ...snapshot.edges.filter((edge) => !current.some((currentEdge) => currentEdge.id === edge.id)),
+    ]);
+    onSetActiveNode(snapshot.node.id);
+    onSelect({ type: "node", id: snapshot.node.id });
+    onToast(isPresetGroupNode(snapshot.node) ? "Preset folder restored" : "Image restored");
+    return true;
+  }, [createdNodeRedoStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1485,7 +1531,10 @@ export default function CanvasBoard({
         event.preventDefault();
         if (redoPenErase()) {
           onToast("Erase redone");
+          return;
         }
+        if (redoCreateNode()) return;
+        if (onRedoCanvas()) return;
         return;
       }
 
@@ -1495,7 +1544,10 @@ export default function CanvasBoard({
           onToast("Erase undone");
           return;
         }
-        undoDeleteNode();
+        if (undoDeleteNode()) return;
+        if (undoCreateNode()) return;
+        if (onUndoCanvas()) return;
+        onToast("Nothing to undo");
         return;
       }
 
@@ -1514,7 +1566,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoPenErase, selectedItem, undoDeleteNode, undoPenErase]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onRedoCanvas, onSelect, onToast, onUndoCanvas, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
 
   const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
@@ -1756,6 +1808,8 @@ export default function CanvasBoard({
                       onNodesChange([]);
                       onEdgesChange([]);
                       setDeletedNodeStack([]);
+                      setCreatedNodeStack([]);
+                      setCreatedNodeRedoStack([]);
                       resetZoom();
                       onToast("New project created");
                     },
@@ -1767,6 +1821,8 @@ export default function CanvasBoard({
                       onNodesChange([]);
                       onEdgesChange([]);
                       setDeletedNodeStack([]);
+                      setCreatedNodeStack([]);
+                      setCreatedNodeRedoStack([]);
                       resetZoom();
                       onToast("Project cleared");
                     },
@@ -1780,8 +1836,8 @@ export default function CanvasBoard({
               />
               <MenuSection
                 items={[
-                  { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
-                  { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: true },
+                  { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0 && createdNodeStack.length === 0, onSelect: () => { if (!undoDeleteNode()) undoCreateNode(); } },
+                  { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: createdNodeRedoStack.length === 0, onSelect: redoCreateNode },
                   { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
                 ]}
                 onSelect={handleMenuSelect}
@@ -1947,6 +2003,8 @@ export default function CanvasBoard({
                     onNodesChange([]);
                     onEdgesChange([]);
                     setDeletedNodeStack([]);
+                    setCreatedNodeStack([]);
+                    setCreatedNodeRedoStack([]);
                     resetZoom();
                     onToast(text.toast.newProjectCreated);
                   },
@@ -1958,6 +2016,8 @@ export default function CanvasBoard({
                     onNodesChange([]);
                     onEdgesChange([]);
                     setDeletedNodeStack([]);
+                    setCreatedNodeStack([]);
+                    setCreatedNodeRedoStack([]);
                     resetZoom();
                     onToast(text.toast.projectCleared);
                   },
@@ -1971,8 +2031,8 @@ export default function CanvasBoard({
             />
             <MenuSection
               items={[
-                { label: text.menu.undo, shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0, onSelect: undoDeleteNode },
-                { label: text.menu.redo, shortcut: "Ctrl+Shift+Z", disabled: true },
+                { label: text.menu.undo, shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0 && createdNodeStack.length === 0, onSelect: () => { if (!undoDeleteNode()) undoCreateNode(); } },
+                { label: text.menu.redo, shortcut: "Ctrl+Shift+Z", disabled: createdNodeRedoStack.length === 0, onSelect: redoCreateNode },
                 { label: text.menu.duplicateSelection, shortcut: "Ctrl+D", disabled: true },
               ]}
               onSelect={handleMenuSelect}

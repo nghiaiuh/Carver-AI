@@ -18,9 +18,9 @@ type MiniMapProps = {
 
 export default function MiniMap({ zoom, onZoomOut, onResetZoom }: MiniMapProps) {
   return (
-    <div className="absolute bottom-7 left-7 z-40 w-52 rounded-3xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur">
+    <div className="absolute bottom-7 left-7 z-40 w-52 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 shadow-[0_14px_34px_var(--canvas-theme-shadow)]">
       <div
-        className="relative h-28 overflow-hidden rounded-2xl"
+        className="relative h-28 overflow-hidden rounded-[14px]"
         style={{ backgroundColor: "var(--canvas-theme-canvas)" }}
       >
         <div className="absolute left-[18%] top-[18%] h-[50%] w-[58%] rounded-lg bg-[var(--canvas-theme-surface-muted)]" />

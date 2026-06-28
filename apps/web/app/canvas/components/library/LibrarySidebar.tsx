@@ -16,7 +16,8 @@ import {
   Shrub,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getCanvasText, translateCanvasLabel, type CanvasLanguage } from "../../i18n";
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
 import { type CanvasPresetChild, type PresetGroupCategory } from "../../types/canvas";
@@ -426,9 +427,11 @@ export default function LibrarySidebar({
   onToast,
 }: LibrarySidebarProps) {
   const text = getCanvasText(language);
+  const shellRef = useRef<HTMLDivElement>(null);
   const [openSection, setOpenSection] = useState<PresetGroupCategory | null>("garden-styles");
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
   const [referenceTab, setReferenceTab] = useState<ReferenceTabId>("presets");
+  const [flyoutBounds, setFlyoutBounds] = useState<{ top: number; left: number; height: number } | null>(null);
   
   // Storing templates selected for each section category
   const [selectedTemplates, setSelectedTemplates] = useState<
@@ -548,6 +551,42 @@ export default function LibrarySidebar({
     syncSectionGroup(categoryId, nextSectionSelections);
   };
 
+  useLayoutEffect(() => {
+    if (!openSection || !activeSlotId) {
+      setFlyoutBounds(null);
+      return;
+    }
+
+    const updateFlyoutBounds = () => {
+      const element = shellRef.current;
+      if (!element) return;
+
+      const rect = element.getBoundingClientRect();
+      setFlyoutBounds({
+        top: rect.top,
+        left: rect.right + 6,
+        height: rect.height,
+      });
+    };
+
+    updateFlyoutBounds();
+
+    const element = shellRef.current;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" && element ? new ResizeObserver(updateFlyoutBounds) : null;
+
+    if (resizeObserver && element) {
+      resizeObserver.observe(element);
+    }
+
+    window.addEventListener("resize", updateFlyoutBounds);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateFlyoutBounds);
+    };
+  }, [activeSlotId, openSection]);
+
   const activeSectionConfig = PRESET_STRUCTURE.find((s) => s.id === openSection);
   let activeSlotLabel = "Slot";
   if (activeSectionConfig && activeSlotId) {
@@ -561,7 +600,7 @@ export default function LibrarySidebar({
 
   const renderSlotGrid = (slots: SlotConfig[], categoryId: PresetGroupCategory) => {
     return (
-      <div className={categoryId === "environment" ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>
+      <div className={categoryId === "environment" ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-3 gap-2.5"}>
         {slots.map((slot) => {
           const selectedForSlot = (selectedTemplates[categoryId] ?? {})[slot.id] ?? [];
           const selectedTemplate = selectedForSlot[0] ?? null;
@@ -574,15 +613,15 @@ export default function LibrarySidebar({
               data-flyout-trigger="true"
               onClick={() => toggleSlot(slot.id)}
               className={[
-                "group relative aspect-square overflow-hidden rounded-[18px] border text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition",
+                "group relative aspect-square overflow-hidden rounded-[18px] border text-left shadow-[0_12px_24px_rgba(15,23,42,0.045)] transition duration-150",
                 selectedTemplate
-                  ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/92"
-                  : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]/88",
-                isActive ? "ring-2 ring-[var(--canvas-theme-active)]/18" : "hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)]",
+                  ? "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/92 shadow-[0_16px_28px_rgba(15,23,42,0.08)]"
+                  : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]/92",
+                isActive ? "ring-2 ring-[var(--canvas-theme-active)]/16" : "hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-surface-panel)] hover:shadow-[0_16px_32px_rgba(15,23,42,0.08)]",
               ].join(" ")}
             >
               <div className="absolute inset-0 flex items-center justify-center px-2.5 text-center">
-                <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-[var(--canvas-theme-text-muted)]">
+                <p className="block text-[clamp(9px,0.82vw,11px)] font-semibold tracking-[0.01em] text-[var(--canvas-theme-text-soft)]">
                   {translateCanvasLabel(slot.label, language)}
                 </p>
                 {selectedForSlot.length > 0 ? (
@@ -611,9 +650,9 @@ export default function LibrarySidebar({
   };
 
   return (
-    <div className="relative flex h-full w-full shrink-0 overflow-visible bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
-      <aside className="flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface)]">
-        <div className="border-b border-[var(--canvas-theme-border)] px-4 py-5">
+    <div ref={shellRef} className="relative z-[60] flex h-full w-full shrink-0 overflow-visible bg-[#FFFFFF] text-[var(--canvas-theme-text)]">
+      <aside className="relative z-[60] flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[#FFFFFF] shadow-[6px_0_28px_rgba(15,23,42,0.04)]">
+        <div className="border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">
@@ -629,7 +668,7 @@ export default function LibrarySidebar({
             <button
               type="button"
               onClick={onClose}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
               title={text.common.closeLibrary}
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -659,18 +698,24 @@ export default function LibrarySidebar({
         </div>
       </aside>
 
-      {openSection && activeSlotId ? (
-        <ReferenceFlyout
-          slotLabel={activeSlotLabel}
-          language={language}
-          activeTab={referenceTab}
-          onTabChange={setReferenceTab}
-          templates={getTemplatesForSlot(activeSlotId, activeSlotLabel)}
-          selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
-          onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
-          onClose={() => setActiveSlotId(null)}
-        />
-      ) : null}
+      {openSection && activeSlotId && flyoutBounds && typeof document !== "undefined"
+        ? createPortal(
+            <ReferenceFlyout
+              slotLabel={activeSlotLabel}
+              language={language}
+              activeTab={referenceTab}
+              onTabChange={setReferenceTab}
+              templates={getTemplatesForSlot(activeSlotId, activeSlotLabel)}
+              selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
+              onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
+              onClose={() => setActiveSlotId(null)}
+              top={flyoutBounds.top}
+              left={flyoutBounds.left}
+              height={flyoutBounds.height}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -695,7 +740,7 @@ function AccordionSection({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-4 py-3.5 text-left transition hover:bg-[var(--canvas-theme-hover)]"
+        className="flex w-full items-center gap-2 px-4 py-4 text-left transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Icon className="h-4 w-4 shrink-0 text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -709,7 +754,7 @@ function AccordionSection({
           aria-hidden="true"
         />
       </button>
-      {isOpen ? <div className="px-4 pb-6 pt-4">{children}</div> : null}
+      {isOpen ? <div className="px-4 pb-7 pt-5">{children}</div> : null}
     </section>
   );
 }
@@ -723,6 +768,9 @@ function ReferenceFlyout({
   selectedTemplateIds,
   onSelectTemplate,
   onClose,
+  top,
+  left,
+  height,
 }: {
   slotLabel: string;
   language: CanvasLanguage;
@@ -732,6 +780,9 @@ function ReferenceFlyout({
   selectedTemplateIds: string[];
   onSelectTemplate: (template: ReferenceTemplate) => void;
   onClose: () => void;
+  top: number;
+  left: number;
+  height: number;
 }) {
   const flyoutRef = useRef<HTMLElement>(null);
   const text = getCanvasText(language);
@@ -766,23 +817,26 @@ function ReferenceFlyout({
   return (
     <section
       ref={flyoutRef}
-      className="absolute bottom-0 left-full top-0 z-[9999] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[var(--canvas-theme-border)] bg-[#F5F5F5] shadow-[0_30px_80px_var(--canvas-theme-shadow)] backdrop-blur-0 transition-transform"
+      className="fixed z-[500] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[#E5E7EB] bg-[#FFFFFF] shadow-[0_34px_80px_var(--canvas-theme-shadow)] transition-transform"
       style={{
+        top,
+        left,
+        height,
         boxShadow: "20px 0 25px -5px rgb(0 0 0 / 0.1), 8px 0 10px -6px rgb(0 0 0 / 0.1)",
       }}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--canvas-theme-border)] bg-transparent px-4 py-3">
-        <h3 className="text-sm font-semibold text-[var(--canvas-theme-text)]">{translateCanvasLabel(slotLabel, language)}</h3>
+      <div className="flex shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 py-3">
+        <h3 className="text-sm font-semibold text-[#111111]">{translateCanvasLabel(slotLabel, language)}</h3>
         <button
           type="button"
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+          className="grid h-7 w-7 place-items-center rounded-full text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#111111]"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
-      <div className="shrink-0 border-b border-[var(--canvas-theme-border)] bg-transparent px-4 pt-3">
+      <div className="shrink-0 border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 pt-3">
         <div className="flex gap-4">
           {tabs.map((tab) => (
             <button
@@ -792,13 +846,13 @@ function ReferenceFlyout({
               className={[
                 "relative pb-2 text-xs font-medium transition",
                 activeTab === tab.id
-                  ? "text-[var(--canvas-theme-text)]"
-                  : "text-[var(--canvas-theme-text-muted)] hover:text-[var(--canvas-theme-text)]",
+                  ? "text-[#111111]"
+                  : "text-[#6B7280] hover:text-[#111111]",
               ].join(" ")}
             >
               {tab.label}
               {activeTab === tab.id ? (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full bg-[var(--canvas-theme-text)]" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full bg-[#111111]" />
               ) : null}
             </button>
           ))}
@@ -833,8 +887,8 @@ function ReferenceFlyout({
                     alt={template.label}
                     className="absolute inset-0 h-full w-full object-cover"
                   />
-                  <div className="absolute inset-x-0 bottom-0 bg-transparent p-2 pt-6">
-                    <p className="text-[10px] font-medium text-white">{template.label}</p>
+                  <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1.5">
+                    <p className="text-[10px] font-medium leading-none text-white">{template.label}</p>
                   </div>
                   {isSelected ? (
                     <div className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-sm">
@@ -847,18 +901,18 @@ function ReferenceFlyout({
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <Box className="mb-3 h-8 w-8 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-            <p className="text-sm font-medium text-[var(--canvas-theme-text)]">
+            <Box className="mb-3 h-8 w-8 text-[#6B7280]" aria-hidden="true" />
+            <p className="text-sm font-medium text-[#111111]">
               {activeTab === "custom" ? text.flyout.customAssets : text.flyout.pinterestIntegration}
             </p>
-            <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-[var(--canvas-theme-text-muted)]">
+            <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-[#6B7280]">
               {activeTab === "custom"
                 ? text.flyout.customDescription
                 : text.flyout.pinterestDescription}
             </p>
             <button
               type="button"
-              className="mt-4 rounded-lg bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+              className="mt-4 rounded-lg bg-[#F3F4F6] px-4 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#E5E7EB]"
             >
               {activeTab === "custom" ? text.flyout.uploadImage : text.flyout.connectPinterest}
             </button>

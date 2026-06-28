@@ -35,6 +35,7 @@ export default function CanvasWorkspace() {
   useGSAP(
     () => {
       if (!rootRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      gsap.set("[data-shell-panel]", { willChange: "transform, opacity" });
       gsap.from(rootRef.current.querySelectorAll("[data-enter]"), {
         y: 16,
         autoAlpha: 0,
@@ -45,6 +46,26 @@ export default function CanvasWorkspace() {
     },
     { scope: rootRef },
   );
+
+  useEffect(() => {
+    const element = leftSidebarPanelRef.current;
+    if (!element || !state.leftSidebar.open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.fromTo(
+      element,
+      { x: -18, autoAlpha: 0.82 },
+      { x: 0, autoAlpha: 1, duration: 0.28, ease: "power2.out", clearProps: "transform,opacity" },
+    );
+  }, [leftSidebarPanelRef, state.leftSidebar.open]);
+
+  useEffect(() => {
+    const element = rightPanelRef.current;
+    if (!element || !state.rightPanelOpen || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.fromTo(
+      element,
+      { x: 18, autoAlpha: 0.82 },
+      { x: 0, autoAlpha: 1, duration: 0.28, ease: "power2.out", clearProps: "transform,opacity" },
+    );
+  }, [rightPanelRef, state.rightPanelOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -72,11 +93,11 @@ export default function CanvasWorkspace() {
         style={{
           background: [
             // Top-left warm bloom — ivory light refraction
-            "radial-gradient(ellipse 60% 40% at 0% 0%, rgba(255,252,245,0.55), transparent 60%)",
+            "radial-gradient(ellipse 58% 36% at 0% 0%, rgba(255,255,255,0.72), transparent 62%)",
             // Top-right cool atmospheric depth
-            "radial-gradient(ellipse 45% 30% at 100% 0%, rgba(12,15,20,0.05), transparent 55%)",
+            "radial-gradient(ellipse 42% 28% at 100% 0%, rgba(148,163,184,0.08), transparent 58%)",
             // Subtle bottom vignette for depth
-            "radial-gradient(ellipse 80% 40% at 50% 100%, rgba(20,14,8,0.04), transparent 70%)",
+            "linear-gradient(180deg, rgba(255,255,255,0.24), transparent 22%, transparent 78%, rgba(15,23,42,0.035))",
           ].join(", "),
         }}
       />
@@ -90,6 +111,7 @@ export default function CanvasWorkspace() {
               className="relative h-full shrink-0"
               style={{ width: leftSidebarResize.width }}
               data-canvas-ui="true"
+              data-shell-panel="left"
             >
               <EditorLeftSidebar
                 language={state.language}
@@ -126,7 +148,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={actions.openLeftSidebar}
-              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 text-[var(--canvas-theme-icon)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-md"
+              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
               title={`Open ${LEFT_SIDEBAR_PANEL_LABELS[state.leftSidebar.panel]}`}
             >
               <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
@@ -197,6 +219,8 @@ export default function CanvasWorkspace() {
             onRedoMask={actions.redoMask}
             onBrushSizeChange={actions.setBrushSize}
             onBrushSoftnessChange={actions.setBrushSoftness}
+            onUndoCanvas={actions.undoCanvas}
+            onRedoCanvas={actions.redoCanvas}
             onCloseRegionEditor={actions.exitRegionMode}
           />
 
@@ -207,6 +231,7 @@ export default function CanvasWorkspace() {
               className="relative h-full shrink-0"
               style={{ width: rightPanelResize.width }}
               data-canvas-ui="true"
+              data-shell-panel="right"
             >
               <EditorRightPanel
                 canvasId="canvas-main"
@@ -234,7 +259,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={actions.openRightPanel}
-              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 text-[var(--canvas-theme-icon)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-md"
+              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
               title={state.language === "vi" ? "Mở chat" : "Open chat"}
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
@@ -256,7 +281,7 @@ export default function CanvasWorkspace() {
         />
 
         {state.selectedSketchLineIds.length > 0 && (
-          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/94 px-4 py-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl">
+          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-[0_16px_36px_var(--canvas-theme-shadow)]">
             <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">
               {state.selectedSketchLineIds.length} sketch line
               {state.selectedSketchLineIds.length === 1 ? "" : "s"} selected
@@ -294,7 +319,7 @@ export default function CanvasWorkspace() {
 
         {/* Toast */}
         {toast && (
-          <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-black text-[var(--canvas-theme-text)] shadow-2xl shadow-[var(--canvas-theme-shadow)]">
+          <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-black text-[var(--canvas-theme-text)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
             {toast}
           </div>
         )}

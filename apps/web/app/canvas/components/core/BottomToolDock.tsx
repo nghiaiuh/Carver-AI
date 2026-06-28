@@ -136,7 +136,7 @@ export default function BottomToolDock({
       {themePickerOpen ? (
         <div
           ref={themePickerRef}
-          className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/95 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl"
+          className="absolute bottom-16 left-3 z-[60] w-80 overflow-hidden rounded-[20px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_16px_36px_var(--canvas-theme-shadow)]"
           data-canvas-ui="true"
         >
           <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] px-5">
@@ -284,7 +284,7 @@ export default function BottomToolDock({
         />
       ) : null}
 
-      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-[20px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/88 px-1.5 py-1 text-[var(--canvas-theme-icon-muted)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1.5 py-1 text-[var(--canvas-theme-icon-muted)] shadow-[0_12px_30px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
         <div className="flex h-8 items-center gap-2 px-2">
           <DockIcon
             buttonRef={themeTriggerRef}
@@ -320,7 +320,7 @@ export default function BottomToolDock({
         </button>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-1.5 shadow-[0_20px_48px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+      <div className="absolute bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1.5 shadow-[0_14px_34px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
         {tools.map((tool, index) => {
           const Icon = tool.icon;
           const selected = activeTool === tool.id;
@@ -358,7 +358,7 @@ export default function BottomToolDock({
       </div>
 
       {activeTool === "pen" ? (
-        <div className="absolute bottom-[68px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[20px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_10px_28px_var(--canvas-theme-shadow)] backdrop-blur" data-canvas-ui="true">
+        <div className="absolute bottom-[68px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_10px_24px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
           <button
             type="button"
             onClick={(event) => {

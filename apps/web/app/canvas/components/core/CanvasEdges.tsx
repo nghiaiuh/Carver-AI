@@ -106,25 +106,25 @@ export default function CanvasEdges({
             <path
               d={pathData}
               fill="none"
-              stroke={isSelected ? "#22D3EE" : "#5F5F5F"}
+              stroke={isSelected ? "#202833" : "#6B7280"}
               strokeWidth={isSelected ? "2.75" : "2"}
               strokeLinecap="round"
-              className="opacity-85 transition-colors group-hover:stroke-[#9CA3AF] group-hover:opacity-100"
+              className="opacity-85 transition-colors group-hover:stroke-[#374151] group-hover:opacity-100"
             />
 
             <circle
               cx={targetCenter.x}
               cy={targetCenter.y}
               r={isSelected ? "4" : "3"}
-              fill={isSelected ? "#22D3EE" : "#9CA3AF"}
-              className="opacity-90 transition group-hover:fill-[#D1D5DB]"
+              fill={isSelected ? "#202833" : "#9CA3AF"}
+              className="opacity-90 transition group-hover:fill-[#6B7280]"
             />
 
             {/* Keep labels discoverable without making dense graphs noisy. */}
             <foreignObject x={midX - 35} y={midY - 12} width="70" height="24">
               <div className={`flex h-full w-full items-center justify-center rounded-full border text-[10px] font-bold uppercase tracking-wider shadow-sm transition ${
                 isSelected 
-                  ? "bg-[#ECFEFF] border-[#22D3EE] text-[#155E75] opacity-100"
+                  ? "bg-[#F4F4F1] border-[#202833] text-[#202833] opacity-100"
                   : "bg-white border-[#E5E7EB] text-[#6B7280] opacity-0 group-hover:opacity-100 group-hover:border-[#9CA3AF] group-hover:text-[#374151]"
               }`}>
                 {edge.label}
@@ -169,7 +169,7 @@ export default function CanvasEdges({
           <path
             d={pathData}
             fill="none"
-            stroke={isSnapped ? "#22D3EE" : "#737373"}
+            stroke={isSnapped ? "#202833" : "#737373"}
             strokeWidth={isSnapped ? "2.5" : "2"}
             strokeDasharray={isSnapped ? "none" : "4 4"}
             className={isSnapped ? "opacity-90" : "opacity-70 animate-pulse"}
