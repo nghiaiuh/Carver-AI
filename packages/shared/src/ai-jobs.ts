@@ -68,6 +68,26 @@ export type CanvasGenerationContext = {
   connectionSummary: string;
 };
 
+export type GeneratedCanvasImage = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  width: number | null;
+  height: number | null;
+  prompt: string;
+  assetId?: string;
+  mimeType?: string;
+  provider?: string;
+};
+
+export type CanvasGenerationAssistantMessage = {
+  id: string;
+  role: "assistant";
+  content: string;
+  createdAt: string;
+  generatedImages: GeneratedCanvasImage[];
+};
+
 export type CreateAiJobRequest = {
   projectId: string;
   jobType: CarverJobKind;

@@ -8,8 +8,10 @@
 "use client";
 
 import type {
+  CanvasGenerationAssistantMessage,
   CanvasGenerationImageReference,
   CanvasGenerationPresetReference,
+  GeneratedCanvasImage,
 } from "@carver/shared";
 import {
   ArrowRight,
@@ -34,6 +36,7 @@ type EditorRightPanelProps = {
   targetPresetCount?: number;
   connectedImageReferences?: CanvasGenerationImageReference[];
   connectedPresetReferences?: CanvasGenerationPresetReference[];
+  generationAssistantMessages?: CanvasGenerationAssistantMessage[];
   draft: string;
   onDraftChange: (value: string) => void;
   onClearLinkedImage: () => void;
@@ -59,6 +62,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  generatedImages?: GeneratedCanvasImage[];
   status?: "error";
 };
 
@@ -69,6 +73,7 @@ type ChatRouteMessage = {
   createdAt: string;
   projectId?: string;
   canvasId?: string;
+  generatedImages?: GeneratedCanvasImage[];
 };
 
 type EnhancePromptResult = {
@@ -211,6 +216,7 @@ export default function EditorRightPanel({
   targetPresetCount = 0,
   connectedImageReferences = [],
   connectedPresetReferences = [],
+  generationAssistantMessages = [],
   draft,
   onDraftChange,
   onClearLinkedImage,
@@ -279,6 +285,7 @@ export default function EditorRightPanel({
             role: message.role,
             content: message.content,
             createdAt: message.createdAt,
+            generatedImages: message.generatedImages,
           })),
         );
       } catch (error) {
@@ -300,6 +307,17 @@ export default function EditorRightPanel({
       active = false;
     };
   }, [canvasId, projectId]);
+
+  useEffect(() => {
+    if (generationAssistantMessages.length === 0) return;
+
+    setMessages((current) => {
+      const existingIds = new Set(current.map((message) => message.id));
+      const nextMessages = generationAssistantMessages.filter((message) => !existingIds.has(message.id));
+      if (nextMessages.length === 0) return current;
+      return [...current, ...nextMessages];
+    });
+  }, [generationAssistantMessages]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -533,6 +551,7 @@ export default function EditorRightPanel({
           role: assistantMessage.role,
           content: assistantMessage.content,
           createdAt: assistantMessage.createdAt,
+          generatedImages: assistantMessage.generatedImages,
         },
       ]);
     } catch (error) {
@@ -611,6 +630,26 @@ export default function EditorRightPanel({
                   ].join(" ")}
                 >
                   {message.content}
+                  {message.generatedImages && message.generatedImages.length > 0 ? (
+                    <div className="mt-3 grid gap-2">
+                      {message.generatedImages.map((image) => (
+                        <figure
+                          key={image.id}
+                          className="overflow-hidden rounded-[14px] border border-[var(--canvas-theme-border)] bg-[#FFFFFF]"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={image.imageUrl}
+                            alt={image.title}
+                            className="block aspect-[4/3] w-full object-cover"
+                          />
+                          <figcaption className="border-t border-[var(--canvas-theme-border)] px-3 py-2 text-xs font-medium text-[var(--canvas-theme-text-muted)]">
+                            {image.title}
+                          </figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}

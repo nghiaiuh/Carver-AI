@@ -241,6 +241,7 @@ export default function CanvasWorkspace() {
                 targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
                 connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
                 connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
+                generationAssistantMessages={state.generationAssistantMessages}
                 draft={state.promptText}
                 onDraftChange={actions.setPromptText}
                 onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}

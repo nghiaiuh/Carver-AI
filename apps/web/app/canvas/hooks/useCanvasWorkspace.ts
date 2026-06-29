@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
+import type { CanvasGenerationAssistantMessage, GeneratedCanvasImage } from "@carver/shared";
 import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
@@ -29,6 +30,7 @@ import {
   MIN_LEFT_SIDEBAR_WIDTH,
   MIN_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_WIDTH_STORAGE_KEY,
+  getDefaultInputPorts,
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
@@ -96,6 +98,57 @@ function animateIn(selector: string) {
   }, 20);
 }
 
+async function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Unable to read image data."));
+    };
+    reader.onerror = () => reject(new Error("Unable to read image data."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function resolveImageUrlForGeneration(imageUrl: string) {
+  if (imageUrl.startsWith("data:")) return imageUrl;
+  if (typeof window === "undefined") return imageUrl;
+
+  try {
+    const normalizedUrl = new URL(imageUrl, window.location.origin);
+    const isSameOrigin = normalizedUrl.origin === window.location.origin;
+
+    if (imageUrl.startsWith("blob:") || isSameOrigin) {
+      const response = await fetch(normalizedUrl.toString());
+      if (!response.ok) throw new Error("Unable to load canvas image.");
+      return blobToDataUrl(await response.blob());
+    }
+
+    return normalizedUrl.toString();
+  } catch {
+    return imageUrl;
+  }
+}
+
+function getGeneratedNodeSize(image: GeneratedCanvasImage, targetNode: CanvasNode) {
+  const sourceWidth = image.width ?? targetNode.sourceImage?.width ?? targetNode.width;
+  const sourceHeight = image.height ?? targetNode.sourceImage?.height ?? targetNode.height;
+  const ratio = sourceWidth > 0 && sourceHeight > 0 ? sourceWidth / sourceHeight : targetNode.width / targetNode.height;
+  const width = Math.min(Math.max(targetNode.width, 260), 420);
+  const height = width / ratio;
+
+  if (height <= 320) return { width, height };
+
+  return {
+    width: 320 * ratio,
+    height: 320,
+  };
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useCanvasWorkspace() {
@@ -126,6 +179,7 @@ export function useCanvasWorkspace() {
   // ── Generation / AI ─────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
   const [activeGenerationTargetId, setActiveGenerationTargetId] = useState<string | null>(null);
+  const [generationAssistantMessages, setGenerationAssistantMessages] = useState<CanvasGenerationAssistantMessage[]>([]);
   const [mockConcepts, setMockConcepts] = useState<string[]>([]);
   const [outputAngles, setOutputAngles] = useState<string[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
@@ -580,39 +634,59 @@ export function useCanvasWorkspace() {
     setIsGeneratingRegion(activeTool === "region");
     setMockConcepts([]);
     try {
+      const resolvedGenerationContext = {
+        ...generationContext,
+        target: {
+          ...generationContext.target,
+          imageUrl: await resolveImageUrlForGeneration(generationContext.target.imageUrl),
+        },
+        imageReferences: await Promise.all(
+          generationContext.imageReferences.map(async (reference) => ({
+            ...reference,
+            imageUrl: await resolveImageUrlForGeneration(reference.imageUrl),
+          })),
+        ),
+        presetReferences: await Promise.all(
+          generationContext.presetReferences.map(async (reference) => ({
+            ...reference,
+            imageSrc: await resolveImageUrlForGeneration(reference.imageSrc),
+          })),
+        ),
+      };
+
       const snapshot = buildCanvasSnapshotWithGraph({
         nodes,
         edges,
         activeGenerationTargetId,
       });
       const payload = {
-        prompt: promptText || generationContext.target.prompt || "Canvas generation request",
-        rawPrompt: promptText || generationContext.target.prompt || "Canvas generation request",
+        prompt: promptText || resolvedGenerationContext.target.prompt || "Canvas generation request",
+        rawPrompt: promptText || resolvedGenerationContext.target.prompt || "Canvas generation request",
         generationMode: "image_editing",
-        canvasGraphContext: generationContext,
+        canvasGraphContext: resolvedGenerationContext,
         targetNodeId: targetNode.id,
         snapshot,
         imageContext: {
-          directEditTarget: generationContext.target,
-          imageReferences: generationContext.imageReferences,
-          presetReferences: generationContext.presetReferences,
+          directEditTarget: resolvedGenerationContext.target,
+          imageReferences: resolvedGenerationContext.imageReferences,
+          presetReferences: resolvedGenerationContext.presetReferences,
           regionPayload,
         },
         referenceImages: [
-          ...generationContext.imageReferences.map((reference) => ({
+          ...resolvedGenerationContext.imageReferences.map((reference) => ({
             label: reference.title,
             role: reference.role,
             url: reference.imageUrl,
           })),
-          ...generationContext.presetReferences.map((reference) => ({
+          ...resolvedGenerationContext.presetReferences.map((reference) => ({
             label: reference.label,
             role: reference.role,
             url: reference.imageSrc,
           })),
         ],
         projectContext: {
-          connectionSummary: generationContext.connectionSummary,
-          preserveRules: generationContext.preserveRules,
+          connectionSummary: resolvedGenerationContext.connectionSummary,
+          preserveRules: resolvedGenerationContext.preserveRules,
         },
       };
 
@@ -626,25 +700,53 @@ export function useCanvasWorkspace() {
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         promptMeta?: { enhancedPromptVisible?: string };
+        generatedImages?: GeneratedCanvasImage[];
+        assistantMessage?: CanvasGenerationAssistantMessage;
       };
 
       if (!response.ok) {
         throw new Error(result.error || "Unable to generate from current canvas context.");
       }
 
-      setNodes((items) =>
-        items.map((node) =>
-          node.role === "output"
-            ? {
-                ...node,
-                prompt: result.promptMeta?.enhancedPromptVisible ?? payload.prompt,
-              }
-            : node,
-        ),
-      );
-      setMockConcepts(["Concept A", "Concept B", "Concept C"]);
-      animateIn(".output-thumb");
-      showToast("Generation context prepared");
+      const generatedImage = result.generatedImages?.[0] ?? null;
+      if (!generatedImage) {
+        showToast("Generation context prepared");
+        return;
+      }
+
+      const nodeSize = getGeneratedNodeSize(generatedImage, targetNode);
+      const outputNode: CanvasNode = {
+        id: `node-generated-${Date.now()}`,
+        x: targetNode.x + targetNode.width * (targetNode.scale ?? 1) + 80,
+        y: targetNode.y,
+        width: nodeSize.width,
+        height: nodeSize.height,
+        scale: 1,
+        inputPorts: getDefaultInputPorts(),
+        imageUrl: generatedImage.imageUrl,
+        sourceImage: {
+          url: generatedImage.imageUrl,
+          width: generatedImage.width,
+          height: generatedImage.height,
+          mimeType: generatedImage.mimeType,
+          name: generatedImage.title,
+          quality: "original",
+        },
+        title: generatedImage.title || "Generated concept",
+        prompt: result.promptMeta?.enhancedPromptVisible ?? generatedImage.prompt ?? payload.prompt,
+        role: "output",
+      };
+
+      setNodes((items) => [...items, outputNode]);
+      setActiveGenerationTargetId(outputNode.id);
+      setActiveNodeId(outputNode.id);
+      setSelectedItem({ type: "node", id: outputNode.id });
+
+      if (result.assistantMessage) {
+        setGenerationAssistantMessages((messages) => [...messages, result.assistantMessage as CanvasGenerationAssistantMessage]);
+      }
+
+      showToast("Generated image added to chat and canvas");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to generate from current canvas context.");
     } finally {
@@ -773,6 +875,7 @@ export function useCanvasWorkspace() {
       edges,
       promptText,
       activeGenerationTargetId,
+      generationAssistantMessages,
       mockConcepts,
       outputAngles,
       activeNodeId,
