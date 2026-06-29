@@ -63,8 +63,6 @@ type CanvasBoardProps = {
   selectedSketchLineIds: string[];
   nodes: CanvasNode[];
   edges: CanvasEdge[];
-  mockConcepts: string[];
-  angleResults: string[];
   onSelect: (item: SelectedItem) => void;
   onImageAction: (xPercent: number, yPercent: number) => void;
   onAddSketchLine: (line: SketchLine) => void;
@@ -84,7 +82,7 @@ type CanvasBoardProps = {
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
   activeGenerationTargetId: string | null;
-  activeNodeId: string;
+  activeNodeId: string | null;
   onSetActiveNode: (id: string) => void;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
@@ -118,8 +116,6 @@ type CanvasBoardProps = {
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
-  onUndoCanvas: () => boolean;
-  onRedoCanvas: () => boolean;
 };
 
 type DeletedNodeSnapshot = {
@@ -338,8 +334,6 @@ export default function CanvasBoard({
   selectedSketchLineIds,
   nodes,
   edges,
-  mockConcepts,
-  angleResults,
   onSelect,
   onImageAction,
   onAddSketchLine,
@@ -388,8 +382,6 @@ export default function CanvasBoard({
   onBrushSizeChange,
   onBrushSoftnessChange,
   onCloseRegionEditor,
-  onUndoCanvas,
-  onRedoCanvas,
 }: CanvasBoardProps) {
   const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
@@ -1534,7 +1526,6 @@ export default function CanvasBoard({
           return;
         }
         if (redoCreateNode()) return;
-        if (onRedoCanvas()) return;
         return;
       }
 
@@ -1546,7 +1537,6 @@ export default function CanvasBoard({
         }
         if (undoDeleteNode()) return;
         if (undoCreateNode()) return;
-        if (onUndoCanvas()) return;
         onToast("Nothing to undo");
         return;
       }
@@ -1566,7 +1556,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onRedoCanvas, onSelect, onToast, onUndoCanvas, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
 
   const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
   const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
@@ -2164,7 +2154,6 @@ export default function CanvasBoard({
               sketchLines={sketchLines}
               sketchGroups={sketchGroups}
               selectedSketchLineIds={selectedSketchLineIds}
-              activeNodeId={activeNodeId}
               viewportZoom={zoom}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
@@ -2320,32 +2309,6 @@ export default function CanvasBoard({
         penSettings={penSettings}
         onPenSettingsChange={onPenSettingsChange}
       />
-
-      {mockConcepts.length > 0 || angleResults.length > 0 ? (
-        <div className="output-tray absolute bottom-6 right-6 z-40 w-[420px] max-w-[calc(100%-2rem)] overflow-hidden rounded-[32px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/94 shadow-[0_30px_70px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
-          <div className="flex items-center justify-between border-b border-[var(--canvas-theme-border)] px-4 py-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--canvas-theme-text-muted)]">{language === "vi" ? "Khay output" : "Output Tray"}</p>
-              <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">{language === "vi" ? "Các hướng concept mới nhất" : "Latest concept directions"}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onToast(text.toast.compareOutputsNext)}
-              className="rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)]"
-            >
-              {text.menu.compare}
-            </button>
-          </div>
-          <div className="flex gap-3 overflow-x-auto p-4">
-            {[...mockConcepts, ...angleResults].map((item, index) => (
-              <div key={`${item}-${index}`} className="output-thumb w-32 shrink-0 overflow-hidden rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)]">
-                <div className="h-24 bg-[linear-gradient(135deg,rgba(109,93,251,.22),#fff_54%,rgba(34,197,94,.16))]" />
-                <p className="px-3 py-3 text-xs font-black text-[var(--canvas-theme-text)]">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -2457,3 +2420,4 @@ function MenuSection({
     </div>
   );
 }
+

@@ -123,8 +123,8 @@ export default function CanvasWorkspace() {
                 onSelectAsset={actions.setSelectedLibraryAssetId}
                 onCreateFolder={library.createFolder}
                 onRenameFolder={library.renameFolder}
-                onDeleteFolder={library.deleteFolder}
-                onDeleteAsset={library.removeAssetFromFolder}
+                onDeleteFolder={actions.deleteLibraryFolder}
+                onDeleteAsset={actions.removeLibraryAsset}
                 onAddAssetToCanvas={(asset) => {
                   actions.setSelectedLibraryAssetId(asset.id);
                   actions.setPendingLibraryInsertAsset(asset);
@@ -165,8 +165,6 @@ export default function CanvasWorkspace() {
             addedObjects={state.addedObjects}
             nodes={state.nodes}
             edges={state.edges}
-            mockConcepts={state.mockConcepts}
-            angleResults={state.outputAngles}
             onSelect={actions.handleSelectItem}
             onImageAction={actions.handleImageAction}
             sketchLines={state.sketchLines}
@@ -219,8 +217,6 @@ export default function CanvasWorkspace() {
             onRedoMask={actions.redoMask}
             onBrushSizeChange={actions.setBrushSize}
             onBrushSoftnessChange={actions.setBrushSoftness}
-            onUndoCanvas={actions.undoCanvas}
-            onRedoCanvas={actions.redoCanvas}
             onCloseRegionEditor={actions.exitRegionMode}
           />
 

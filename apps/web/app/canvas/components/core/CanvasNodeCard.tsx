@@ -76,7 +76,6 @@ type CanvasNodeCardProps = {
   sketchLines: SketchLine[];
   sketchGroups: SketchGroup[];
   selectedSketchLineIds: string[];
-  activeNodeId: string;
   viewportZoom: number;
   isConnectionTarget?: boolean;
   hoveredPortId?: string | null;

@@ -77,13 +77,9 @@ type PendingPresetGroupInsert = {
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 
-const INITIAL_MARKERS: Marker[] = [
-  { id: "marker-1", x: 58, y: 56, label: "Place koi pond here" },
-];
+const INITIAL_MARKERS: Marker[] = [];
 
-const INITIAL_OBJECTS: AddedObject[] = [
-  { id: "object-1", x: 62, y: 58, w: 17, h: 10, rotation: -5, label: "Koi Pond" },
-];
+const INITIAL_OBJECTS: AddedObject[] = [];
 
 // ── Animation helper (side-effect, canvas-local) ───────────────────────────
 
@@ -180,10 +176,7 @@ export function useCanvasWorkspace() {
   const [promptText, setPromptText] = useState("");
   const [activeGenerationTargetId, setActiveGenerationTargetId] = useState<string | null>(null);
   const [generationAssistantMessages, setGenerationAssistantMessages] = useState<CanvasGenerationAssistantMessage[]>([]);
-  const [mockConcepts, setMockConcepts] = useState<string[]>([]);
-  const [outputAngles, setOutputAngles] = useState<string[]>([]);
-  const [activeNodeId, setActiveNodeId] = useState<string>("node-3");
-  const [isGeneratingRegion, setIsGeneratingRegion] = useState(false);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<string | null>(null);
@@ -205,6 +198,7 @@ export function useCanvasWorkspace() {
     useState<CanvasLibraryAsset | null>(null);
   const [pendingPresetGroupInsert, setPendingPresetGroupInsert] =
     useState<PendingPresetGroupInsert | null>(null);
+  const uploadedLibraryAssetUrlsRef = useRef(new Map<string, string>());
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -228,7 +222,6 @@ export function useCanvasWorkspace() {
   const library = useCanvasLibrary();
 
   // ── Derived values ──────────────────────────────────────────────────────────
-  const allLibraryAssets = library.allAssets;
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
   const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
@@ -246,6 +239,19 @@ export function useCanvasWorkspace() {
     if (nodes.some((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node))) return;
     setActiveGenerationTargetId(null);
   }, [activeGenerationTargetId, nodes]);
+
+  useEffect(() => {
+    if (!activeNodeId) return;
+    if (nodes.some((node) => node.id === activeNodeId)) return;
+    setActiveNodeId(null);
+  }, [activeNodeId, nodes]);
+
+  useEffect(() => {
+    return () => {
+      uploadedLibraryAssetUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      uploadedLibraryAssetUrlsRef.current.clear();
+    };
+  }, []);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -282,15 +288,26 @@ export function useCanvasWorkspace() {
       setSelectedSketchLineIds([]);
     }
 
+    if (item.type === "presetChild") {
+      setActiveNodeId(item.nodeId);
+      setActiveGenerationTargetId(null);
+      return;
+    }
+
     if (item.type === "node" || item.type === "image") {
       const nextNode = nodes.find((node) => node.id === item.id);
+      setActiveNodeId(item.id);
       if (nextNode && !isPresetGroupNode(nextNode)) {
         setActiveGenerationTargetId(nextNode.id);
         setPromptText(nextNode.prompt ?? "");
         return;
       }
+
+      setActiveGenerationTargetId(null);
+      return;
     }
 
+    setActiveNodeId(null);
     setActiveGenerationTargetId(null);
   };
 
@@ -344,17 +361,15 @@ export function useCanvasWorkspace() {
     animateIn(".added-object");
   };
 
-  const undoCanvas = () => false;
-
-  const redoCanvas = () => false;
-
   const uploadAssetsToFolder = (folderId: string, files: FileList | File[]) => {
     Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
       .forEach((file) => {
         const objectUrl = URL.createObjectURL(file);
+        const assetId = `asset_${Date.now()}_${file.name}`;
+        uploadedLibraryAssetUrlsRef.current.set(assetId, objectUrl);
         library.addAssetToFolder(folderId, {
-          id: `asset_${Date.now()}_${file.name}`,
+          id: assetId,
           src: objectUrl,
           thumbnailSrc: objectUrl,
           title: file.name.replace(/\.[^.]+$/, ""),
@@ -367,6 +382,28 @@ export function useCanvasWorkspace() {
         });
       });
     showToast("Images added to Library");
+  };
+
+  const removeLibraryAsset = (folderId: string, assetId: string) => {
+    const objectUrl = uploadedLibraryAssetUrlsRef.current.get(assetId);
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      uploadedLibraryAssetUrlsRef.current.delete(assetId);
+    }
+
+    library.removeAssetFromFolder(folderId, assetId);
+  };
+
+  const deleteLibraryFolder = (folderId: string) => {
+    const folder = library.folders.find((item) => item.id === folderId);
+    folder?.assets.forEach((asset) => {
+      const objectUrl = uploadedLibraryAssetUrlsRef.current.get(asset.id);
+      if (!objectUrl) return;
+      URL.revokeObjectURL(objectUrl);
+      uploadedLibraryAssetUrlsRef.current.delete(asset.id);
+    });
+
+    library.deleteFolder(folderId);
   };
 
   const upsertPresetGroup = (params: PendingPresetGroupInsert, replaceAllChildren = false) => {
@@ -430,11 +467,11 @@ export function useCanvasWorkspace() {
   };
 
   const removePresetChild = (nodeId: string, childId: string) => {
-    setNodes((current) => {
-      const targetNode = current.find((node) => isPresetGroupNode(node) && node.id === nodeId) as CanvasPresetGroupNode | undefined;
-      if (!targetNode) return current;
+    const targetNode = nodes.find((node) => isPresetGroupNode(node) && node.id === nodeId) as CanvasPresetGroupNode | undefined;
+    if (!targetNode) return;
 
-      const { children } = removePresetChildAndCleanupEdges(targetNode, childId, edges);
+    const { children, edges: nextEdges } = removePresetChildAndCleanupEdges(targetNode, childId, edges);
+    setNodes((current) => {
       if (children.length === 0) {
         return current.filter((node) => node.id !== nodeId);
       }
@@ -454,7 +491,7 @@ export function useCanvasWorkspace() {
         });
       });
     });
-    setEdges((current) => current.filter((edge) => !(edge.targetId === nodeId && edge.targetPresetChildId === childId)));
+    setEdges(nextEdges);
     setSelectedItem({ type: "node", id: nodeId });
   };
 
@@ -531,42 +568,6 @@ export function useCanvasWorkspace() {
     showToast(`${nameTag} group created`);
   };
 
-  const buildGenerationContext = () => {
-    const selectedGroup =
-      selectedItem.type === "sketchGroup"
-        ? sketchGroups.find((group) => group.id === selectedItem.id)
-        : undefined;
-    const selectedObject =
-      selectedItem.type === "object"
-        ? addedObjects.find((object) => object.id === selectedItem.id)
-        : undefined;
-    const selectedTarget = selectedGroup ?? selectedObject;
-    const assetIds =
-      selectedGroup?.selectedAssetIds ??
-      selectedObject?.selectedAssetIds ??
-      [];
-    const assets = allLibraryAssets.filter((asset) => assetIds.includes(asset.id));
-
-    if (!selectedTarget) {
-      return {
-        targetSummary: "No explicit region or sketch group selected.",
-        referenceSummary: "No local library references selected.",
-      };
-    }
-
-    const targetSummary =
-      "nameTag" in selectedTarget
-        ? `Target group: ${selectedTarget.nameTag}; object type: ${selectedTarget.objectType}; bounds: ${JSON.stringify(selectedTarget.bounds)}.`
-        : `Target object: ${selectedTarget.label}; bounds: ${JSON.stringify({ x: selectedTarget.x, y: selectedTarget.y, w: selectedTarget.w, h: selectedTarget.h })}.`;
-
-    const referenceSummary =
-      assets.length > 0
-        ? `Use local library references: ${assets.map((asset) => `${asset.title ?? "Untitled"} (${asset.metadata?.categoryHint ?? "asset"})`).join("; ")}.`
-        : "No local library references selected.";
-
-    return { targetSummary, referenceSummary };
-  };
-
   const updatePromptText = (value: string) => {
     setPromptText(value);
     if (!activeGenerationTargetId) return;
@@ -631,8 +632,6 @@ export function useCanvasWorkspace() {
           }
         : null;
 
-    setIsGeneratingRegion(activeTool === "region");
-    setMockConcepts([]);
     try {
       const resolvedGenerationContext = {
         ...generationContext,
@@ -749,21 +748,15 @@ export function useCanvasWorkspace() {
       showToast("Generated image added to chat and canvas");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to generate from current canvas context.");
-    } finally {
-      setIsGeneratingRegion(false);
     }
   };
 
   const generateAngles = () => {
     setShowMultiAngleModal(false);
-    setOutputAngles(["Angle A", "Angle B", "Top View", "Night View"]);
-    showToast("Angle set created");
-    animateIn(".output-thumb");
   };
 
   const applyQuickEdit = () => {
     setShowQuickEditModal(false);
-    showToast("Edit instruction added");
   };
 
   const pushMaskHistoryCheckpoint = (nodeId: string) => {
@@ -876,8 +869,6 @@ export function useCanvasWorkspace() {
       promptText,
       activeGenerationTargetId,
       generationAssistantMessages,
-      mockConcepts,
-      outputAngles,
       activeNodeId,
       leftSidebar,
       miniMapOpen,
@@ -892,9 +883,7 @@ export function useCanvasWorkspace() {
       brushSize,
       brushSoftness,
       maskTrigger,
-      isGeneratingRegion,
       // derived
-      allLibraryAssets,
       canvasThemeStyle,
       isResizingPanel,
       selectedNode,
@@ -958,12 +947,12 @@ export function useCanvasWorkspace() {
       handleImageAction,
       addObject,
       uploadAssetsToFolder,
+      deleteLibraryFolder,
+      removeLibraryAsset,
 
       // Nodes & edges (passthrough setters for CanvasBoard)
       setNodes,
       setEdges,
-      undoCanvas,
-      redoCanvas,
       setActiveNodeId,
 
       // Prompt
