@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
-import type { CanvasGenerationAssistantMessage, GeneratedCanvasImage } from "@carver/shared";
+import type { CanvasGenerationAssistantMessage } from "@carver/shared";
 import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
@@ -30,11 +30,15 @@ import {
   MIN_LEFT_SIDEBAR_WIDTH,
   MIN_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_WIDTH_STORAGE_KEY,
-  getDefaultInputPorts,
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import { buildCanvasGenerationContext, buildCanvasSnapshotWithGraph } from "../utils/generationContext";
+import {
+  type CanvasGenerateResponse,
+  createGeneratedOutputNode,
+  resolveGenerationContextAssets,
+} from "../utils/canvasGeneration";
 import type {
   AddedObject,
   CanvasEdge,
@@ -59,6 +63,7 @@ import {
   upsertPresetChild,
 } from "../utils/presetGroup";
 
+// Lấy node đang được chọn từ trạng thái selection hiện tại của canvas.
 function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
   if (selectedItem.type !== "node" && selectedItem.type !== "image" && selectedItem.type !== "presetChild") {
     return null;
@@ -83,6 +88,7 @@ const INITIAL_OBJECTS: AddedObject[] = [];
 
 // ── Animation helper (side-effect, canvas-local) ───────────────────────────
 
+// Chạy animation xuất hiện nhẹ cho các phần tử mới trên canvas.
 function animateIn(selector: string) {
   window.setTimeout(() => {
     const items = document.querySelectorAll(selector);
@@ -94,59 +100,9 @@ function animateIn(selector: string) {
   }, 20);
 }
 
-async function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("Unable to read image data."));
-    };
-    reader.onerror = () => reject(new Error("Unable to read image data."));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function resolveImageUrlForGeneration(imageUrl: string) {
-  if (imageUrl.startsWith("data:")) return imageUrl;
-  if (typeof window === "undefined") return imageUrl;
-
-  try {
-    const normalizedUrl = new URL(imageUrl, window.location.origin);
-    const isSameOrigin = normalizedUrl.origin === window.location.origin;
-
-    if (imageUrl.startsWith("blob:") || isSameOrigin) {
-      const response = await fetch(normalizedUrl.toString());
-      if (!response.ok) throw new Error("Unable to load canvas image.");
-      return blobToDataUrl(await response.blob());
-    }
-
-    return normalizedUrl.toString();
-  } catch {
-    return imageUrl;
-  }
-}
-
-function getGeneratedNodeSize(image: GeneratedCanvasImage, targetNode: CanvasNode) {
-  const sourceWidth = image.width ?? targetNode.sourceImage?.width ?? targetNode.width;
-  const sourceHeight = image.height ?? targetNode.sourceImage?.height ?? targetNode.height;
-  const ratio = sourceWidth > 0 && sourceHeight > 0 ? sourceWidth / sourceHeight : targetNode.width / targetNode.height;
-  const width = Math.min(Math.max(targetNode.width, 260), 420);
-  const height = width / ratio;
-
-  if (height <= 320) return { width, height };
-
-  return {
-    width: 320 * ratio,
-    height: 320,
-  };
-}
-
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
+// Hook trung tâm quản lý state, derived state và action của workspace canvas.
 export function useCanvasWorkspace() {
   // ── DOM Refs ────────────────────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement>(null);
@@ -255,11 +211,13 @@ export function useCanvasWorkspace() {
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
+  // Hiển thị toast ngắn và tự ẩn sau một khoảng thời gian cố định.
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 1800);
   };
 
+  // Bật hoặc tắt panel trái theo tab người dùng chọn.
   const toggleLeftSidebarPanel = (panel: LeftSidebarPanelId) => {
     setLeftSidebar((current) =>
       current.open && current.panel === panel
@@ -268,10 +226,12 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Mở lại panel trái mà không đổi tab hiện tại.
   const openLeftSidebar = () => {
     setLeftSidebar((current) => ({ ...current, open: true }));
   };
 
+  // Đổi tool đang hoạt động và chặn các tool cần chọn ảnh trước.
   const handleTool = (tool: EditorTool) => {
     if (tool === "region" && !selectedNode) {
       showToast("Select an image first");
@@ -282,6 +242,7 @@ export function useCanvasWorkspace() {
     if (tool === "add-object") setShowAddObjectMenu(true);
   };
 
+  // Đồng bộ selection với node active và target dùng cho generate.
   const handleSelectItem = (item: SelectedItem) => {
     setSelectedItem(item);
     if (item.type !== "sketchLine") {
@@ -311,12 +272,14 @@ export function useCanvasWorkspace() {
     setActiveGenerationTargetId(null);
   };
 
+  // Thêm một nét bút mới và chuyển selection sang nét vừa vẽ.
   const addPenStroke = (stroke: PenStrokeObject) => {
     setPenStrokes((items) => [...items, stroke]);
     setSelectedItem({ type: "pen-stroke", id: stroke.id });
     setSelectedSketchLineIds([]);
   };
 
+  // Thay toàn bộ danh sách nét bút, thường dùng sau thao tác erase hoặc undo.
   const replacePenStrokes = (nextStrokes: PenStrokeObject[]) => {
     setPenStrokes(nextStrokes);
     setSelectedItem((current) => {
@@ -325,6 +288,7 @@ export function useCanvasWorkspace() {
     });
   };
 
+  // Xóa một nét bút và dọn selection nếu đang chọn nét đó.
   const deletePenStroke = (strokeId: string) => {
     setPenStrokes((items) => items.filter((stroke) => stroke.id !== strokeId));
     setSelectedItem((current) =>
@@ -332,6 +296,7 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Xử lý click lên ảnh theo tool hiện tại, ví dụ đặt marker vị trí.
   const handleImageAction = (x: number, y: number) => {
     if (activeTool === "mark-position") {
       const id = `marker-${markers.length + 1}`;
@@ -341,6 +306,7 @@ export function useCanvasWorkspace() {
     }
   };
 
+  // Thêm object mẫu lên canvas và trả tool về chế độ chọn.
   const addObject = (label: string) => {
     const id = `object-${addedObjects.length + 1}`;
     setAddedObjects((items) => [
@@ -361,6 +327,7 @@ export function useCanvasWorkspace() {
     animateIn(".added-object");
   };
 
+  // Nhận ảnh upload rồi thêm chúng vào folder thư viện dưới dạng asset cục bộ.
   const uploadAssetsToFolder = (folderId: string, files: FileList | File[]) => {
     Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
@@ -384,6 +351,7 @@ export function useCanvasWorkspace() {
     showToast("Images added to Library");
   };
 
+  // Xóa asset trong thư viện và thu hồi object URL nếu có.
   const removeLibraryAsset = (folderId: string, assetId: string) => {
     const objectUrl = uploadedLibraryAssetUrlsRef.current.get(assetId);
     if (objectUrl) {
@@ -394,6 +362,7 @@ export function useCanvasWorkspace() {
     library.removeAssetFromFolder(folderId, assetId);
   };
 
+  // Xóa cả folder thư viện và dọn toàn bộ object URL thuộc folder đó.
   const deleteLibraryFolder = (folderId: string) => {
     const folder = library.folders.find((item) => item.id === folderId);
     folder?.assets.forEach((asset) => {
@@ -406,6 +375,7 @@ export function useCanvasWorkspace() {
     library.deleteFolder(folderId);
   };
 
+  // Tạo mới hoặc cập nhật preset group bằng danh sách preset con mới.
   const upsertPresetGroup = (params: PendingPresetGroupInsert, replaceAllChildren = false) => {
     const existingGroup = nodes.find(
       (node) =>
@@ -449,6 +419,7 @@ export function useCanvasWorkspace() {
     setSelectedItem({ type: "node", id: existingGroup.id });
   };
 
+  // Đổi preset con đang active trong preset group.
   const setActivePresetChild = (nodeId: string, childId: string) => {
     setNodes((current) =>
       current.map((node) => {
@@ -466,6 +437,7 @@ export function useCanvasWorkspace() {
     setSelectedItem({ type: "presetChild", nodeId, childId });
   };
 
+  // Xóa một preset con và cập nhật lại các cạnh nối liên quan.
   const removePresetChild = (nodeId: string, childId: string) => {
     const targetNode = nodes.find((node) => isPresetGroupNode(node) && node.id === nodeId) as CanvasPresetGroupNode | undefined;
     if (!targetNode) return;
@@ -495,6 +467,7 @@ export function useCanvasWorkspace() {
     setSelectedItem({ type: "node", id: nodeId });
   };
 
+  // Đổi thứ tự hiển thị của preset con trong preset group.
   const movePresetChild = (nodeId: string, childId: string, direction: "left" | "right") => {
     setNodes((current) =>
       current.map((node) => {
@@ -517,12 +490,14 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Thêm sketch line mới và chọn ngay line đó.
   const addSketchLine = (line: SketchLine) => {
     setSketchLines((items) => [...items, line]);
     setSelectedSketchLineIds([line.id]);
     setSelectedItem({ type: "sketchLine", id: line.id });
   };
 
+  // Chọn một sketch line, hỗ trợ cả chọn cộng dồn.
   const selectSketchLine = (id: string, additive: boolean) => {
     setSelectedSketchLineIds((items) => {
       return additive
@@ -534,6 +509,7 @@ export function useCanvasWorkspace() {
     setSelectedItem({ type: "sketchLine", id });
   };
 
+  // Gom các sketch line đã chọn thành một sketch group có bounds và loại đối tượng.
   const groupSelectedSketchLines = (nameTag: string) => {
     const lineIds = selectedSketchLineIds.filter((id) =>
       sketchLines.some((line) => line.id === id),
@@ -568,6 +544,7 @@ export function useCanvasWorkspace() {
     showToast(`${nameTag} group created`);
   };
 
+  // Cập nhật prompt đang soạn và đồng bộ vào target node hiện tại.
   const updatePromptText = (value: string) => {
     setPromptText(value);
     if (!activeGenerationTargetId) return;
@@ -581,6 +558,7 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Chuẩn bị context từ canvas, gọi API generate và thêm ảnh kết quả trở lại canvas.
   const generateConcept = async () => {
     if (activeTool === "region" && !selectedNode) {
       showToast("Select an image first");
@@ -597,32 +575,18 @@ export function useCanvasWorkspace() {
       return;
     }
 
-    const targetNode =
-      activeGenerationTargetId
-        ? nodes.find((node) => node.id === activeGenerationTargetId) ?? null
-        : null;
-
-    if (!targetNode) {
+    if (!activeGenerationTarget) {
       showToast("Select a target image first");
       return;
     }
 
-    if (isPresetGroupNode(targetNode)) {
-      showToast("Preset groups cannot be generated directly");
-      return;
-    }
-
-    const generationContext = buildCanvasGenerationContext(
-      targetNode.id,
-      nodes,
-      edges,
-      promptText,
-    );
-    if (!generationContext) {
+    if (!activeGenerationContext) {
       showToast("Unable to build generation context");
       return;
     }
 
+    const effectivePrompt =
+      promptText || activeGenerationContext.target.prompt || "Canvas generation request";
     const regionPayload =
       activeTool === "region" && selectedNode?.regionMask
         ? {
@@ -633,25 +597,7 @@ export function useCanvasWorkspace() {
         : null;
 
     try {
-      const resolvedGenerationContext = {
-        ...generationContext,
-        target: {
-          ...generationContext.target,
-          imageUrl: await resolveImageUrlForGeneration(generationContext.target.imageUrl),
-        },
-        imageReferences: await Promise.all(
-          generationContext.imageReferences.map(async (reference) => ({
-            ...reference,
-            imageUrl: await resolveImageUrlForGeneration(reference.imageUrl),
-          })),
-        ),
-        presetReferences: await Promise.all(
-          generationContext.presetReferences.map(async (reference) => ({
-            ...reference,
-            imageSrc: await resolveImageUrlForGeneration(reference.imageSrc),
-          })),
-        ),
-      };
+      const resolvedGenerationContext = await resolveGenerationContextAssets(activeGenerationContext);
 
       const snapshot = buildCanvasSnapshotWithGraph({
         nodes,
@@ -659,11 +605,11 @@ export function useCanvasWorkspace() {
         activeGenerationTargetId,
       });
       const payload = {
-        prompt: promptText || resolvedGenerationContext.target.prompt || "Canvas generation request",
-        rawPrompt: promptText || resolvedGenerationContext.target.prompt || "Canvas generation request",
+        prompt: effectivePrompt,
+        rawPrompt: effectivePrompt,
         generationMode: "image_editing",
         canvasGraphContext: resolvedGenerationContext,
-        targetNodeId: targetNode.id,
+        targetNodeId: activeGenerationTarget.id,
         snapshot,
         imageContext: {
           directEditTarget: resolvedGenerationContext.target,
@@ -696,12 +642,7 @@ export function useCanvasWorkspace() {
         },
         body: JSON.stringify(payload),
       });
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        promptMeta?: { enhancedPromptVisible?: string };
-        generatedImages?: GeneratedCanvasImage[];
-        assistantMessage?: CanvasGenerationAssistantMessage;
-      };
+      const result = (await response.json().catch(() => ({}))) as CanvasGenerateResponse;
 
       if (!response.ok) {
         throw new Error(result.error || "Unable to generate from current canvas context.");
@@ -713,28 +654,11 @@ export function useCanvasWorkspace() {
         return;
       }
 
-      const nodeSize = getGeneratedNodeSize(generatedImage, targetNode);
-      const outputNode: CanvasNode = {
-        id: `node-generated-${Date.now()}`,
-        x: targetNode.x + targetNode.width * (targetNode.scale ?? 1) + 80,
-        y: targetNode.y,
-        width: nodeSize.width,
-        height: nodeSize.height,
-        scale: 1,
-        inputPorts: getDefaultInputPorts(),
-        imageUrl: generatedImage.imageUrl,
-        sourceImage: {
-          url: generatedImage.imageUrl,
-          width: generatedImage.width,
-          height: generatedImage.height,
-          mimeType: generatedImage.mimeType,
-          name: generatedImage.title,
-          quality: "original",
-        },
-        title: generatedImage.title || "Generated concept",
+      const outputNode = createGeneratedOutputNode({
+        generatedImage,
         prompt: result.promptMeta?.enhancedPromptVisible ?? generatedImage.prompt ?? payload.prompt,
-        role: "output",
-      };
+        targetNode: activeGenerationTarget,
+      });
 
       setNodes((items) => [...items, outputNode]);
       setActiveGenerationTargetId(outputNode.id);
@@ -751,14 +675,17 @@ export function useCanvasWorkspace() {
     }
   };
 
+  // Đóng modal nhiều góc nhìn; phần generate riêng chưa được cài đặt.
   const generateAngles = () => {
     setShowMultiAngleModal(false);
   };
 
+  // Đóng quick edit modal; phần áp dụng chỉnh sửa nhanh chưa được cài đặt.
   const applyQuickEdit = () => {
     setShowQuickEditModal(false);
   };
 
+  // Lưu checkpoint mask hiện tại để phục vụ undo/redo vùng chọn.
   const pushMaskHistoryCheckpoint = (nodeId: string) => {
     setNodes((items) =>
       items.map((node) => {
@@ -776,6 +703,7 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Ghi mask mới vào node đang chỉnh sửa vùng.
   const commitMaskData = (nodeId: string, newMask: MaskData | undefined) => {
     setNodes((items) =>
       items.map((node) =>
@@ -789,6 +717,7 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Hoàn tác thay đổi mask gần nhất của node.
   const undoMask = (nodeId: string) => {
     setNodes((items) =>
       items.map((node) => {
@@ -813,6 +742,7 @@ export function useCanvasWorkspace() {
     );
   };
 
+  // Làm lại thay đổi mask vừa undo của node.
   const redoMask = (nodeId: string) => {
     setNodes((items) =>
       items.map((node) => {
