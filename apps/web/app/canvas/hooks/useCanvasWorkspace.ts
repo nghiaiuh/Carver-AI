@@ -154,7 +154,6 @@ export function useCanvasWorkspace() {
     useState<CanvasLibraryAsset | null>(null);
   const [pendingPresetGroupInsert, setPendingPresetGroupInsert] =
     useState<PendingPresetGroupInsert | null>(null);
-  const uploadedLibraryAssetUrlsRef = useRef(new Map<string, string>());
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -202,12 +201,6 @@ export function useCanvasWorkspace() {
     setActiveNodeId(null);
   }, [activeNodeId, nodes]);
 
-  useEffect(() => {
-    return () => {
-      uploadedLibraryAssetUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      uploadedLibraryAssetUrlsRef.current.clear();
-    };
-  }, []);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
@@ -328,51 +321,31 @@ export function useCanvasWorkspace() {
   };
 
   // Nhận ảnh upload rồi thêm chúng vào folder thư viện dưới dạng asset cục bộ.
-  const uploadAssetsToFolder = (folderId: string, files: FileList | File[]) => {
-    Array.from(files)
-      .filter((file) => file.type.startsWith("image/"))
-      .forEach((file) => {
-        const objectUrl = URL.createObjectURL(file);
-        const assetId = `asset_${Date.now()}_${file.name}`;
-        uploadedLibraryAssetUrlsRef.current.set(assetId, objectUrl);
-        library.addAssetToFolder(folderId, {
-          id: assetId,
-          src: objectUrl,
-          thumbnailSrc: objectUrl,
-          title: file.name.replace(/\.[^.]+$/, ""),
-          source: "upload",
-          createdAt: new Date().toISOString(),
-          metadata: {
-            originalWidth: undefined,
-            originalHeight: undefined,
-          },
-        });
-      });
-    showToast("Images added to Library");
+  const uploadAssetsToFolder = async (folderId: string, files: FileList | File[]) => {
+    try {
+      await library.uploadAssetsToFolder(folderId, files);
+      showToast("Images added to cloud library");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to upload images.");
+    }
   };
 
   // Xóa asset trong thư viện và thu hồi object URL nếu có.
-  const removeLibraryAsset = (folderId: string, assetId: string) => {
-    const objectUrl = uploadedLibraryAssetUrlsRef.current.get(assetId);
-    if (objectUrl) {
-      URL.revokeObjectURL(objectUrl);
-      uploadedLibraryAssetUrlsRef.current.delete(assetId);
+  const removeLibraryAsset = async (folderId: string, assetId: string) => {
+    try {
+      await library.removeAssetFromFolder(folderId, assetId);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to delete library asset.");
     }
-
-    library.removeAssetFromFolder(folderId, assetId);
   };
 
   // Xóa cả folder thư viện và dọn toàn bộ object URL thuộc folder đó.
-  const deleteLibraryFolder = (folderId: string) => {
-    const folder = library.folders.find((item) => item.id === folderId);
-    folder?.assets.forEach((asset) => {
-      const objectUrl = uploadedLibraryAssetUrlsRef.current.get(asset.id);
-      if (!objectUrl) return;
-      URL.revokeObjectURL(objectUrl);
-      uploadedLibraryAssetUrlsRef.current.delete(asset.id);
-    });
-
-    library.deleteFolder(folderId);
+  const deleteLibraryFolder = async (folderId: string) => {
+    try {
+      await library.deleteFolder(folderId);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to delete library folder.");
+    }
   };
 
   // Tạo mới hoặc cập nhật preset group bằng danh sách preset con mới.

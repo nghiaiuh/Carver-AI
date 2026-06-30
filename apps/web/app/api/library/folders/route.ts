@@ -1,0 +1,34 @@
+import { NextResponse } from "next/server";
+import { getRequestContext } from "../../_lib/auth";
+import { badRequest, readJsonObject } from "../../_lib/http";
+import { createLibraryFolder, buildLibraryFolderRecord } from "../../../../lib/server/library";
+
+export async function POST(request: Request) {
+  const context = await getRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
+
+  const body = await readJsonObject(request);
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const createdBy = body.createdBy === "ai" ? "ai" : "user";
+
+  if (!title) {
+    return badRequest("title is required");
+  }
+
+  try {
+    const folder = await createLibraryFolder({
+      ownerId: context.user.id,
+      title,
+      createdBy,
+    });
+
+    return NextResponse.json({ folder: buildLibraryFolderRecord(folder) }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to create folder." },
+      { status: 500 },
+    );
+  }
+}

@@ -23,6 +23,7 @@ export type AiJobType =
   | "export";
 export type ExportFormat = "png" | "jpg" | "pdf";
 export type ExportStatus = "queued" | "running" | "succeeded" | "failed";
+export type LibraryAssetSourceType = "upload" | "ai-chat" | "manual";
 
 type Table<Row, Insert, Update, Relationships extends readonly unknown[] = []> = {
   Row: Row;
@@ -62,6 +63,106 @@ export interface Database {
           plan_type?: PlanType;
           credits_amount?: number;
           onboarding?: Json;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      library_folders: Table<
+        {
+          id: string;
+          owner_id: string;
+          title: string;
+          slug: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          owner_id: string;
+          title: string;
+          slug: string;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          owner_id?: string;
+          title?: string;
+          slug?: string;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      library_assets: Table<
+        {
+          id: string;
+          owner_id: string;
+          folder_id: string;
+          title: string;
+          prompt: string | null;
+          category: string | null;
+          tags: string[];
+          source_type: LibraryAssetSourceType;
+          mime_type: string | null;
+          width: number | null;
+          height: number | null;
+          size_bytes: number | null;
+          thumb_storage_path: string;
+          preview_storage_path: string;
+          original_storage_path: string;
+          thumb_url: string;
+          preview_url: string;
+          original_url: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          owner_id: string;
+          folder_id: string;
+          title: string;
+          prompt?: string | null;
+          category?: string | null;
+          tags?: string[];
+          source_type?: LibraryAssetSourceType;
+          mime_type?: string | null;
+          width?: number | null;
+          height?: number | null;
+          size_bytes?: number | null;
+          thumb_storage_path: string;
+          preview_storage_path: string;
+          original_storage_path: string;
+          thumb_url: string;
+          preview_url: string;
+          original_url: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          owner_id?: string;
+          folder_id?: string;
+          title?: string;
+          prompt?: string | null;
+          category?: string | null;
+          tags?: string[];
+          source_type?: LibraryAssetSourceType;
+          mime_type?: string | null;
+          width?: number | null;
+          height?: number | null;
+          size_bytes?: number | null;
+          thumb_storage_path?: string;
+          preview_storage_path?: string;
+          original_storage_path?: string;
+          thumb_url?: string;
+          preview_url?: string;
+          original_url?: string;
+          metadata?: Json;
           created_at?: string;
           updated_at?: string;
         }

@@ -1,16 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getBrowserSupabaseClient } from "@carver/db/client";
 import type { LibraryAsset, LibraryFolder } from "../types/library";
 
-const seedAssetCatalog = {
-  treeA: "/assets/garden_3d_render.png",
-  treeB: "/assets/bonsai.png",
-  stoneA: "/assets/co_thach.png",
-  stoneB: "/assets/tai_meo.png",
-  penjingA: "/assets/urban_waterfall.png",
-  penjingB: "/assets/waterfall.png",
-} as const;
+const LIBRARY_ACTIVE_FOLDER_KEY = "carver-ai:canvas-library-active-folder";
 
 function createId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -25,93 +19,12 @@ function slugify(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
-function createAsset(partial: Omit<LibraryAsset, "id" | "createdAt">): LibraryAsset {
-  return {
-    id: createId("asset"),
-    createdAt: new Date().toISOString(),
-    ...partial,
-  };
-}
-
-function createFolderRecord(title: string, createdBy: "ai" | "user", assets: LibraryAsset[] = []): LibraryFolder {
-  const now = new Date().toISOString();
-  return {
-    id: createId("folder"),
-    title,
-    slug: slugify(title),
-    createdBy,
-    createdAt: now,
-    updatedAt: now,
-    assets,
-  };
-}
-
-function createSeedLibraryFolders(): LibraryFolder[] {
-  return [
-    createFolderRecord("Tree", "user", [
-      createAsset({
-        src: seedAssetCatalog.treeA,
-        thumbnailSrc: seedAssetCatalog.treeA,
-        title: "Villa canopy tree",
-        prompt: "Large tropical tree with sculpted crown for villa entrance",
-        source: "manual",
-        metadata: { speciesName: "Tropical Tree", categoryHint: "Tree", originalWidth: 1522, originalHeight: 1146 },
-      }),
-      createAsset({
-        src: seedAssetCatalog.treeB,
-        thumbnailSrc: seedAssetCatalog.treeB,
-        title: "Bonsai",
-        prompt: "Bonsai for warm courtyard composition",
-        source: "manual",
-        metadata: { speciesName: "Bonsai", categoryHint: "Tree", originalWidth: 1522, originalHeight: 1146 },
-      }),
-    ]),
-    createFolderRecord("Stone", "user", [
-      createAsset({
-        src: seedAssetCatalog.stoneA,
-        thumbnailSrc: seedAssetCatalog.stoneA,
-        title: "Đá cổ thạch",
-        prompt: "Weathered stone slab with subtle moss cover",
-        source: "manual",
-        metadata: { categoryHint: "Stone", originalWidth: 1200, originalHeight: 900 },
-      }),
-      createAsset({
-        src: seedAssetCatalog.stoneB,
-        thumbnailSrc: seedAssetCatalog.stoneB,
-        title: "Đá tai mèo",
-        prompt: "Rounded stone for koi pond edge transition",
-        source: "manual",
-        metadata: { categoryHint: "Stone", originalWidth: 1522, originalHeight: 1146 },
-      }),
-    ]),
-    createFolderRecord("Penjing", "user", [
-      createAsset({
-        src: seedAssetCatalog.penjingA,
-        thumbnailSrc: seedAssetCatalog.penjingA,
-        title: "Penjing focal composition",
-        prompt: "Compact penjing focal tree for landing zone",
-        source: "manual",
-        metadata: { speciesName: "Penjing", categoryHint: "Penjing", originalWidth: 1522, originalHeight: 1146 },
-      }),
-      createAsset({
-        src: seedAssetCatalog.penjingB,
-        thumbnailSrc: seedAssetCatalog.penjingB,
-        title: "Courtyard bonsai cluster",
-        prompt: "Curated bonsai grouping for stone court",
-        source: "manual",
-        metadata: { speciesName: "Bonsai", categoryHint: "Penjing", originalWidth: 1522, originalHeight: 1146 },
-      }),
-    ]),
-  ];
-}
-
 function inferFolderTitleFromPrompt(prompt?: string) {
   const normalized = (prompt ?? "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-  // Keep this intentionally simple so we can replace it with AI taxonomy later.
   if (/(cay nhiet doi|nhiet doi|tropical tree|tropical plant)/.test(normalized)) return "Cây nhiệt đới";
   if (/(tree|palm|bonsai|penjing)/.test(normalized)) {
     if (/(bonsai|penjing)/.test(normalized)) return "Penjing";
@@ -120,6 +33,70 @@ function inferFolderTitleFromPrompt(prompt?: string) {
   if (/(stone|rock|da|co thach)/.test(normalized)) return "Stone";
   if (/(penjing|bonsai)/.test(normalized)) return "Penjing";
   return "Uncategorized";
+}
+
+function loadStoredActiveFolderId() {
+  if (typeof window === "undefined") return "";
+
+  return window.localStorage.getItem(LIBRARY_ACTIVE_FOLDER_KEY) ?? "";
+}
+
+function persistActiveFolderId(activeFolderId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LIBRARY_ACTIVE_FOLDER_KEY, activeFolderId);
+}
+
+function imageUrlToBlob(imageUrl: string) {
+  return fetch(imageUrl).then((response) => {
+    if (!response.ok) {
+      throw new Error("Unable to read image data.");
+    }
+
+    return response.blob();
+  });
+}
+
+async function getAccessToken(supabase: ReturnType<typeof getBrowserSupabaseClient>) {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    throw new Error(error.message || "Unable to read the current session.");
+  }
+
+  const accessToken = data.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Please sign in to use the preset library.");
+  }
+
+  return accessToken;
+}
+
+async function authedFetch(
+  supabase: ReturnType<typeof getBrowserSupabaseClient>,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+) {
+  const accessToken = await getAccessToken(supabase);
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+}
+
+async function refreshLibrary(supabase: ReturnType<typeof getBrowserSupabaseClient>) {
+  const response = await authedFetch(supabase, "/api/library");
+  const payload = (await response.json().catch(() => ({}))) as {
+    folders?: LibraryFolder[];
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to load the library.");
+  }
+
+  return Array.isArray(payload.folders) ? payload.folders : [];
 }
 
 export function getOrCreateFolderForAiResult({
@@ -134,19 +111,57 @@ export function getOrCreateFolderForAiResult({
   const title = (suggestedFolderTitle?.trim() || inferFolderTitleFromPrompt(prompt)).trim();
   const existing = folders.find((folder) => folder.title.toLowerCase() === title.toLowerCase());
   if (existing) return existing;
-  return createFolderRecord(title, "ai");
+  return {
+    id: createId("folder"),
+    title,
+    slug: slugify(title),
+    createdBy: "user",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    assets: [],
+  };
 }
 
 export function useCanvasLibrary() {
-  const [initialState] = useState(() => {
-    const seededFolders = createSeedLibraryFolders();
-    return {
-      folders: seededFolders,
-      activeFolderId: seededFolders[0]?.id ?? "",
+  const supabase = getBrowserSupabaseClient();
+  const hydrationStateRef = useRef<"idle" | "loaded" | "synced">("idle");
+  const didEnsureDefaultFolderRef = useRef(false);
+  const [folders, setFolders] = useState<LibraryFolder[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string>(() => loadStoredActiveFolderId());
+
+  useEffect(() => {
+    hydrationStateRef.current = "loaded";
+  }, []);
+
+  useEffect(() => {
+    if (hydrationStateRef.current === "idle") return;
+    persistActiveFolderId(activeFolderId);
+    hydrationStateRef.current = "synced";
+  }, [activeFolderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLibrary = async () => {
+      try {
+        const nextFolders = await refreshLibrary(supabase);
+        if (cancelled) return;
+
+        setFolders(nextFolders);
+        setActiveFolderId((current) => current || nextFolders[0]?.id || "");
+      } catch {
+        if (!cancelled) {
+          setFolders([]);
+        }
+      }
     };
-  });
-  const [folders, setFolders] = useState<LibraryFolder[]>(initialState.folders);
-  const [activeFolderId, setActiveFolderId] = useState<string>(initialState.activeFolderId);
+
+    void loadLibrary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   const activeFolder = useMemo(
     () => folders.find((folder) => folder.id === activeFolderId) ?? folders[0] ?? null,
@@ -155,94 +170,170 @@ export function useCanvasLibrary() {
 
   const allAssets = useMemo(() => folders.flatMap((folder) => folder.assets), [folders]);
 
-  const createFolder = (title: string, createdBy: "ai" | "user" = "user") => {
+  const createFolder = useCallback(async (title: string, createdBy: "ai" | "user" = "user") => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return null;
-    const nextFolder = createFolderRecord(trimmedTitle, createdBy);
-    setFolders((current) => [...current, nextFolder]);
-    setActiveFolderId(nextFolder.id);
-    return nextFolder;
-  };
 
-  const renameFolder = (folderId: string, title: string) => {
+    const response = await authedFetch(supabase, "/api/library/folders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: trimmedTitle, createdBy }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { folder?: LibraryFolder; error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to create folder.");
+    }
+
+    const nextFolders = await refreshLibrary(supabase);
+    setFolders(nextFolders);
+    setActiveFolderId(payload.folder?.id || nextFolders[nextFolders.length - 1]?.id || "");
+
+    return payload.folder ?? nextFolders[nextFolders.length - 1] ?? null;
+  }, [supabase]);
+
+  useEffect(() => {
+    if (folders.length > 0) return;
+    if (didEnsureDefaultFolderRef.current) return;
+    if (hydrationStateRef.current !== "synced") return;
+
+    didEnsureDefaultFolderRef.current = true;
+
+    void (async () => {
+      try {
+        await createFolder("Preset Library", "user");
+      } catch {
+        didEnsureDefaultFolderRef.current = false;
+      }
+    })();
+  }, [folders, createFolder]);
+
+  const renameFolder = async (folderId: string, title: string) => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
-    setFolders((current) =>
-      current.map((folder) =>
-        folder.id === folderId
-          ? { ...folder, title: trimmedTitle, slug: slugify(trimmedTitle), updatedAt: new Date().toISOString() }
-          : folder,
-      ),
-    );
+
+    const response = await authedFetch(supabase, `/api/library/folders/${folderId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: trimmedTitle }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to rename folder.");
+    }
+
+    setFolders(await refreshLibrary(supabase));
   };
 
-  const deleteFolder = (folderId: string) => {
-    setFolders((current) => {
-      const nextFolders = current.filter((folder) => folder.id !== folderId);
-      if (activeFolderId === folderId && nextFolders[0]) {
-        setActiveFolderId(nextFolders[0].id);
-      }
-      return nextFolders;
+  const deleteFolder = async (folderId: string) => {
+    const response = await authedFetch(supabase, `/api/library/folders/${folderId}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to delete folder.");
+    }
+
+    const nextFolders = await refreshLibrary(supabase);
+    setFolders(nextFolders);
+    setActiveFolderId((current) => {
+      if (current !== folderId) return current;
+      return nextFolders[0]?.id ?? "";
     });
   };
 
-  const addAssetToFolder = (folderId: string, asset: LibraryAsset) => {
-    setFolders((current) =>
-      current.map((folder) =>
-        folder.id === folderId
-          ? { ...folder, updatedAt: new Date().toISOString(), assets: [asset, ...folder.assets] }
-          : folder,
-      ),
-    );
+  const uploadAssetsToFolder = async (
+    folderId: string,
+    files: FileList | File[],
+    options?: {
+      title?: string;
+      prompt?: string;
+      category?: string;
+      tags?: string[];
+      sourceType?: "ai-chat" | "upload" | "manual";
+    },
+  ) => {
+    const fileList = Array.from(files).filter((file): file is File => file instanceof File && file.type.startsWith("image/"));
+    if (fileList.length === 0) return [];
+
+    const formData = new FormData();
+    fileList.forEach((file) => formData.append("files", file));
+    if (options?.title) formData.append("title", options.title);
+    if (options?.prompt) formData.append("prompt", options.prompt);
+    if (options?.category) formData.append("category", options.category);
+    if (options?.sourceType) formData.append("sourceType", options.sourceType);
+    if (options?.tags?.length) formData.append("tags", JSON.stringify(options.tags));
+
+    const response = await authedFetch(supabase, `/api/library/folders/${folderId}/assets`, {
+      method: "POST",
+      body: formData,
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      assets?: LibraryAsset[];
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to upload images.");
+    }
+
+    const nextFolders = await refreshLibrary(supabase);
+    setFolders(nextFolders);
+
+    return payload.assets ?? [];
   };
 
-  const removeAssetFromFolder = (folderId: string, assetId: string) => {
-    setFolders((current) =>
-      current.map((folder) =>
-        folder.id === folderId
-          ? { ...folder, updatedAt: new Date().toISOString(), assets: folder.assets.filter((asset) => asset.id !== assetId) }
-          : folder,
-      ),
-    );
+  const removeAssetFromFolder = async (folderId: string, assetId: string) => {
+    const response = await authedFetch(supabase, `/api/library/assets/${assetId}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to delete library asset.");
+    }
+
+    setFolders(await refreshLibrary(supabase));
+    setActiveFolderId((current) => current || folderId);
   };
 
-  const addAiResultToLibrary = (params: {
+  const addAiResultToLibrary = async (params: {
     imageUrl: string;
     prompt?: string;
     suggestedFolderTitle?: string;
     title?: string;
     metadata?: LibraryAsset["metadata"];
   }) => {
-    const asset = createAsset({
-      src: params.imageUrl,
-      thumbnailSrc: params.imageUrl,
+    const imageBlob = await imageUrlToBlob(params.imageUrl);
+    const resolvedFolder = getOrCreateFolderForAiResult({
+      folders,
+      suggestedFolderTitle: params.suggestedFolderTitle,
+      prompt: params.prompt,
+    });
+
+    const existingFolder = folders.find((folder) => folder.id === resolvedFolder.id);
+    const folderId =
+      existingFolder?.id ||
+      (await createFolder(resolvedFolder.title, "ai"))?.id ||
+      resolvedFolder.id;
+
+    const fileName = `${params.title ?? params.metadata?.speciesName ?? "ai-result"}.png`;
+    const uploaded = await uploadAssetsToFolder(folderId, [new File([imageBlob], fileName, { type: imageBlob.type || "image/png" })], {
       title: params.title ?? params.metadata?.speciesName ?? params.suggestedFolderTitle ?? "AI result",
       prompt: params.prompt,
-      source: "ai-chat",
-      metadata: params.metadata,
+      category: params.suggestedFolderTitle ?? resolvedFolder.title,
+      sourceType: "ai-chat",
     });
 
-    setFolders((current) => {
-      const resolvedFolder = getOrCreateFolderForAiResult({
-        folders: current,
-        suggestedFolderTitle: params.suggestedFolderTitle,
-        prompt: params.prompt,
-      });
+    setActiveFolderId(folderId);
 
-      const exists = current.some((folder) => folder.id === resolvedFolder.id);
-      const nextFolders = exists
-        ? current.map((folder) =>
-            folder.id === resolvedFolder.id
-              ? { ...folder, updatedAt: new Date().toISOString(), assets: [asset, ...folder.assets] }
-              : folder,
-          )
-        : [...current, { ...resolvedFolder, assets: [asset, ...resolvedFolder.assets] }];
-
-      setActiveFolderId(resolvedFolder.id);
-      return nextFolders;
-    });
-
-    return asset;
+    return uploaded[0] ?? null;
   };
 
   return {
@@ -254,8 +345,43 @@ export function useCanvasLibrary() {
     createFolder,
     renameFolder,
     deleteFolder,
-    addAssetToFolder,
+    addAssetToFolder: async (folderId: string, asset: LibraryAsset) => {
+      const folder = folders.find((item) => item.id === folderId);
+      if (!folder) {
+        throw new Error("Folder not found.");
+      }
+
+      const previewUrl = asset.previewSrc ?? asset.thumbnailSrc ?? asset.src;
+      const originalUrl = asset.originalSrc ?? asset.src;
+      const nextAsset: LibraryAsset = {
+        ...asset,
+        previewSrc: previewUrl,
+        originalSrc: originalUrl,
+        thumbnailSrc: asset.thumbnailSrc ?? previewUrl,
+        metadata: {
+          ...(asset.metadata ?? {}),
+          folderId,
+          folderTitle: folder.title,
+          folderSlug: folder.slug,
+        },
+      };
+
+      setFolders((current) =>
+        current.map((item) =>
+          item.id === folderId
+            ? {
+                ...item,
+                assets: [nextAsset, ...item.assets],
+                updatedAt: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+
+      return nextAsset;
+    },
     removeAssetFromFolder,
+    uploadAssetsToFolder,
     addAiResultToLibrary,
   };
 }

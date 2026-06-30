@@ -29,7 +29,7 @@ type LibrarySidebarProps = {
   selectedAssetId: string | null;
   onSelectFolder: (folderId: string) => void;
   onSelectAsset: (assetId: string) => void;
-  onCreateFolder: (title: string, createdBy?: "ai" | "user") => LibraryFolder | null;
+  onCreateFolder: (title: string, createdBy?: "ai" | "user") => LibraryFolder | null | Promise<LibraryFolder | null>;
   onRenameFolder: (folderId: string, title: string) => void;
   onDeleteFolder: (folderId: string) => void;
   onDeleteAsset: (folderId: string, assetId: string) => void;
@@ -46,11 +46,12 @@ type LibrarySidebarProps = {
   onToast: (message: string) => void;
 };
 
-type ReferenceTabId = "presets" | "custom" | "pinterest";
+type ReferenceTabId = "presets" | "custom";
 type ReferenceTemplate = {
   id: string;
   label: string;
-  imageSrc: string;
+  previewSrc: string;
+  originalSrc: string;
 };
 
 type SlotConfig = { id: string; label: string };
@@ -61,118 +62,6 @@ type SectionConfig = {
   icon: LucideIcon;
   slots?: SlotConfig[];
   groups?: GroupConfig[];
-};
-
-const ENVIRONMENT_TEMPLATE_LIBRARY: Record<string, ReferenceTemplate[]> = {
-  season: [
-    { id: "season-early-spring", label: "Early Spring", imageSrc: "/assets/early-spring.webp" },
-    { id: "season-full-bloom", label: "Full Bloom", imageSrc: "/assets/full-bloom.webp" },
-    { id: "season-lush-summer", label: "Lush Summer", imageSrc: "/assets/lush-summer.webp" },
-    { id: "season-dry-summer", label: "Dry Summer", imageSrc: "/assets/dry-summer.webp" },
-    { id: "season-golden-autumn", label: "Golden Autumn", imageSrc: "/assets/golden-autumn.webp" },
-    { id: "season-late-autumn", label: "Late autumn", imageSrc: "/assets/late-autumn.webp" },
-    { id: "season-winter", label: "Winter", imageSrc: "/assets/winter.webp" },
-  ],
-  lighting: [
-    { id: "lighting-sunrise", label: "Sunrise", imageSrc: "/assets/sunrise.webp" },
-    { id: "lighting-sunset", label: "Sunset", imageSrc: "/assets/sunset.webp" },
-    { id: "lighting-morning", label: "Morning", imageSrc: "/assets/morning.webp" },
-    { id: "lighting-noon", label: "Noon", imageSrc: "/assets/noon.webp" },
-    { id: "lighting-afternoon", label: "Afternoon", imageSrc: "/assets/afternoon.webp" },
-    { id: "lighting-evening", label: "Evening", imageSrc: "/assets/evening.webp" },
-    { id: "lighting-midnight", label: "Midnight", imageSrc: "/assets/midnight.webp" },
-  ],
-  atmosphere: [
-    { id: "atmosphere-fresh-air", label: "Fresh Air", imageSrc: "/assets/bonsai.png" },
-    { id: "atmosphere-misty", label: "Misty", imageSrc: "/assets/tai_meo.png" },
-    { id: "atmosphere-rainy", label: "Rainy", imageSrc: "/assets/waterfall.png" },
-    { id: "atmosphere-crisp", label: "Crisp", imageSrc: "/assets/co_thach.png" },
-    { id: "atmosphere-humid", label: "Humid", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "atmosphere-serene", label: "Serene", imageSrc: "/assets/garden_3d_render.png" },
-  ],
-  environment: [
-    { id: "environment-koi-garden", label: "Koi Garden", imageSrc: "/assets/waterfall.png" },
-    { id: "environment-courtyard", label: "Courtyard", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "environment-tropical", label: "Tropical", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "environment-stone-court", label: "Stone Court", imageSrc: "/assets/co_thach.png" },
-    { id: "environment-bonsai-yard", label: "Bonsai Yard", imageSrc: "/assets/bonsai.png" },
-    { id: "environment-rockery", label: "Rockery", imageSrc: "/assets/tai_meo.png" },
-  ],
-};
-
-const MATERIAL_TEMPLATE_LIBRARY: Record<string, ReferenceTemplate[]> = {
-  "wooden-house-exterior": [
-    { id: "wooden-house-exterior-1", label: "Warm timber facade", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "wooden-house-exterior-2", label: "Vietnamese wood house", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "wooden-house-exterior-3", label: "Modern timber wall", imageSrc: "/assets/co_thach.png" },
-    { id: "wooden-house-exterior-4", label: "Natural wood siding", imageSrc: "/assets/bonsai.png" },
-  ],
-  "pathway-stones": [
-    { id: "pathway-stones-1", label: "Stepping stones", imageSrc: "/assets/co_thach.png" },
-    { id: "pathway-stones-2", label: "Grey grid paving", imageSrc: "/assets/tai_meo.png" },
-    { id: "pathway-stones-3", label: "Irregular pavers", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "pathway-stones-4", label: "Moss stone path", imageSrc: "/assets/urban_waterfall.png" },
-  ],
-  "rock-formations": [
-    { id: "rock-formations-1", label: "Stone cluster", imageSrc: "/assets/tai_meo.png" },
-    { id: "rock-formations-2", label: "Rugged boulders", imageSrc: "/assets/co_thach.png" },
-    { id: "rock-formations-3", label: "Mossy rocks", imageSrc: "/assets/waterfall.png" },
-    { id: "rock-formations-4", label: "Natural rockery", imageSrc: "/assets/bonsai.png" },
-  ],
-  "water-surface": [
-    { id: "water-surface-1", label: "Calm pond", imageSrc: "/assets/waterfall.png" },
-    { id: "water-surface-2", label: "Reflective water", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "water-surface-3", label: "Rippling surface", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "water-surface-4", label: "Blue water glaze", imageSrc: "/assets/tai_meo.png" },
-  ],
-  "wooden-fence": [
-    { id: "wooden-fence-1", label: "Vertical slats", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "wooden-fence-2", label: "Dark timber fence", imageSrc: "/assets/co_thach.png" },
-    { id: "wooden-fence-3", label: "Privacy fence", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "wooden-fence-4", label: "Garden boundary", imageSrc: "/assets/bonsai.png" },
-  ],
-  "wooden-gazebo": [
-    { id: "wooden-gazebo-1", label: "Open timber gazebo", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "wooden-gazebo-2", label: "Hexagon pavilion", imageSrc: "/assets/bonsai.png" },
-    { id: "wooden-gazebo-3", label: "Garden shelter", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "wooden-gazebo-4", label: "Stained wood pergola", imageSrc: "/assets/co_thach.png" },
-  ],
-  "gazebo-roof": [
-    { id: "gazebo-roof-1", label: "Tiled roof", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "gazebo-roof-2", label: "Wood shingle roof", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "gazebo-roof-3", label: "Dark canopy roof", imageSrc: "/assets/co_thach.png" },
-    { id: "gazebo-roof-4", label: "Curved eave", imageSrc: "/assets/waterfall.png" },
-  ],
-  "house-roof": [
-    { id: "house-roof-1", label: "Pitched roof", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "house-roof-2", label: "Clay tile roof", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "house-roof-3", label: "Modern roofline", imageSrc: "/assets/co_thach.png" },
-    { id: "house-roof-4", label: "Timber roof edge", imageSrc: "/assets/bonsai.png" },
-  ],
-  "carport-canopy": [
-    { id: "carport-canopy-1", label: "Slim canopy", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "carport-canopy-2", label: "Steel frame", imageSrc: "/assets/co_thach.png" },
-    { id: "carport-canopy-3", label: "Wood canopy", imageSrc: "/assets/bonsai.png" },
-    { id: "carport-canopy-4", label: "Light shelter", imageSrc: "/assets/urban_waterfall.png" },
-  ],
-  bridge: [
-    { id: "bridge-1", label: "Wood bridge", imageSrc: "/assets/waterfall.png" },
-    { id: "bridge-2", label: "Stone bridge", imageSrc: "/assets/co_thach.png" },
-    { id: "bridge-3", label: "Arched bridge", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "bridge-4", label: "Garden crossing", imageSrc: "/assets/tai_meo.png" },
-  ],
-  car: [
-    { id: "car-1", label: "Visitor car", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "car-2", label: "Parking reference", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "car-3", label: "Driveway marker", imageSrc: "/assets/co_thach.png" },
-    { id: "car-4", label: "Scale reference", imageSrc: "/assets/bonsai.png" },
-  ],
-  "brick-wall": [
-    { id: "brick-wall-1", label: "Warm brick wall", imageSrc: "/assets/co_thach.png" },
-    { id: "brick-wall-2", label: "Boundary wall", imageSrc: "/assets/garden_3d_render.png" },
-    { id: "brick-wall-3", label: "Textured masonry", imageSrc: "/assets/urban_waterfall.png" },
-    { id: "brick-wall-4", label: "Rustic brick", imageSrc: "/assets/tai_meo.png" },
-  ],
 };
 
 const PRESET_STRUCTURE: SectionConfig[] = [
@@ -397,16 +286,50 @@ const PRESET_STRUCTURE: SectionConfig[] = [
   },
 ];
 
-function getTemplatesForSlot(slotId: string, label: string): ReferenceTemplate[] {
-  if (ENVIRONMENT_TEMPLATE_LIBRARY[slotId]) return ENVIRONMENT_TEMPLATE_LIBRARY[slotId];
-  if (MATERIAL_TEMPLATE_LIBRARY[slotId]) return MATERIAL_TEMPLATE_LIBRARY[slotId];
-  
-  return [
-    { id: `${slotId}-1`, label: `Classic ${label}`, imageSrc: "/assets/garden_3d_render.png" },
-    { id: `${slotId}-2`, label: `Modern ${label}`, imageSrc: "/assets/urban_waterfall.png" },
-    { id: `${slotId}-3`, label: `Natural ${label}`, imageSrc: "/assets/co_thach.png" },
-    { id: `${slotId}-4`, label: `Minimalist ${label}`, imageSrc: "/assets/bonsai.png" },
-  ];
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getTemplatesForSlot(slotId: string, label: string, folders: LibraryFolder[]): ReferenceTemplate[] {
+  const targetTerms = normalizeText(`${slotId} ${label}`).split(" ").filter(Boolean);
+  const cloudAssets = folders.flatMap((folder) =>
+    folder.assets.map((asset) => ({
+      asset,
+      folder,
+    })),
+  );
+
+  const matchedAssets = cloudAssets.filter(({ asset, folder }) => {
+    const haystack = normalizeText(
+      [
+        asset.title ?? "",
+        asset.prompt ?? "",
+        asset.category ?? "",
+        asset.tags?.join(" ") ?? "",
+        asset.metadata?.categoryHint ?? "",
+        folder.title ?? "",
+        folder.slug ?? "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+
+    return targetTerms.some((term) => haystack.includes(term));
+  });
+
+  const sourceAssets = matchedAssets.length > 0 ? matchedAssets : cloudAssets;
+
+  return sourceAssets.slice(0, 12).map(({ asset }) => ({
+    id: asset.id,
+    label: asset.title ?? "Library image",
+    previewSrc: asset.previewSrc ?? asset.thumbnailSrc ?? asset.src,
+    originalSrc: asset.originalSrc ?? asset.src,
+  }));
 }
 
 export default function LibrarySidebar({
@@ -453,11 +376,11 @@ export default function LibrarySidebar({
     id: template.id,
     slot: slotLabel,
     label: template.label,
-    imageSrc: template.imageSrc,
+    imageSrc: template.originalSrc,
     prompt: null,
     order: 0,
     sourceImage: {
-      url: template.imageSrc,
+      url: template.originalSrc,
       width: null,
       height: null,
       name: template.label,
@@ -553,7 +476,6 @@ export default function LibrarySidebar({
 
   useLayoutEffect(() => {
     if (!openSection || !activeSlotId) {
-      setFlyoutBounds(null);
       return;
     }
 
@@ -700,16 +622,18 @@ export default function LibrarySidebar({
 
       {openSection && activeSlotId && flyoutBounds && typeof document !== "undefined"
         ? createPortal(
-            <ReferenceFlyout
-              slotLabel={activeSlotLabel}
-              language={language}
-              activeTab={referenceTab}
-              onTabChange={setReferenceTab}
-              templates={getTemplatesForSlot(activeSlotId, activeSlotLabel)}
-              selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
-              onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
-              onClose={() => setActiveSlotId(null)}
-              top={flyoutBounds.top}
+              <ReferenceFlyout
+                slotLabel={activeSlotLabel}
+                language={language}
+                activeTab={referenceTab}
+                onTabChange={setReferenceTab}
+                templates={getTemplatesForSlot(activeSlotId, activeSlotLabel, folders)}
+                selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
+                onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
+                onUploadAssets={onUploadAssets}
+                uploadFolderId={activeFolderId}
+                onClose={() => setActiveSlotId(null)}
+                top={flyoutBounds.top}
               left={flyoutBounds.left}
               height={flyoutBounds.height}
             />,
@@ -767,6 +691,8 @@ function ReferenceFlyout({
   templates,
   selectedTemplateIds,
   onSelectTemplate,
+  onUploadAssets,
+  uploadFolderId,
   onClose,
   top,
   left,
@@ -779,17 +705,19 @@ function ReferenceFlyout({
   templates: ReferenceTemplate[];
   selectedTemplateIds: string[];
   onSelectTemplate: (template: ReferenceTemplate) => void;
+  onUploadAssets: (folderId: string, files: FileList | File[]) => void;
+  uploadFolderId: string;
   onClose: () => void;
   top: number;
   left: number;
   height: number;
 }) {
   const flyoutRef = useRef<HTMLElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const text = getCanvasText(language);
   const tabs: Array<{ id: ReferenceTabId; label: string }> = [
     { id: "presets", label: text.flyout.presets },
     { id: "custom", label: text.flyout.custom },
-    { id: "pinterest", label: text.flyout.pinterest },
   ];
   const [isScrollbarVisible, setIsScrollbarVisible] = useState(false);
   const scrollbarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -812,6 +740,18 @@ function ReferenceFlyout({
     setIsScrollbarVisible(true);
     if (scrollbarTimeoutRef.current) clearTimeout(scrollbarTimeoutRef.current);
     scrollbarTimeoutRef.current = setTimeout(() => setIsScrollbarVisible(false), 800);
+  };
+
+  const openUploadPicker = () => {
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.currentTarget.files;
+    if (!files || files.length === 0 || !uploadFolderId) return;
+
+    onUploadAssets(uploadFolderId, files);
+    event.currentTarget.value = "";
   };
 
   return (
@@ -866,55 +806,73 @@ function ReferenceFlyout({
         ].join(" ")}
         onScroll={handleScroll}
       >
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={handleUploadChange}
+        />
         {activeTab === "presets" ? (
-          <div className="grid grid-cols-2 gap-3">
-            {templates.map((template) => {
-              const isSelected = selectedTemplateIds.includes(template.id);
-              return (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => onSelectTemplate(template)}
-                  className={[
-                    "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
-                    isSelected
-                      ? "border-[var(--canvas-theme-active)] ring-2 ring-[var(--canvas-theme-active)]/40"
-                      : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)]",
-                  ].join(" ")}
-                >
-                  <img
-                    src={template.imageSrc}
-                    alt={template.label}
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1.5">
-                    <p className="text-[10px] font-medium leading-none text-white">{template.label}</p>
-                  </div>
-                  {isSelected ? (
-                    <div className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-sm">
-                      <Check className="h-3 w-3" aria-hidden="true" />
+          templates.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {templates.map((template) => {
+                const isSelected = selectedTemplateIds.includes(template.id);
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => onSelectTemplate(template)}
+                    className={[
+                      "group relative aspect-square overflow-hidden rounded-xl border text-left transition",
+                      isSelected
+                        ? "border-[var(--canvas-theme-active)] ring-2 ring-[var(--canvas-theme-active)]/40"
+                        : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)]",
+                    ].join(" ")}
+                  >
+                    <img
+                      src={template.previewSrc}
+                      alt={template.label}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1.5">
+                      <p className="text-[10px] font-medium leading-none text-white">{template.label}</p>
                     </div>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+                    {isSelected ? (
+                      <div className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-sm">
+                        <Check className="h-3 w-3" aria-hidden="true" />
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center px-4 py-10 text-center">
+              <Box className="mb-3 h-8 w-8 text-[#6B7280]" aria-hidden="true" />
+              <p className="text-sm font-medium text-[#111111]">No cloud presets yet</p>
+              <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-[#6B7280]">
+                Upload images into a library folder first, then use them as preset references here.
+              </p>
+            </div>
+          )
         ) : (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Box className="mb-3 h-8 w-8 text-[#6B7280]" aria-hidden="true" />
             <p className="text-sm font-medium text-[#111111]">
-              {activeTab === "custom" ? text.flyout.customAssets : text.flyout.pinterestIntegration}
+              {text.flyout.customAssets}
             </p>
             <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-[#6B7280]">
-              {activeTab === "custom"
-                ? text.flyout.customDescription
-                : text.flyout.pinterestDescription}
+              {text.flyout.customDescription}
             </p>
             <button
               type="button"
-              className="mt-4 rounded-lg bg-[#F3F4F6] px-4 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#E5E7EB]"
+              onClick={openUploadPicker}
+              disabled={!uploadFolderId}
+              className="mt-4 rounded-lg bg-[#F3F4F6] px-4 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#E5E7EB] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {activeTab === "custom" ? text.flyout.uploadImage : text.flyout.connectPinterest}
+              {text.flyout.uploadImage}
             </button>
           </div>
         )}

@@ -42,7 +42,7 @@ export default function LibraryAssetCard({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={asset.thumbnailSrc ?? asset.src}
+        src={asset.thumbnailSrc ?? asset.previewSrc ?? asset.src}
         alt={asset.title ?? "Library asset"}
         className="aspect-[4/3] w-full object-cover"
         draggable={false}

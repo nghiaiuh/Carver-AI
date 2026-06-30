@@ -13,7 +13,7 @@ type EditorLeftSidebarProps = {
   selectedAssetId: string | null;
   onSelectFolder: (folderId: string) => void;
   onSelectAsset: (assetId: string) => void;
-  onCreateFolder: (title: string, createdBy?: "ai" | "user") => LibraryFolder | null;
+  onCreateFolder: (title: string, createdBy?: "ai" | "user") => LibraryFolder | null | Promise<LibraryFolder | null>;
   onRenameFolder: (folderId: string, title: string) => void;
   onDeleteFolder: (folderId: string) => void;
   onDeleteAsset: (folderId: string, assetId: string) => void;

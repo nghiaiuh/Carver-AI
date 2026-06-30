@@ -102,6 +102,12 @@ Current rule:
 - Presets are reference context.
 - Preset groups are not direct generation targets.
 
+Library storage note:
+- `apps/web/app/canvas/hooks/useCanvasLibrary.ts` now talks to server API routes instead of demo/localStorage data.
+- Uploaded preset-library images are processed on the server and stored in Cloudflare R2 as `thumb`, `preview`, and `original` versions.
+- `public.library_folders` and `public.library_assets` hold the library metadata in Supabase, including tags, category, prompt, and image URLs.
+- Hardcoded `/assets/...` preset-library seed images were removed from the canvas library flow.
+
 ## 5. Generation graph model
 
 The canvas graph now acts as a generation context system.
@@ -237,6 +243,7 @@ These behaviors were recently added and should not be accidentally removed:
 - chat composer sending local and linked images to OpenAI as image inputs
 - environment preset grid using 2 columns
 - preset flyout background and library panel styling refinements
+- cloud-backed canvas library uploads and signed URL refresh for preset assets
 
 ## 11. Practical rules for agents
 
