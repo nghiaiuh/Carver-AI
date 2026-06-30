@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getBrowserSupabaseClient } from "@carver/db/client";
+import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import type { LibraryAsset, LibraryFolder } from "../types/library";
 
 const LIBRARY_ACTIVE_FOLDER_KEY = "carver-ai:canvas-library-active-folder";
@@ -56,7 +56,17 @@ function imageUrlToBlob(imageUrl: string) {
   });
 }
 
-async function getAccessToken(supabase: ReturnType<typeof getBrowserSupabaseClient>) {
+type BrowserSupabaseClient = NonNullable<ReturnType<typeof getOptionalBrowserSupabaseClient>>;
+
+function requireLibraryClient(client: BrowserSupabaseClient | null) {
+  if (!client) {
+    throw new Error("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  }
+
+  return client;
+}
+
+async function getAccessToken(supabase: BrowserSupabaseClient) {
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     throw new Error(error.message || "Unable to read the current session.");
@@ -71,7 +81,7 @@ async function getAccessToken(supabase: ReturnType<typeof getBrowserSupabaseClie
 }
 
 async function authedFetch(
-  supabase: ReturnType<typeof getBrowserSupabaseClient>,
+  supabase: BrowserSupabaseClient,
   input: RequestInfo | URL,
   init: RequestInit = {},
 ) {
@@ -85,7 +95,7 @@ async function authedFetch(
   });
 }
 
-async function refreshLibrary(supabase: ReturnType<typeof getBrowserSupabaseClient>) {
+async function refreshLibrary(supabase: BrowserSupabaseClient) {
   const response = await authedFetch(supabase, "/api/library");
   const payload = (await response.json().catch(() => ({}))) as {
     folders?: LibraryFolder[];
@@ -123,7 +133,7 @@ export function getOrCreateFolderForAiResult({
 }
 
 export function useCanvasLibrary() {
-  const supabase = getBrowserSupabaseClient();
+  const supabase = getOptionalBrowserSupabaseClient();
   const hydrationStateRef = useRef<"idle" | "loaded" | "synced">("idle");
   const didEnsureDefaultFolderRef = useRef(false);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
@@ -144,7 +154,7 @@ export function useCanvasLibrary() {
 
     const loadLibrary = async () => {
       try {
-        const nextFolders = await refreshLibrary(supabase);
+        const nextFolders = await refreshLibrary(requireLibraryClient(supabase));
         if (cancelled) return;
 
         setFolders(nextFolders);
@@ -171,10 +181,11 @@ export function useCanvasLibrary() {
   const allAssets = useMemo(() => folders.flatMap((folder) => folder.assets), [folders]);
 
   const createFolder = useCallback(async (title: string, createdBy: "ai" | "user" = "user") => {
+    const client = requireLibraryClient(supabase);
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return null;
 
-    const response = await authedFetch(supabase, "/api/library/folders", {
+    const response = await authedFetch(client, "/api/library/folders", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -187,7 +198,7 @@ export function useCanvasLibrary() {
       throw new Error(payload.error || "Unable to create folder.");
     }
 
-    const nextFolders = await refreshLibrary(supabase);
+    const nextFolders = await refreshLibrary(client);
     setFolders(nextFolders);
     setActiveFolderId(payload.folder?.id || nextFolders[nextFolders.length - 1]?.id || "");
 
@@ -198,6 +209,7 @@ export function useCanvasLibrary() {
     if (folders.length > 0) return;
     if (didEnsureDefaultFolderRef.current) return;
     if (hydrationStateRef.current !== "synced") return;
+    if (!supabase) return;
 
     didEnsureDefaultFolderRef.current = true;
 
@@ -208,13 +220,14 @@ export function useCanvasLibrary() {
         didEnsureDefaultFolderRef.current = false;
       }
     })();
-  }, [folders, createFolder]);
+  }, [folders, createFolder, supabase]);
 
   const renameFolder = async (folderId: string, title: string) => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
+    const client = requireLibraryClient(supabase);
 
-    const response = await authedFetch(supabase, `/api/library/folders/${folderId}`, {
+    const response = await authedFetch(client, `/api/library/folders/${folderId}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -227,11 +240,12 @@ export function useCanvasLibrary() {
       throw new Error(payload.error || "Unable to rename folder.");
     }
 
-    setFolders(await refreshLibrary(supabase));
+    setFolders(await refreshLibrary(client));
   };
 
   const deleteFolder = async (folderId: string) => {
-    const response = await authedFetch(supabase, `/api/library/folders/${folderId}`, {
+    const client = requireLibraryClient(supabase);
+    const response = await authedFetch(client, `/api/library/folders/${folderId}`, {
       method: "DELETE",
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -240,7 +254,7 @@ export function useCanvasLibrary() {
       throw new Error(payload.error || "Unable to delete folder.");
     }
 
-    const nextFolders = await refreshLibrary(supabase);
+    const nextFolders = await refreshLibrary(client);
     setFolders(nextFolders);
     setActiveFolderId((current) => {
       if (current !== folderId) return current;
@@ -261,6 +275,7 @@ export function useCanvasLibrary() {
   ) => {
     const fileList = Array.from(files).filter((file): file is File => file instanceof File && file.type.startsWith("image/"));
     if (fileList.length === 0) return [];
+    const client = requireLibraryClient(supabase);
 
     const formData = new FormData();
     fileList.forEach((file) => formData.append("files", file));
@@ -270,7 +285,7 @@ export function useCanvasLibrary() {
     if (options?.sourceType) formData.append("sourceType", options.sourceType);
     if (options?.tags?.length) formData.append("tags", JSON.stringify(options.tags));
 
-    const response = await authedFetch(supabase, `/api/library/folders/${folderId}/assets`, {
+    const response = await authedFetch(client, `/api/library/folders/${folderId}/assets`, {
       method: "POST",
       body: formData,
     });
@@ -283,14 +298,15 @@ export function useCanvasLibrary() {
       throw new Error(payload.error || "Unable to upload images.");
     }
 
-    const nextFolders = await refreshLibrary(supabase);
+    const nextFolders = await refreshLibrary(client);
     setFolders(nextFolders);
 
     return payload.assets ?? [];
   };
 
   const removeAssetFromFolder = async (folderId: string, assetId: string) => {
-    const response = await authedFetch(supabase, `/api/library/assets/${assetId}`, {
+    const client = requireLibraryClient(supabase);
+    const response = await authedFetch(client, `/api/library/assets/${assetId}`, {
       method: "DELETE",
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -299,7 +315,7 @@ export function useCanvasLibrary() {
       throw new Error(payload.error || "Unable to delete library asset.");
     }
 
-    setFolders(await refreshLibrary(supabase));
+    setFolders(await refreshLibrary(client));
     setActiveFolderId((current) => current || folderId);
   };
 

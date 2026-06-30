@@ -39,4 +39,12 @@ export const getBrowserSupabaseClient = (): SupabaseClient<Database> => {
   return browserClient;
 };
 
+export const getOptionalBrowserSupabaseClient = (): SupabaseClient<Database> | null => {
+  try {
+    return getBrowserSupabaseClient();
+  } catch {
+    return null;
+  }
+};
+
 export type { Database };

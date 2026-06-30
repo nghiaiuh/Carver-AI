@@ -9,6 +9,7 @@ export { prisma } from "./prisma";
 export {
   createBrowserSupabaseClient,
   getBrowserSupabaseClient,
+  getOptionalBrowserSupabaseClient,
 } from "./supabase";
 export { getSupabasePublicEnv } from "./env";
 
