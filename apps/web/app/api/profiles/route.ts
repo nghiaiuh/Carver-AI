@@ -1,8 +1,9 @@
 /*
- * Flow: Handles an HTTP API route for Carver AI.
- * 1. Read and validate the incoming request.
- * 2. Run the route-specific server logic.
- * 3. Return a typed JSON response for the frontend.
+ * Route: API profile cua user dang dang nhap.
+ * Thuoc: module user profile / account.
+ * Vai tro: cung cap thong tin ho so co ban de frontend hien thi plan, credit va profile.
+ * Chuc nang:
+ * - `GET`: doc profile cua chinh user hien tai tu Supabase.
  */
 
 import { NextResponse } from "next/server";

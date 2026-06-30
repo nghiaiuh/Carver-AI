@@ -1,8 +1,9 @@
 /*
- * Flow: Creates project-scoped AI jobs backed by snapshots.
- * 1. Authenticate the caller and verify project ownership.
- * 2. Resolve the input snapshot that defines the canvas context.
- * 3. Persist and enqueue a snapshot-aware AI job for worker execution.
+ * Route: API tao AI job theo project.
+ * Thuoc: module background jobs / generation workflow.
+ * Vai tro: dong goi yeu cau AI thanh job co snapshot context de worker xu ly bat dong bo.
+ * Chuc nang:
+ * - `POST`: kiem tra quyen project, lay snapshot hien tai, tao ai_job va enqueue vao queue.
  */
 
 import { NextResponse } from "next/server";

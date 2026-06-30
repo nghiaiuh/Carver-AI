@@ -1,8 +1,9 @@
 /*
- * Flow: Handles an HTTP API route for Carver AI.
- * 1. Read and validate the incoming request.
- * 2. Run the route-specific server logic.
- * 3. Return a typed JSON response for the frontend.
+ * Route: API tao project moi.
+ * Thuoc: module project / canvas workspace.
+ * Vai tro: khoi tao du an moi cung snapshot, brief va chat thread mac dinh.
+ * Chuc nang:
+ * - `POST`: tao project, tao canvas snapshot version dau tien va cac ban ghi lien quan.
  */
 
 import { NextResponse } from "next/server";

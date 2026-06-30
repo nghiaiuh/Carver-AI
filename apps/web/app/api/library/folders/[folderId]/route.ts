@@ -1,3 +1,12 @@
+/*
+ * Route: API thao tac tren mot folder cua preset library.
+ * Thuoc: module canvas preset library.
+ * Vai tro: cap nhat hoac xoa mot folder preset cu the.
+ * Chuc nang:
+ * - `PATCH`: doi ten folder.
+ * - `DELETE`: xoa folder va toan bo asset ben trong.
+ */
+
 import { NextResponse } from "next/server";
 import { getRequestContext } from "../../../_lib/auth";
 import { badRequest, readJsonObject } from "../../../_lib/http";

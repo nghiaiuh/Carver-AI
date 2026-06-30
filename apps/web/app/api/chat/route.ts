@@ -1,3 +1,13 @@
+/*
+ * Route: API chat cho canvas editor.
+ * Thuoc: module tro ly AI / hoi thoai theo canvas.
+ * Vai tro: lam dau moi doc, ghi va xoa lich su chat gan voi `canvasId` / `projectId`.
+ * Chuc nang:
+ * - `GET`: lay lich su chat hien co.
+ * - `POST`: gui prompt + anh tham chieu den AI va luu cap tin nhan user/assistant.
+ * - `DELETE`: xoa lich su chat cua canvas hoac project hien tai.
+ */
+
 import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";

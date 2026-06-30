@@ -1,3 +1,11 @@
+/*
+ * Route: API preset library goc.
+ * Thuoc: module canvas preset library.
+ * Vai tro: tra ve toan bo thu vien preset cloud cua user dang dang nhap.
+ * Chuc nang:
+ * - `GET`: lay danh sach folder va asset de sidebar/flyout hien thi.
+ */
+
 import { NextResponse } from "next/server";
 import { getRequestContext } from "../_lib/auth";
 import { listLibrary } from "../../../lib/server/library";

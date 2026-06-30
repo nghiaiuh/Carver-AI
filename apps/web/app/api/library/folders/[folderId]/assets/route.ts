@@ -1,3 +1,12 @@
+/*
+ * Route: API upload asset vao mot folder cua preset library.
+ * Thuoc: module canvas preset library.
+ * Vai tro: nhan file anh tu client, resize thanh nhieu version va luu len cloud.
+ * Chuc nang:
+ * - `POST`: upload anh vao folder, tao `thumb` / `preview` / `original`,
+ *   sau do luu metadata va URL vao Supabase.
+ */
+
 import { NextResponse } from "next/server";
 import { getRequestContext } from "../../../../_lib/auth";
 import { badRequest } from "../../../../_lib/http";

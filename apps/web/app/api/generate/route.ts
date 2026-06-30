@@ -1,13 +1,12 @@
 /*
- * Flow: Handles Carver AI image generation requests.
- *
- * - Authenticates the request.
- * - Reads and validates the generation payload.
- * - Compiles the user prompt into an enhanced image prompt.
- * - Builds canvas-aware metadata from snapshots and connected context.
- * - Calls the OpenAI image generation API.
- * - Normalizes the generated image for the canvas frontend.
- * - Returns the image, assistant message, and prompt metadata.
+ * Route: API generate anh tu canvas context.
+ * Thuoc: module AI generation / image rendering.
+ * Vai tro: nhan payload generate tu canvas, bien doi prompt va goi model tao anh.
+ * Chuc nang:
+ * - xac thuc request.
+ * - tong hop prompt da enhance tu prompt engine.
+ * - gan snapshot, graph context va rules bao toan bo cuc.
+ * - goi OpenAI Image API va tra ve anh + prompt metadata cho frontend.
  */
 
 import { NextResponse } from "next/server";

@@ -1,8 +1,9 @@
 /*
- * Flow: Handles an HTTP API route for Carver AI.
- * 1. Read and validate the incoming request.
- * 2. Run the route-specific server logic.
- * 3. Return a typed JSON response for the frontend.
+ * Route: API enhance prompt.
+ * Thuoc: module prompt engine.
+ * Vai tro: bien prompt tho cua user thanh prompt co cau truc ro hon cho cac tac vu AI.
+ * Chuc nang:
+ * - `POST`: phan tich prompt, xac dinh intent / mode, va tra ve prompt da duoc lam ro.
  */
 
 import { NextResponse } from "next/server";

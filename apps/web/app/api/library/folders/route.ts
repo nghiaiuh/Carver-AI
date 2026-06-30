@@ -1,3 +1,11 @@
+/*
+ * Route: API folder goc cua preset library.
+ * Thuoc: module canvas preset library.
+ * Vai tro: tao moi nhom / folder de sap xep preset cloud cua user.
+ * Chuc nang:
+ * - `POST`: tao folder moi va tra ve metadata de client cap nhat sidebar.
+ */
+
 import { NextResponse } from "next/server";
 import { getRequestContext } from "../../_lib/auth";
 import { badRequest, readJsonObject } from "../../_lib/http";
