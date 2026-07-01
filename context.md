@@ -106,7 +106,7 @@ Library storage note:
 - `apps/web/app/canvas/hooks/useCanvasLibrary.ts` now talks to server API routes instead of demo/localStorage data.
 - Uploaded preset-library images are processed on the server and stored in Cloudflare R2 as `thumb`, `preview`, and `original` versions.
 - `public.library_folders` and `public.library_assets` hold the library metadata in Supabase, including tags, category, prompt, and image URLs.
-- Hardcoded `/assets/...` preset-library seed images were removed from the canvas library flow.
+- Local `public/assets` demo images were removed; the canvas/library flow now expects cloud-backed image URLs only.
 
 ## 5. Generation graph model
 

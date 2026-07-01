@@ -7,7 +7,7 @@
 
 "use client";
 
-import { SourceMix, SourceRole } from "../../data/canvasData";
+import type { SourceMix, SourceRole } from "../../types/sourceMix";
 
 type SourceMixPanelProps = {
   mix: SourceMix;
