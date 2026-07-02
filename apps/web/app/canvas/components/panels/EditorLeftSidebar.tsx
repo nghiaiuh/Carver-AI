@@ -26,6 +26,7 @@ type EditorLeftSidebarProps = {
     replaceAllChildren?: boolean;
   }) => void;
   onUploadAssets: (folderId: string, files: FileList | File[]) => void;
+  onSyncLibraryFromBucket: () => Promise<void> | void;
   onClose: () => void;
   onToast: (message: string) => void;
 };
@@ -51,6 +52,7 @@ export default function EditorLeftSidebar(props: EditorLeftSidebarProps) {
           onAddAssetToCanvas={props.onAddAssetToCanvas}
           onUpsertPresetGroup={props.onUpsertPresetGroup}
           onUploadAssets={props.onUploadAssets}
+          onSyncLibraryFromBucket={props.onSyncLibraryFromBucket}
           onClose={props.onClose}
           onToast={props.onToast}
         />

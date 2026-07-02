@@ -133,6 +133,7 @@ export default function CanvasWorkspace() {
                   actions.upsertPresetGroup(params, replaceAllChildren);
                 }}
                 onUploadAssets={actions.uploadAssetsToFolder}
+                onSyncLibraryFromBucket={actions.syncLibraryFromBucket}
                 onToast={actions.showToast}
                 onClose={actions.closeLeftSidebar}
               />

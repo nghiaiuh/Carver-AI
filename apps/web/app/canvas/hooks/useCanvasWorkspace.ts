@@ -850,6 +850,7 @@ export function useCanvasWorkspace() {
       handleImageAction,
       addObject,
       uploadAssetsToFolder,
+      syncLibraryFromBucket: library.syncLibraryFromBucket,
       deleteLibraryFolder,
       removeLibraryAsset,
 

@@ -2,10 +2,16 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import {
+  GetObjectCommand,
   DeleteObjectsCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
+  type GetObjectCommandInput,
+  type GetObjectCommandOutput,
   type DeleteObjectsCommandInput,
+  type ListObjectsV2CommandInput,
+  type ListObjectsV2CommandOutput,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
 
@@ -119,4 +125,80 @@ export async function deleteR2Objects(keys: string[]) {
   };
 
   await client.send(new DeleteObjectsCommand(input));
+}
+
+export type R2ObjectSummary = {
+  key: string;
+  size: number;
+  lastModified?: Date;
+  eTag?: string;
+};
+
+export async function listR2Objects(params: { prefix?: string } = {}) {
+  const env = getR2Env();
+  const client = getR2Client();
+  const items: R2ObjectSummary[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const input: ListObjectsV2CommandInput = {
+      Bucket: env.bucket,
+      Prefix: params.prefix,
+      ContinuationToken: continuationToken,
+      MaxKeys: 1000,
+    };
+
+    const response: ListObjectsV2CommandOutput = await client.send(new ListObjectsV2Command(input));
+    for (const object of response.Contents ?? []) {
+      if (!object.Key) continue;
+      items.push({
+        key: object.Key,
+        size: object.Size ?? 0,
+        lastModified: object.LastModified ?? undefined,
+        eTag: object.ETag ?? undefined,
+      });
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return items;
+}
+
+async function bodyToBuffer(body: GetObjectCommandOutput["Body"]) {
+  if (!body) {
+    throw new Error("Missing R2 object body.");
+  }
+
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
+  }
+
+  const transformToByteArray = (body as { transformToByteArray?: () => Promise<Uint8Array> }).transformToByteArray;
+  if (typeof transformToByteArray === "function") {
+    return Buffer.from(await transformToByteArray.call(body));
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Uint8Array | Buffer | string>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export async function getR2ObjectBuffer(key: string) {
+  const env = getR2Env();
+  const client = getR2Client();
+  const input: GetObjectCommandInput = {
+    Bucket: env.bucket,
+    Key: key,
+  };
+
+  const response = await client.send(new GetObjectCommand(input));
+  return bodyToBuffer(response.Body);
 }
