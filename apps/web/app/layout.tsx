@@ -6,12 +6,19 @@
  */
 
 import type { ReactNode } from "react";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-950 text-slate-100">
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased">
         {children}
       </body>
     </html>

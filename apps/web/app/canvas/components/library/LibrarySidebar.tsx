@@ -358,7 +358,7 @@ export default function LibrarySidebar({
   const [referenceTab, setReferenceTab] = useState<ReferenceTabId>("presets");
   const [flyoutBounds, setFlyoutBounds] = useState<{ top: number; left: number; height: number } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  
+
   // Storing templates selected for each section category
   const [selectedTemplates, setSelectedTemplates] = useState<
     Record<PresetGroupCategory, Record<string, ReferenceTemplate[]>>
@@ -399,7 +399,7 @@ export default function LibrarySidebar({
     if (!sectionConfig) return;
 
     const children: CanvasPresetChild[] = [];
-    
+
     const allSlots = sectionConfig.slots ? [...sectionConfig.slots] : [];
     if (sectionConfig.groups) {
       for (const group of sectionConfig.groups) {
@@ -420,7 +420,7 @@ export default function LibrarySidebar({
       children,
       replaceAllChildren: true,
     });
-    
+
     if (children.length > 0) {
       onToast(`${sectionConfig.label}: ${children.length} preset${children.length === 1 ? "" : "s"}`);
     } else {
@@ -445,7 +445,7 @@ export default function LibrarySidebar({
   const selectTemplate = (categoryId: PresetGroupCategory, slotId: string, template: ReferenceTemplate) => {
     const sectionSelections = selectedTemplates[categoryId] ?? {};
     const currentSlotTemplates = sectionSelections[slotId] ?? [];
-    
+
     const exists = currentSlotTemplates.some((item) => item.id === template.id);
     const nextSlotTemplates = exists
       ? currentSlotTemplates.filter((item) => item.id !== template.id)
@@ -468,12 +468,12 @@ export default function LibrarySidebar({
     const sectionSelections = selectedTemplates[categoryId] ?? {};
     const nextSectionSelections = { ...sectionSelections };
     delete nextSectionSelections[slotId];
-    
+
     setSelectedTemplates((current) => ({
       ...current,
       [categoryId]: nextSectionSelections,
     }));
-    
+
     syncSectionGroup(categoryId, nextSectionSelections);
   };
 
@@ -539,7 +539,7 @@ export default function LibrarySidebar({
 
   const renderSlotGrid = (slots: SlotConfig[], categoryId: PresetGroupCategory) => {
     return (
-      <div className={categoryId === "environment" ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-3 gap-2.5"}>
+      <div className={categoryId === "environment" ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>
         {slots.map((slot) => {
           const selectedForSlot = (selectedTemplates[categoryId] ?? {})[slot.id] ?? [];
           const selectedTemplate = selectedForSlot[0] ?? null;
@@ -591,17 +591,11 @@ export default function LibrarySidebar({
   return (
     <div ref={shellRef} className="relative z-[60] flex h-full w-full shrink-0 overflow-visible bg-[#FFFFFF] text-[var(--canvas-theme-text)]">
       <aside className="relative z-[60] flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[#FFFFFF] shadow-[6px_0_28px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-5">
-          <div className="flex items-start justify-between gap-3">
+        <div className="border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">
+              <p className="flex h-6 items-center font-sans text-[15px] font-semibold leading-none tracking-[-0.03em] text-[var(--canvas-theme-text)] translate-y-[1px]">
                 {text.common.library}
-              </p>
-              <h2 className="mt-2 text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]">
-                {text.common.projectAssets}
-              </h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-                {text.common.libraryDescription}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -626,7 +620,7 @@ export default function LibrarySidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FFFFFF]">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FFFFFF] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {PRESET_STRUCTURE.map((section) => (
             <AccordionSection
               key={section.id}
@@ -636,7 +630,7 @@ export default function LibrarySidebar({
               onToggle={() => toggleSection(section.id)}
             >
               {section.slots && renderSlotGrid(section.slots, section.id)}
-              
+
               {section.groups && section.groups.map((group, idx) => (
                 <div key={idx} className={idx > 0 ? "mt-4" : ""}>
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--canvas-theme-text-muted)]">{translateCanvasLabel(group.label, language)}</p>
@@ -650,23 +644,23 @@ export default function LibrarySidebar({
 
       {openSection && activeSlotId && flyoutBounds && typeof document !== "undefined"
         ? createPortal(
-              <ReferenceFlyout
-                slotLabel={activeSlotLabel}
-                language={language}
-                activeTab={referenceTab}
-                onTabChange={setReferenceTab}
-                templates={getTemplatesForSlot(activeSlotId, activeSlotLabel, folders)}
-                selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
-                onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
-                onUploadAssets={onUploadAssets}
-                uploadFolderId={activeFolderId}
-                onClose={() => setActiveSlotId(null)}
-                top={flyoutBounds.top}
-              left={flyoutBounds.left}
-              height={flyoutBounds.height}
-            />,
-            document.body,
-          )
+          <ReferenceFlyout
+            slotLabel={activeSlotLabel}
+            language={language}
+            activeTab={referenceTab}
+            onTabChange={setReferenceTab}
+            templates={getTemplatesForSlot(activeSlotId, activeSlotLabel, folders)}
+            selectedTemplateIds={(selectedTemplates[openSection]?.[activeSlotId] ?? []).map((t) => t.id)}
+            onSelectTemplate={(template) => selectTemplate(openSection, activeSlotId, template)}
+            onUploadAssets={onUploadAssets}
+            uploadFolderId={activeFolderId}
+            onClose={() => setActiveSlotId(null)}
+            top={flyoutBounds.top}
+            left={flyoutBounds.left}
+            height={flyoutBounds.height}
+          />,
+          document.body,
+        )
         : null}
     </div>
   );
@@ -692,11 +686,11 @@ function AccordionSection({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-4 py-4 text-left transition hover:bg-[var(--canvas-theme-hover)]"
+        className="flex w-full items-center gap-2 px-3 py-3.5 text-left transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Icon className="h-4 w-4 shrink-0 text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">{title}</p>
+          <p className="text-[13px] font-semibold text-[var(--canvas-theme-text)]">{title}</p>
         </div>
         <ChevronDown
           className={[
@@ -706,7 +700,7 @@ function AccordionSection({
           aria-hidden="true"
         />
       </button>
-      {isOpen ? <div className="px-4 pb-7 pt-5">{children}</div> : null}
+      {isOpen ? <div className="px-3 pb-6 pt-4">{children}</div> : null}
     </section>
   );
 }

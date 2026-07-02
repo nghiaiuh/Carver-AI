@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, CircleDot, Download, Group, History, Layers3, Menu, Sparkles, Ungroup, Zap } from "lucide-react";
+import { ChevronDown, Download, Group, History, Layers3, Menu, Sparkles, Ungroup, Zap } from "lucide-react";
 import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type {
   AddedObject,
@@ -764,7 +764,7 @@ export default function CanvasBoard({
       setCreatedNodeRedoStack([]);
     }
     onConsumePendingPresetGroupInsert();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPresetGroupInsert]);
 
 
@@ -1106,7 +1106,7 @@ export default function CanvasBoard({
         pan,
         zoom,
       });
-      
+
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
       const hoveredNode = nodes.find((node) => {
         if (node.id === draftEdge.sourceId) return false;
@@ -1139,9 +1139,9 @@ export default function CanvasBoard({
         onAddPenStroke(
           draftPenStroke.points.length === 1
             ? {
-                ...draftPenStroke,
-                points: [...draftPenStroke.points, draftPenStroke.points[0]],
-              }
+              ...draftPenStroke,
+              points: [...draftPenStroke.points, draftPenStroke.points[0]],
+            }
             : draftPenStroke,
         );
       }
@@ -1260,19 +1260,19 @@ export default function CanvasBoard({
           // - Otherwise → 1 connection between any 2 nodes (existing behaviour).
           const edgeExists = draftEdge.sourcePresetChildId
             ? edges.some(
-                (edge) =>
-                  edge.sourceId === draftEdge.sourceId &&
-                  edge.sourcePresetChildId === draftEdge.sourcePresetChildId &&
-                  edge.targetId === targetNode.id,
-              )
+              (edge) =>
+                edge.sourceId === draftEdge.sourceId &&
+                edge.sourcePresetChildId === draftEdge.sourcePresetChildId &&
+                edge.targetId === targetNode.id,
+            )
             : sourceIsPresetGroup
               ? edges.some(
-                  (edge) =>
-                    edge.sourceId === draftEdge.sourceId &&
-                    edge.targetId === targetNode.id &&
-                    !edge.sourcePresetChildId,
-                )
-            : edges.some(
+                (edge) =>
+                  edge.sourceId === draftEdge.sourceId &&
+                  edge.targetId === targetNode.id &&
+                  !edge.sourcePresetChildId,
+              )
+              : edges.some(
                 (edge) =>
                   (edge.sourceId === draftEdge.sourceId && edge.targetId === targetNode.id) ||
                   (edge.sourceId === targetNode.id && edge.targetId === draftEdge.sourceId),
@@ -1743,7 +1743,13 @@ export default function CanvasBoard({
               aria-expanded={projectMenuOpen}
               aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
             >
-              {projectMenuOpen ? <Menu className="h-4 w-4" aria-hidden="true" /> : <CircleDot className="h-5 w-5" aria-hidden="true" />}
+              {projectMenuOpen ? (
+                <Menu className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-[#101412] text-[10px] font-black leading-none text-[#F8F5EE]">
+                  C.
+                </span>
+              )}
             </button>
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">Canvas Session</p>
@@ -1904,7 +1910,7 @@ export default function CanvasBoard({
               <Download className="h-4 w-4" aria-hidden="true" />
               <span>Export</span>
             </button>
-            <div className="ml-1 flex items-center gap-2 rounded-full bg-[#EFF6FF] px-3 py-2 text-xs font-bold text-[#1D4ED8]">
+            <div className="ml-1 inline-flex items-center gap-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)]">
               <Zap className="h-4 w-4 fill-current" aria-hidden="true" />
               <span>30 credits</span>
             </div>
@@ -1912,17 +1918,23 @@ export default function CanvasBoard({
         </div>
       </div>
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
-        <div className="flex h-12 items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/84 px-3 text-[var(--canvas-theme-text-soft)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+        <div className="flex h-10 items-center gap-1.5 rounded-[22px] border border-transparent bg-transparent px-1.5 text-[var(--canvas-theme-text-soft)] shadow-none backdrop-blur-0" data-canvas-ui="true">
           <button
             type="button"
             onClick={() => setProjectMenuOpen((value) => !value)}
-            className="grid h-8 w-8 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
+            className="grid h-7 w-7 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
             title={projectMenuOpen ? text.menu.closeMenu : text.menu.openMenu}
             aria-haspopup="menu"
             aria-expanded={projectMenuOpen}
             aria-label={projectMenuOpen ? text.menu.closeProjectMenu : text.menu.openProjectMenu}
           >
-            {projectMenuOpen ? <Menu className="h-4 w-4" aria-hidden="true" /> : <CircleDot className="h-5 w-5" aria-hidden="true" />}
+            {projectMenuOpen ? (
+              <Menu className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-[#101412] text-[12px] font-black leading-none text-[#F8F5EE]">
+                C.
+              </span>
+            )}
           </button>
           {editingProjectName ? (
             <input
@@ -1934,39 +1946,25 @@ export default function CanvasBoard({
                 if (e.key === "Enter") commitProjectName();
                 if (e.key === "Escape") cancelProjectName();
               }}
-              className="w-24 bg-transparent text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)] outline-none"
+              className="w-20 bg-transparent text-sm font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)] outline-none"
               aria-label={text.menu.projectName}
             />
           ) : (
             <button
               type="button"
               onClick={startEditingProjectName}
-              className="max-w-[120px] truncate text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)]"
+              className="max-w-[100px] truncate text-sm font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)]"
               title={text.menu.editProjectName}
             >
               {projectName}
             </button>
           )}
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full text-[var(--canvas-theme-icon-muted)] hover:bg-[var(--canvas-theme-hover)]"
-            title={text.menu.projectMode}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToast(text.toast.projectMode);
-            }}
-          >
-            <span className="relative grid h-5 w-5 place-items-center rounded-full border border-[var(--canvas-theme-border-strong)] text-[10px] font-semibold">
-              ◒
-            </span>
-          </button>
-          <ChevronDown className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
         </div>
 
         {projectMenuOpen ? (
           <div
             role="menu"
-            className="mt-3 w-64 overflow-hidden rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_28px_70px_var(--canvas-theme-shadow)] backdrop-blur-xl"
+            className="mt-3 w-56 overflow-hidden rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_20px_48px_var(--canvas-theme-shadow)] backdrop-blur-xl"
           >
             <MenuSection
               items={[
@@ -2040,21 +2038,9 @@ export default function CanvasBoard({
         ) : null}
       </div>
 
-      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/84 px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-transparent bg-transparent px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-none backdrop-blur-0" data-canvas-ui="true">
         <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
         <span>30</span>
-        <button
-          type="button"
-          className="relative grid h-8 w-8 place-items-center rounded-full bg-[#2F80ED] text-white"
-          title={text.menu.timeCredits}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToast(text.toast.credits);
-          }}
-        >
-          <span className="text-sm font-bold">↻</span>
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-white" />
-        </button>
       </div>
 
       {/* Zoomable + pannable canvas layer */}
@@ -2095,9 +2081,9 @@ export default function CanvasBoard({
           />
         ) : null}
 
-        <CanvasEdges 
-          nodes={nodes} 
-          edges={edges} 
+        <CanvasEdges
+          nodes={nodes}
+          edges={edges}
           selectedEdgeId={selectedItem.type === "edge" ? selectedItem.id : null}
           onEdgeClick={(id, e) => {
             e.stopPropagation();
@@ -2403,14 +2389,14 @@ function MenuSection({
             onClick={() => onSelect(item)}
             disabled={item.disabled}
             className={[
-              "flex w-full items-center justify-between gap-4 px-5 py-2.5 text-left text-sm",
+              "flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-[13px]",
               item.disabled
                 ? "cursor-not-allowed text-[var(--canvas-theme-text-muted)] opacity-45"
                 : "text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]",
               item.tone === "danger" && !item.disabled ? "text-[#B42318]" : "",
             ].join(" ")}
           >
-            <span className="font-medium">{item.label}</span>
+            <span className="font-medium leading-none">{item.label}</span>
             {item.shortcut ? (
               <span className="text-xs font-semibold text-[var(--canvas-theme-text-muted)]">{item.shortcut}</span>
             ) : null}

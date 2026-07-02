@@ -574,10 +574,11 @@ export default function EditorRightPanel({
     } finally {
       setIsSending(false);
     }
+
   };
 
   return (
-    <aside className="flex h-full w-full shrink-0 flex-col bg-[#FFFFFF] text-[var(--canvas-theme-text)]">
+    <aside className="flex h-full w-full shrink-0 flex-col bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)]">
       <div className="flex h-14 items-center justify-between border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3">
         <h2 className="text-sm font-semibold tracking-[-0.02em]">AI Chat</h2>
         <div className="flex items-center gap-2 text-[var(--canvas-theme-icon-muted)]">
@@ -586,28 +587,16 @@ export default function EditorRightPanel({
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto px-4 pb-[164px] pt-5">
-        <div className="mb-4 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-3 text-xs text-[var(--canvas-theme-text-muted)] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">Generation target</p>
-          <p className="mt-1 text-sm font-semibold text-[var(--canvas-theme-text)]">
-            {targetTitle ?? "No image selected"}
-          </p>
-          <p className="mt-1">
-            {targetTitle
-              ? `${targetReferenceCount} image reference(s) / ${targetPresetCount} preset reference(s)`
-              : "Click an image on the canvas to bind this prompt to that target."}
-          </p>
-        </div>
-
+      <div className="relative flex-1 overflow-y-auto px-3 pb-[164px] pt-4">
         {historyLoading ? (
-          <div className="grid h-full place-items-center">
+          <div className="grid place-items-center py-10">
             <div className="flex items-center gap-2 rounded-[12px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-sm text-[var(--canvas-theme-text-soft)]">
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
               Loading chat history...
             </div>
           </div>
         ) : messages.length === 0 ? (
-          <div className="grid h-full place-items-center">
+          <div className="grid place-items-center py-10">
             <div className="max-w-[280px] text-center">
               <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--canvas-theme-text)]">Ask Carver AI</h3>
               <p className="mt-3 text-sm leading-6 text-[var(--canvas-theme-text-muted)]">
@@ -621,7 +610,7 @@ export default function EditorRightPanel({
               <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
                 <div
                   className={[
-                    "whitespace-pre-wrap rounded-[16px] px-4 py-3 text-[13px] leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]",
+                    "whitespace-pre-wrap rounded-[16px] px-3.5 py-2.5 text-[13px] leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)]",
                     message.role === "user"
                       ? "border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text)]"
                       : message.status === "error"
@@ -635,7 +624,7 @@ export default function EditorRightPanel({
                       {message.generatedImages.map((image) => (
                         <figure
                           key={image.id}
-                          className="overflow-hidden rounded-[14px] border border-[var(--canvas-theme-border)] bg-[#FFFFFF]"
+                          className="overflow-hidden rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img

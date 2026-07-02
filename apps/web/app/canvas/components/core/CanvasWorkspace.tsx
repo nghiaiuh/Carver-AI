@@ -9,11 +9,10 @@
 
 "use client";
 
-import { useEffect } from "react";
-import { MessageSquare, PanelLeftOpen } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { MessageSquare } from "lucide-react";
 import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
-import { LEFT_SIDEBAR_PANEL_LABELS } from "../../types/canvas";
 import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import EditorLeftSidebar from "../panels/EditorLeftSidebar";
@@ -30,6 +29,10 @@ export default function CanvasWorkspace() {
   const { rootRef, leftSidebarPanelRef, rightPanelRef, leftSidebarResize, rightPanelResize } =
     canvas;
   const { state, modals, toast, actions, library } = canvas;
+  const [isLeftSidebarRendered, setIsLeftSidebarRendered] = useState(state.leftSidebar.open);
+  const leftSidebarContentRef = useRef<HTMLDivElement | null>(null);
+  const leftSidebarTweenRef = useRef<gsap.core.Timeline | null>(null);
+  const isLeftSidebarAnimatingRef = useRef(false);
 
   // GSAP entry animation – needs rootRef attached to DOM, so it lives here.
   useGSAP(
@@ -48,14 +51,76 @@ export default function CanvasWorkspace() {
   );
 
   useEffect(() => {
-    const element = leftSidebarPanelRef.current;
-    if (!element || !state.leftSidebar.open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.fromTo(
-      element,
-      { x: -18, autoAlpha: 0.82 },
-      { x: 0, autoAlpha: 1, duration: 0.28, ease: "power2.out", clearProps: "transform,opacity" },
-    );
-  }, [leftSidebarPanelRef, state.leftSidebar.open]);
+    if (state.leftSidebar.open) {
+      setIsLeftSidebarRendered(true);
+    }
+  }, [state.leftSidebar.open]);
+
+  useEffect(() => {
+    const wrapper = leftSidebarPanelRef.current;
+    if (!wrapper || !isLeftSidebarRendered || !state.leftSidebar.open || isLeftSidebarAnimatingRef.current) return;
+    gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "willChange" });
+  }, [isLeftSidebarRendered, leftSidebarPanelRef, leftSidebarResize.width, state.leftSidebar.open]);
+
+  useEffect(() => {
+    const wrapper = leftSidebarPanelRef.current;
+    const element = leftSidebarContentRef.current;
+    leftSidebarTweenRef.current?.kill();
+
+    if (!isLeftSidebarRendered || !wrapper || !element) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      if (state.leftSidebar.open) {
+        gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "width,willChange" });
+        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+      } else {
+        gsap.set(wrapper, { width: 0, clearProps: "width,willChange" });
+        setIsLeftSidebarRendered(false);
+      }
+      return;
+    }
+
+    isLeftSidebarAnimatingRef.current = true;
+    gsap.set(wrapper, { overflow: "hidden", willChange: "width" });
+    gsap.set(element, { willChange: "transform" });
+
+    if (state.leftSidebar.open) {
+      gsap.set(wrapper, { width: 0 });
+      gsap.set(element, { xPercent: -100 });
+      leftSidebarTweenRef.current = gsap.timeline({
+        onComplete: () => {
+          isLeftSidebarAnimatingRef.current = false;
+          gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "willChange" });
+          gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+        },
+      });
+      leftSidebarTweenRef.current
+        .to(wrapper, { width: leftSidebarResize.width, duration: 0.34, ease: "power2.out" }, 0)
+        .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
+      return;
+    }
+
+    gsap.set(wrapper, { width: leftSidebarResize.width });
+    gsap.set(element, { xPercent: 0 });
+    leftSidebarTweenRef.current = gsap.timeline({
+      onComplete: () => {
+        isLeftSidebarAnimatingRef.current = false;
+        setIsLeftSidebarRendered(false);
+        gsap.set(wrapper, { width: 0, clearProps: "willChange" });
+        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+      },
+    });
+    leftSidebarTweenRef.current
+      .to(element, { xPercent: -100, duration: 0.34, ease: "power3.inOut" }, 0)
+      .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
+  }, [isLeftSidebarRendered, leftSidebarPanelRef, leftSidebarResize.width, state.leftSidebar.open]);
+
+  useEffect(() => {
+    return () => {
+      leftSidebarTweenRef.current?.kill();
+    };
+  }, []);
 
   useEffect(() => {
     const element = rightPanelRef.current;
@@ -105,38 +170,43 @@ export default function CanvasWorkspace() {
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         <div data-enter className="relative flex min-h-0 flex-1">
           {/* Left sidebar */}
-          {state.leftSidebar.open ? (
+          {isLeftSidebarRendered ? (
             <div
               ref={leftSidebarPanelRef}
-              className="relative h-full shrink-0"
-              style={{ width: leftSidebarResize.width }}
+              className="relative h-full shrink-0 overflow-hidden"
               data-canvas-ui="true"
               data-shell-panel="left"
             >
-              <EditorLeftSidebar
-                language={state.language}
-                panel={state.leftSidebar.panel}
-                folders={library.folders}
-                activeFolderId={library.activeFolderId}
-                selectedAssetId={state.selectedLibraryAssetId}
-                onSelectFolder={library.setActiveFolderId}
-                onSelectAsset={actions.setSelectedLibraryAssetId}
-                onCreateFolder={library.createFolder}
-                onRenameFolder={library.renameFolder}
-                onDeleteFolder={actions.deleteLibraryFolder}
-                onDeleteAsset={actions.removeLibraryAsset}
-                onAddAssetToCanvas={(asset) => {
-                  actions.setSelectedLibraryAssetId(asset.id);
-                  actions.setPendingLibraryInsertAsset(asset);
-                }}
-                onUpsertPresetGroup={({ replaceAllChildren = false, ...params }) => {
-                  actions.upsertPresetGroup(params, replaceAllChildren);
-                }}
-                onUploadAssets={actions.uploadAssetsToFolder}
-                onSyncLibraryFromBucket={actions.syncLibraryFromBucket}
-                onToast={actions.showToast}
-                onClose={actions.closeLeftSidebar}
-              />
+              <div
+                ref={leftSidebarContentRef}
+                className="h-full shrink-0"
+                style={{ width: leftSidebarResize.width }}
+              >
+                <EditorLeftSidebar
+                  language={state.language}
+                  panel={state.leftSidebar.panel}
+                  folders={library.folders}
+                  activeFolderId={library.activeFolderId}
+                  selectedAssetId={state.selectedLibraryAssetId}
+                  onSelectFolder={library.setActiveFolderId}
+                  onSelectAsset={actions.setSelectedLibraryAssetId}
+                  onCreateFolder={library.createFolder}
+                  onRenameFolder={library.renameFolder}
+                  onDeleteFolder={actions.deleteLibraryFolder}
+                  onDeleteAsset={actions.removeLibraryAsset}
+                  onAddAssetToCanvas={(asset) => {
+                    actions.setSelectedLibraryAssetId(asset.id);
+                    actions.setPendingLibraryInsertAsset(asset);
+                  }}
+                  onUpsertPresetGroup={({ replaceAllChildren = false, ...params }) => {
+                    actions.upsertPresetGroup(params, replaceAllChildren);
+                  }}
+                  onUploadAssets={actions.uploadAssetsToFolder}
+                  onSyncLibraryFromBucket={actions.syncLibraryFromBucket}
+                  onToast={actions.showToast}
+                  onClose={actions.closeLeftSidebar}
+                />
+              </div>
               <ResizeHandle
                 side="right"
                 ariaLabel="Resize left sidebar"
@@ -145,16 +215,7 @@ export default function CanvasWorkspace() {
                 onDoubleClick={leftSidebarResize.resetWidth}
               />
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={actions.openLeftSidebar}
-              className="absolute left-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
-              title={`Open ${LEFT_SIDEBAR_PANEL_LABELS[state.leftSidebar.panel]}`}
-            >
-              <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
-            </button>
-          )}
+          ) : null}
 
           {/* Canvas board */}
           <CanvasBoard

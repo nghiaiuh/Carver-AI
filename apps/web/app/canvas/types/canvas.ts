@@ -329,12 +329,12 @@ export const LEFT_SIDEBAR_PANEL_LABELS: Record<LeftSidebarPanelId, string> = {
   "adjust-render": "Adjust render",
 };
 
-export const DEFAULT_LEFT_SIDEBAR_WIDTH = 304;
-export const MIN_LEFT_SIDEBAR_WIDTH = 240;
-export const MAX_LEFT_SIDEBAR_WIDTH = 480;
-export const DEFAULT_RIGHT_PANEL_WIDTH = 380;
-export const MIN_RIGHT_PANEL_WIDTH = 320;
-export const MAX_RIGHT_PANEL_WIDTH = 560;
+export const DEFAULT_LEFT_SIDEBAR_WIDTH = 280;
+export const MIN_LEFT_SIDEBAR_WIDTH = 220;
+export const MAX_LEFT_SIDEBAR_WIDTH = 400;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 320;
+export const MIN_RIGHT_PANEL_WIDTH = 280;
+export const MAX_RIGHT_PANEL_WIDTH = 480;
 export const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "carver-ai:left-sidebar-width";
 export const RIGHT_PANEL_WIDTH_STORAGE_KEY = "carver-ai:right-panel-width";
 

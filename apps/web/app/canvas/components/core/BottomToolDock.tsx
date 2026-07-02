@@ -235,7 +235,7 @@ export default function BottomToolDock({
               />
             </div>
 
-            <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4">
               {themeSwatches.map((color) => {
                 const selected = normalizedThemeColor === color;
                 return (
@@ -284,8 +284,8 @@ export default function BottomToolDock({
         />
       ) : null}
 
-      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1.5 py-1 text-[var(--canvas-theme-icon-muted)] shadow-[0_12px_30px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
-        <div className="flex h-8 items-center gap-2 px-2">
+      <div className="absolute bottom-5 left-6 z-50 flex items-center gap-1.5 rounded-[16px] border border-transparent bg-transparent px-0.5 py-0.5 text-[var(--canvas-theme-icon-muted)] shadow-none" data-canvas-ui="true">
+        <div className="flex h-7 items-center gap-1.5 px-1">
           <DockIcon
             buttonRef={themeTriggerRef}
             label={text.dock.theme}
@@ -306,7 +306,7 @@ export default function BottomToolDock({
             onClick={onToggleMiniMap}
           />
         </div>
-        <span className="h-5 w-px bg-[var(--canvas-theme-border-strong)]" aria-hidden="true" />
+        <span className="h-4 w-px bg-[var(--canvas-theme-border-strong)]" aria-hidden="true" />
         <button
           type="button"
           title={text.dock.resetZoom}
@@ -314,7 +314,7 @@ export default function BottomToolDock({
             event.stopPropagation();
             onResetZoom();
           }}
-          className="rounded-full px-2 text-xs font-medium tabular-nums text-[var(--canvas-theme-text-muted)] hover:bg-[var(--canvas-theme-hover)]"
+          className="rounded-full px-1.5 text-[11px] font-medium tabular-nums text-[var(--canvas-theme-text-muted)] hover:bg-[var(--canvas-theme-hover)]"
         >
           {zoomLabel}
         </button>
@@ -358,7 +358,7 @@ export default function BottomToolDock({
       </div>
 
       {activeTool === "pen" ? (
-        <div className="absolute bottom-[68px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_10px_24px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
+      <div className="absolute bottom-[68px] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[16px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_10px_24px_var(--canvas-theme-shadow)]" data-canvas-ui="true">
           <button
             type="button"
             onClick={(event) => {
