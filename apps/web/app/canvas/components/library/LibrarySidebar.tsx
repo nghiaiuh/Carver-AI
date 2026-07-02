@@ -589,8 +589,8 @@ export default function LibrarySidebar({
   };
 
   return (
-    <div ref={shellRef} className="relative z-[60] flex h-full w-full shrink-0 overflow-visible bg-[#FFFFFF] text-[var(--canvas-theme-text)]">
-      <aside className="relative z-[60] flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[#FFFFFF] shadow-[6px_0_28px_rgba(15,23,42,0.04)]">
+    <div ref={shellRef} className="relative z-[60] flex h-full w-full shrink-0 overflow-visible bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]">
+      <aside className="relative z-[60] flex h-full w-full shrink-0 flex-col border-r border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[6px_0_28px_rgba(15,23,42,0.04)]">
         <div className="border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -620,7 +620,7 @@ export default function LibrarySidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#FFFFFF] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--canvas-theme-surface-panel)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {PRESET_STRUCTURE.map((section) => (
             <AccordionSection
               key={section.id}
@@ -659,7 +659,7 @@ export default function LibrarySidebar({
             left={flyoutBounds.left}
             height={flyoutBounds.height}
           />,
-          document.body,
+          shellRef.current ?? document.body,
         )
         : null}
     </div>
@@ -779,7 +779,7 @@ function ReferenceFlyout({
   return (
     <section
       ref={flyoutRef}
-      className="fixed z-[500] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[#E5E7EB] bg-[#FFFFFF] shadow-[0_34px_80px_var(--canvas-theme-shadow)] transition-transform"
+      className="fixed z-[500] flex w-[320px] flex-col overflow-hidden rounded-r-[24px] border border-l-0 border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-[0_34px_80px_var(--canvas-theme-shadow)] transition-transform"
       style={{
         top,
         left,
@@ -787,18 +787,18 @@ function ReferenceFlyout({
         boxShadow: "20px 0 25px -5px rgb(0 0 0 / 0.1), 8px 0 10px -6px rgb(0 0 0 / 0.1)",
       }}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[#111111]">{translateCanvasLabel(slotLabel, language)}</h3>
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3">
+        <h3 className="text-sm font-semibold text-[var(--canvas-theme-text)]">{translateCanvasLabel(slotLabel, language)}</h3>
         <button
           type="button"
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-full text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#111111]"
+          className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
-      <div className="shrink-0 border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 pt-3">
+      <div className="shrink-0 border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 pt-3">
         <div className="flex gap-4">
           {tabs.map((tab) => (
             <button
@@ -808,13 +808,13 @@ function ReferenceFlyout({
               className={[
                 "relative pb-2 text-xs font-medium transition",
                 activeTab === tab.id
-                  ? "text-[#111111]"
-                  : "text-[#6B7280] hover:text-[#111111]",
+                  ? "text-[var(--canvas-theme-text)]"
+                  : "text-[var(--canvas-theme-text-muted)] hover:text-[var(--canvas-theme-text)]",
               ].join(" ")}
             >
               {tab.label}
               {activeTab === tab.id ? (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full bg-[#111111]" />
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full bg-[var(--canvas-theme-text)]" />
               ) : null}
             </button>
           ))}
@@ -823,7 +823,7 @@ function ReferenceFlyout({
 
       <div
         className={[
-          "min-h-0 flex-1 overflow-y-auto p-4 transition-colors duration-300",
+          "min-h-0 flex-1 overflow-y-auto bg-[var(--canvas-theme-surface-panel)] p-4 transition-colors duration-300",
           isScrollbarVisible ? "[&::-webkit-scrollbar-thumb]:bg-[var(--canvas-theme-border-strong)]" : "[&::-webkit-scrollbar-thumb]:bg-transparent",
         ].join(" ")}
         onScroll={handleScroll}
@@ -858,8 +858,8 @@ function ReferenceFlyout({
                       alt={template.label}
                       className="absolute inset-0 h-full w-full object-cover"
                     />
-                    <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1.5">
-                      <p className="text-[10px] font-medium leading-none text-white">{template.label}</p>
+                    <div className="absolute inset-x-0 bottom-0 bg-[var(--canvas-theme-surface-panel)]/88 px-2 py-1.5">
+                      <p className="text-[10px] font-medium leading-none text-[var(--canvas-theme-text)]">{template.label}</p>
                     </div>
                     {isSelected ? (
                       <div className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-sm">
@@ -872,27 +872,27 @@ function ReferenceFlyout({
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center px-4 py-10 text-center">
-              <Box className="mb-3 h-8 w-8 text-[#6B7280]" aria-hidden="true" />
-              <p className="text-sm font-medium text-[#111111]">No cloud presets yet</p>
-              <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-[#6B7280]">
+              <Box className="mb-3 h-8 w-8 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+              <p className="text-sm font-medium text-[var(--canvas-theme-text)]">No cloud presets yet</p>
+              <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-[var(--canvas-theme-text-muted)]">
                 Upload images into a library folder first, then use them as preset references here.
               </p>
             </div>
           )
         ) : (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <Box className="mb-3 h-8 w-8 text-[#6B7280]" aria-hidden="true" />
-            <p className="text-sm font-medium text-[#111111]">
+            <Box className="mb-3 h-8 w-8 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+            <p className="text-sm font-medium text-[var(--canvas-theme-text)]">
               {text.flyout.customAssets}
             </p>
-            <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-[#6B7280]">
+            <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-[var(--canvas-theme-text-muted)]">
               {text.flyout.customDescription}
             </p>
             <button
               type="button"
               onClick={openUploadPicker}
               disabled={!uploadFolderId}
-              className="mt-4 rounded-lg bg-[#F3F4F6] px-4 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#E5E7EB] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 rounded-lg bg-[var(--canvas-theme-surface-muted)] px-4 py-2 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {text.flyout.uploadImage}
             </button>

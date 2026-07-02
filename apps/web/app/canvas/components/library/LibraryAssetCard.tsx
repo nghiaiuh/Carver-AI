@@ -60,7 +60,7 @@ export default function LibraryAssetCard({
             event.stopPropagation();
             onAddToCanvas();
           }}
-          className="grid h-9 w-9 place-items-center rounded-full bg-white text-[var(--canvas-theme-surface)] shadow-lg transition hover:scale-105"
+          className="grid h-9 w-9 place-items-center rounded-full bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-lg transition hover:scale-105"
           title="Add to canvas"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -71,7 +71,7 @@ export default function LibraryAssetCard({
             event.stopPropagation();
             onPreview();
           }}
-          className="grid h-9 w-9 place-items-center rounded-full bg-white/90 text-[var(--canvas-theme-surface)] shadow-lg transition hover:scale-105"
+          className="grid h-9 w-9 place-items-center rounded-full bg-[var(--canvas-theme-surface-panel)]/90 text-[var(--canvas-theme-text)] shadow-lg transition hover:scale-105"
           title="Preview"
         >
           <Eye className="h-4 w-4" aria-hidden="true" />
