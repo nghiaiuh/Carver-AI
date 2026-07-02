@@ -7,15 +7,23 @@
 
 type EnvSource = Record<string, string | undefined>;
 
+const stripWrappingQuotes = (value: string) => value.replace(/^['"]|['"]$/g, "");
+
 const readRequired = (env: EnvSource, key: string): string => {
   const value = env[key];
   if (!value) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
-  return value;
+
+  return stripWrappingQuotes(value);
 };
 
-export const getSupabasePublicEnv = (env: EnvSource = process.env) => ({
+const getDefaultPublicEnv = (): EnvSource => ({
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+});
+
+export const getSupabasePublicEnv = (env: EnvSource = getDefaultPublicEnv()) => ({
   url: readRequired(env, "NEXT_PUBLIC_SUPABASE_URL"),
   anonKey: readRequired(env, "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
 });

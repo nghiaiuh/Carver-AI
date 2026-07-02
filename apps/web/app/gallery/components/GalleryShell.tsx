@@ -11,7 +11,10 @@ import Link from "next/link";
 import { ReactNode, useRef } from "react";
 import { ArrowRight, Bot, GalleryHorizontalEnd, Medal, Send, SlidersHorizontal } from "lucide-react";
 import { motion, useScroll, useSpring } from "framer-motion";
+import { usePathname, useRouter } from "next/navigation";
 import { gsap, useGSAP } from "../../components/gsapSetup";
+import { buildAuthPageHref, getBrowserAuthClient } from "../../components/auth/authClient";
+import { useAuthSession } from "../../components/auth/useAuthSession";
 
 type ShellProps = {
   children: ReactNode;
@@ -51,6 +54,17 @@ export function GalleryShell({ children, active = "Gallery" }: ShellProps) {
 }
 
 function TopNav() {
+  const { status } = useAuthSession();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    const supabase = getBrowserAuthClient();
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    router.refresh();
+  };
+
   return (
     <header className="fixed left-0 right-0 top-0 z-50 border-b border-black/10 bg-[#f8f5ee]/75 backdrop-blur-2xl">
       <div className="mx-auto flex max-w-[1560px] items-center justify-between px-5 py-4 lg:px-8">
@@ -65,13 +79,40 @@ function TopNav() {
             </Link>
           ))}
         </nav>
-        <Link
-          href="/submit"
-          className="group inline-flex items-center gap-2 rounded-full bg-[#101412] px-4 py-2.5 text-sm font-bold text-[#f8f5ee] shadow-xl shadow-black/15"
-        >
-          Submit Project
-          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
-        </Link>
+        {status === "authenticated" ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2.5 text-sm font-bold text-black/70 transition hover:border-black/20 hover:bg-white hover:text-black"
+            >
+              Sign Out
+            </button>
+            <Link
+              href="/canvas"
+              className="group inline-flex items-center gap-2 rounded-full bg-[#101412] px-4 py-2.5 text-sm font-bold text-[#f8f5ee] shadow-xl shadow-black/15"
+            >
+              Open Canvas
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Link
+              href={buildAuthPageHref("/login", pathname, "landing")}
+              className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2.5 text-sm font-bold text-black/70 transition hover:border-black/20 hover:bg-white hover:text-black"
+            >
+              Đăng nhập
+            </Link>
+            <Link
+              href={buildAuthPageHref("/register", pathname, "landing")}
+              className="group inline-flex items-center gap-2 rounded-full bg-[#101412] px-4 py-2.5 text-sm font-bold text-[#f8f5ee] shadow-xl shadow-black/15"
+            >
+              Đăng ký
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
+            </Link>
+          </div>
+        )}
       </div>
     </header>
   );
