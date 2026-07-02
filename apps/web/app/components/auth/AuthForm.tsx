@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import {
   buildAuthPageHref,
@@ -17,6 +17,7 @@ type AuthMode = "login" | "register";
 
 type AuthFormProps = {
   mode: AuthMode;
+  nextPath?: string;
 };
 
 function GoogleIcon() {
@@ -30,9 +31,8 @@ function GoogleIcon() {
   );
 }
 
-export default function AuthForm({ mode }: AuthFormProps) {
+export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { status } = useAuthSession();
   const [isPending, startTransition] = useTransition();
   const [email, setEmail] = useState("");
@@ -42,10 +42,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [info, setInfo] = useState<string | null>(null);
   const [oauthLoading, setOauthLoading] = useState(false);
 
-  const nextPath = useMemo(
-    () => normalizeNextPath(searchParams.get("next")),
-    [searchParams],
-  );
+  const nextPath = normalizeNextPath(rawNextPath);
 
   useEffect(() => {
     if (status !== "authenticated") return;
