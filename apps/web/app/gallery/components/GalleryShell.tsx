@@ -37,6 +37,9 @@ const dockLinks = [
   ["AI Tools", "/ai-tools", Bot],
 ];
 
+const AUTH_LOGIN_LABEL = "\u0110\u0103ng nh\u1eadp";
+const AUTH_REGISTER_LABEL = "\u0110\u0103ng k\u00fd";
+
 export function GalleryShell({ children, active = "Gallery" }: ShellProps) {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 90, damping: 24 });
@@ -102,13 +105,13 @@ function TopNav() {
               href={buildAuthPageHref("/login", pathname, "landing")}
               className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2.5 text-sm font-bold text-black/70 transition hover:border-black/20 hover:bg-white hover:text-black"
             >
-              Đăng nhập
+              {AUTH_LOGIN_LABEL}
             </Link>
             <Link
               href={buildAuthPageHref("/register", pathname, "landing")}
               className="group inline-flex items-center gap-2 rounded-full bg-[#101412] px-4 py-2.5 text-sm font-bold text-[#f8f5ee] shadow-xl shadow-black/15"
             >
-              Đăng ký
+              {AUTH_REGISTER_LABEL}
               <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
             </Link>
           </div>
@@ -282,8 +285,9 @@ export function MagneticButton({ href, children, dark = false }: { href: string;
     <Link
       ref={ref}
       href={href}
-      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black shadow-xl transition ${dark ? "bg-[#101412] text-[#f8f5ee] shadow-black/20" : "bg-[#f8f5ee] text-[#101412] shadow-black/10"
-        }`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black shadow-xl transition ${
+        dark ? "bg-[#101412] text-[#f8f5ee] shadow-black/20" : "bg-[#f8f5ee] text-[#101412] shadow-black/10"
+      }`}
     >
       {children}
       <ArrowRight className="h-4 w-4" aria-hidden="true" />
