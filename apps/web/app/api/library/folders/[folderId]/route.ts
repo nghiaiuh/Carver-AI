@@ -8,13 +8,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { getRequestContext } from "../../../_lib/auth";
-import { badRequest, readJsonObject } from "../../../_lib/http";
 import {
+  buildLibraryFolderRecord,
   deleteLibraryFolder,
   renameLibraryFolder,
-  buildLibraryFolderRecord,
-} from "../../../../../lib/server/library";
+} from "@carver/storage";
+import { getRequestContext } from "../../../_lib/auth";
+import { badRequest, readJsonObject } from "../../../_lib/http";
 
 export async function PATCH(
   request: Request,

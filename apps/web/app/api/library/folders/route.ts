@@ -7,9 +7,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage";
 import { getRequestContext } from "../../_lib/auth";
 import { badRequest, readJsonObject } from "../../_lib/http";
-import { createLibraryFolder, buildLibraryFolderRecord } from "../../../../lib/server/library";
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);

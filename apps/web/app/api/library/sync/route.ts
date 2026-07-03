@@ -9,8 +9,8 @@
  */
 
 import { NextResponse } from "next/server";
+import { syncLibraryFromBucket } from "@carver/storage";
 import { getRequestContext } from "../../_lib/auth";
-import { syncLibraryFromBucket } from "../../../../lib/server/librarySync";
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);

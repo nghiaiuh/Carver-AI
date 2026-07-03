@@ -7,8 +7,8 @@
  */
 
 import { NextResponse } from "next/server";
+import { listLibrary } from "@carver/storage";
 import { getRequestContext } from "../_lib/auth";
-import { listLibrary } from "../../../lib/server/library";
 
 export async function GET(request: Request) {
   const context = await getRequestContext(request);

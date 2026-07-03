@@ -8,9 +8,13 @@
  */
 
 import { NextResponse } from "next/server";
+import {
+  buildLibraryAssetRecord,
+  type LibraryUploadInputFile,
+  uploadLibraryAssets,
+} from "@carver/storage";
 import { getRequestContext } from "../../../../_lib/auth";
 import { badRequest } from "../../../../_lib/http";
-import { buildLibraryAssetRecord, uploadLibraryAssets } from "../../../../../../lib/server/library";
 
 function parseTags(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || !value.trim()) return [];
@@ -65,10 +69,18 @@ export async function POST(
       : "upload";
 
   try {
+    const uploadFiles: LibraryUploadInputFile[] = await Promise.all(
+      files.map(async (file) => ({
+        name: file.name,
+        type: file.type,
+        bytes: Buffer.from(await file.arrayBuffer()),
+      })),
+    );
+
     const assets = await uploadLibraryAssets({
       ownerId: context.user.id,
       folderId,
-      files,
+      files: uploadFiles,
       title,
       prompt,
       category,

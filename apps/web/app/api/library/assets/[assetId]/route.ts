@@ -7,9 +7,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { deleteLibraryAsset } from "@carver/storage";
 import { getRequestContext } from "../../../_lib/auth";
 import { badRequest } from "../../../_lib/http";
-import { deleteLibraryAsset } from "../../../../../lib/server/library";
 
 export async function DELETE(
   request: Request,
