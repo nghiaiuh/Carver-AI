@@ -1,575 +1,290 @@
 # Worker Architecture Document
 
-## Mục đích của `apps/worker`
+## Purpose
 
-`apps/worker` là nơi xử lý các tác vụ nền của Carver AI theo mô hình queue-based background processing.
+`apps/worker` owns background execution for Carver AI.
 
-Worker tồn tại để:
+Its job is to move long-running AI and storage work out of `apps/web`, so the web app can stay focused on:
 
-- đưa các tác vụ AI nặng ra khỏi request/response của web
-- tránh timeout ở API route
-- gom toàn bộ orchestration dài hơi vào một nơi duy nhất
-- cho phép retry, theo dõi trạng thái job, và mở rộng pipeline về sau
-- giữ cho `apps/web` chỉ làm nhiệm vụ nhận yêu cầu, xác thực, tạo job, và hiển thị kết quả
+- auth and ownership checks
+- creating `ai_jobs`
+- enqueueing work
+- polling and rendering results
 
-Trong định hướng đúng của project:
+The worker is now the execution owner for generation-related pipelines.
 
-- `apps/web` không nên gọi OpenAI image generation trực tiếp cho flow production
-- `apps/worker` nên là nơi thực thi thật các bước generate / analyze / refine / export
+## Current architecture
 
----
+### Web responsibilities
 
-## Hiện trạng worker
+`apps/web` should only:
 
-Hiện tại `apps/worker` còn rất gọn, mới có:
+- validate the request
+- verify project ownership
+- create the `ai_jobs` row
+- enqueue the queue job
+- poll `GET /api/projects/[projectId]/ai-jobs/[jobId]`
+- render `job_result` back into chat and canvas
 
-- `src/index.ts`
-  - khởi tạo BullMQ worker
-  - lắng nghe queue `carver-ai-jobs`
-  - đọc `CarverAiJobPayload`
-  - build brief từ snapshot và canvas graph context
-  - compile prompt nếu job là `generate_concept` hoặc `refine_concept`
-  - cập nhật trạng thái `ai_jobs` trong Supabase
+`/api/generate` is now a deprecated compatibility shim and is no longer the production generate path.
 
-Worker hiện **chưa** làm các việc sau:
+### Worker responsibilities
 
-- chưa gọi OpenAI Image API
-- chưa upload generated image lên storage
-- chưa tạo asset record cho ảnh output
-- chưa ghi output snapshot mới về canvas
-- chưa publish kết quả hoàn chỉnh để web chỉ việc poll/subcribe
+`apps/worker` should:
 
-Nói ngắn gọn:
+- read queued `CarverAiJobPayload` jobs
+- mark job lifecycle transitions
+- build the canonical brief and compiled prompt
+- call the provider
+- persist generated outputs
+- normalize `job_result`
+- mark the job as `succeeded` or `failed`
 
-- worker hiện đang xử lý phần `briefing / prompt preparation`
-- chưa xử lý phần `real image execution pipeline`
+### Shared package responsibilities
 
----
+- `packages/ai`
+  Source of truth for prompt and brief building.
+- `packages/shared`
+  Source of truth for job contracts, result shapes, snapshot types, and shared constants.
+- `packages/storage`
+  Source of truth for shared storage and preset-library server infrastructure.
+- `packages/queue`
+  Queue names, queue factories, and BullMQ wiring.
+- `packages/db`
+  Supabase and database typing ownership.
 
-## Vai trò của worker trong hệ thống tổng thể
-
-Flow hiện tại của toàn hệ thống:
-
-1. User thao tác trên canvas ở `apps/web`
-2. Web gom context:
-   - target image
-   - connected source images
-   - preset references
-   - snapshot hiện tại
-3. Web tạo `ai_job`
-4. Web enqueue job vào Redis/BullMQ
-5. Worker lấy job ra xử lý
-6. Worker cập nhật `ai_jobs.status`
-7. Web đọc trạng thái job và hiển thị lại cho user
-
-Flow đích sau khi refactor generate:
-
-1. Web validate request và tạo job
-2. Worker build brief + compile prompt
-3. Worker gọi model AI
-4. Worker lưu output image vào storage
-5. Worker ghi metadata asset / result vào DB
-6. Worker cập nhật `ai_jobs` thành `succeeded` hoặc `failed`
-7. Web poll/subcribe để render ảnh mới lên chat và canvas
-
----
-
-## Các thành phần liên quan ngoài worker
-
-### `apps/web`
-
-Vai trò:
-
-- UI canvas
-- chat panel
-- prompt composer
-- API route tạo job
-- poll trạng thái job
-
-File liên quan:
-
-- `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
-  - route tạo job và enqueue
-- `apps/web/app/api/generate/route.ts`
-  - route generate trực tiếp hiện tại, dự kiến sẽ được thu gọn hoặc thay thế
-
-### `packages/shared`
-
-Vai trò:
-
-- chứa contract dùng chung giữa web và worker
-
-File liên quan:
-
-- `packages/shared/src/ai-jobs.ts`
-  - `CarverAiJobPayload`
-  - `CreateAiJobRequest`
-  - `CanvasGenerationContext`
-  - `GeneratedCanvasImage`
-
-### `packages/queue`
-
-Vai trò:
-
-- định nghĩa queue name, queue factory, queue config Redis/BullMQ
-
-File liên quan:
-
-- `packages/queue/src/index.ts`
-
-### `packages/ai`
-
-Vai trò:
-
-- build brief
-- prompt engine
-- graph-aware generation context logic
-
-File liên quan:
-
-- `packages/ai/src/connected-generation-brief.ts`
-- `buildSnapshotAwareEditBrief(...)`
-- `compileFinalPrompt(...)`
-
-### `packages/db`
-
-Vai trò:
-
-- Supabase admin/server access
-- DB typing và schema ownership
-
----
-
-## Hạ tầng worker đang phụ thuộc
-
-Worker hiện phụ thuộc vào:
-
-- Redis
-  - làm queue backend cho BullMQ
-- Supabase
-  - đọc/ghi bảng `ai_jobs`
-- Shared contracts
-  - để web và worker dùng cùng payload shape
-- AI package
-  - build brief và compile prompt
-
-Hạ tầng cần có khi worker xử lý generate thật:
-
-- OpenAI API key
-- storage target cho generated images
-  - nên là bucket riêng cho generated assets
-- DB tables / asset records
-  - để liên kết output image với project và job
-
----
-
-## Cấu trúc folder hiện tại
-
-Hiện tại:
-
-```txt
-apps/worker/
-  src/
-    index.ts
-  package.json
-  tsconfig.json
-```
-
-Ưu điểm:
-
-- rất đơn giản
-- dễ nhìn ở giai đoạn MVP đầu
-
-Nhược điểm:
-
-- mọi trách nhiệm đang dồn vào một file
-- khó mở rộng khi thêm generate/analyze/export
-- khó test từng bước của pipeline
-- dễ lẫn orchestration, provider call, DB update, error mapping
-
----
-
-## Cấu trúc folder nên hướng tới khi refactor
-
-Đề xuất mục tiêu cho `apps/worker/src`:
+## Worker folder structure
 
 ```txt
 apps/worker/src/
-  index.ts
   config/
-    env.ts
-  queue/
-    worker.ts
-    events.ts
   jobs/
-    process-ai-job.ts
     handlers/
-      generate-concept.ts
-      refine-concept.ts
-      analyze-reference.ts
-      export.ts
-  services/
-    job-status-service.ts
-    generation-service.ts
-    asset-persistence-service.ts
+  mappers/
   providers/
     openai/
-      generate-image.ts
-      map-openai-error.ts
+  queue/
   repositories/
-    ai-job-repository.ts
-    asset-repository.ts
-    snapshot-repository.ts
-  mappers/
-    build-job-result.ts
-    build-job-error.ts
-  utils/
-    logger.ts
-    retry.ts
-    mime.ts
+  services/
+  index.ts
 ```
 
-### Vai trò từng folder
+## Folder roles
 
-#### `config/`
+### `config/`
 
-Chứa:
+Environment loading and worker-only runtime validation.
 
-- đọc env
-- validate biến môi trường cần cho worker
-- tránh để logic env nằm rải rác trong handler
+Keep provider keys and worker runtime checks here, not inside handlers.
 
-#### `queue/`
+### `queue/`
 
-Chứa:
+BullMQ worker creation and lifecycle event wiring.
 
-- khởi tạo BullMQ worker
-- đăng ký event `completed`, `failed`, `stalled`
-- wiring giữa queue và job processor
+This layer should stay thin and should not contain business logic.
 
-#### `jobs/`
+### `jobs/`
 
-Chứa:
+Routing and handling by `jobType`.
 
-- entry xử lý một `CarverAiJobPayload`
-- router theo `jobType`
-- tách handler theo từng nghiệp vụ
+Current direction:
 
-Ví dụ:
+- `generate_concept` has its own handler
+- `refine_concept` has its own handler
+- lightweight non-generation jobs can use a prepare-only path until they get full execution logic
 
-- `generate-concept.ts`
-- `refine-concept.ts`
-- `analyze-reference.ts`
-- `export.ts`
+### `services/`
 
-#### `services/`
+Application orchestration.
 
-Chứa orchestration cấp vừa:
+This is where worker-side flows are assembled:
 
-- build generation input
-- gọi provider
-- persist output
-- cập nhật job status theo từng stage
+- prepare generation state
+- execute provider call
+- persist outputs
+- compose assistant message and normalized job result
 
-Service là lớp điều phối nghiệp vụ, không nên chứa code UI hay queue wiring.
+### `providers/`
 
-#### `providers/`
+External provider adapters.
 
-Chứa code gọi dịch vụ bên ngoài:
+Current owner:
 
-- OpenAI Images
-- sau này có thể thêm provider khác
+- `providers/openai/generate-image.ts`
 
-Nguyên tắc:
+This layer should translate between Carver job input and the provider SDK/API contract.
 
-- tách provider adapter khỏi business flow
-- để sau này đổi model hoặc thêm provider ít đụng phần còn lại
+### `repositories/`
 
-#### `repositories/`
+Persistence-only code.
 
-Chứa code truy cập DB/storage:
+Examples:
 
-- đọc job
-- update status
-- tạo asset
-- tạo snapshot output
+- `ai-job-repository.ts`
+- `asset-repository.ts`
 
-Nguyên tắc:
+Repositories should not know UI concerns and should not build prompts.
 
-- repository chỉ làm persistence
-- không build prompt trong đây
+### `mappers/`
 
-#### `mappers/`
+Normalization helpers for:
 
-Chứa:
+- `job_result`
+- error codes
+- provider failure mapping
 
-- chuẩn hóa output/result payload
-- map lỗi provider thành error code nội bộ
+This keeps handler and service code smaller and more predictable.
 
-Ví dụ:
+## Current generation flow
 
-- `rate_limit`
-- `provider_invalid_request`
-- `storage_upload_failed`
-- `snapshot_create_failed`
+### 1. Web creates a job
 
-#### `utils/`
+Route:
 
-Chứa helper nhỏ:
+- `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
 
-- logger
-- mime helpers
-- retry utilities
-- time helpers
+The route:
 
----
+- authenticates the user
+- verifies project ownership
+- resolves the snapshot
+- inserts `ai_jobs`
+- enqueues the queue job
 
-## Vai trò của `index.ts` sau refactor
+It should not execute the provider directly.
 
-`index.ts` nên chỉ còn các nhiệm vụ:
+### 2. Worker receives the queued job
 
-- boot worker process
-- load config
-- tạo worker instance
-- đăng ký lifecycle logs/events
+Entry:
 
-`index.ts` không nên:
+- `apps/worker/src/jobs/process-ai-job.ts`
 
-- chứa logic build prompt dài
-- chứa logic gọi OpenAI trực tiếp
-- chứa logic upload storage
-- chứa logic xử lý mọi loại job trong một file
+The worker routes by `jobType` to a dedicated handler.
 
----
+### 3. Worker prepares canonical prompt data
 
-## Mô hình job nên áp dụng
+The worker uses `@carver/ai` to build:
 
-Một `ai_job` nên có lifecycle rõ ràng:
+- snapshot-aware brief
+- graph-aware connected brief
+- compiled prompt
+
+This keeps prompt shaping out of web UI and out of thin request routes.
+
+### 4. Worker executes the provider
+
+Current provider path:
+
+- OpenAI image generation via `providers/openai/generate-image.ts`
+
+### 5. Worker persists outputs
+
+The worker:
+
+- uploads the generated image through `@carver/storage`
+- creates asset metadata rows
+- writes normalized `job_result`
+
+### 6. Web polls the job result
+
+Route:
+
+- `apps/web/app/api/projects/[projectId]/ai-jobs/[jobId]/route.ts`
+
+The canvas UI then:
+
+- renders the assistant message
+- adds the generated image back onto the canvas
+
+## Job lifecycle
+
+The expected lifecycle is:
 
 - `queued`
 - `running`
 - `succeeded`
 - `failed`
 
-Về sau có thể mở rộng thêm:
+Every failure path should still leave the job in a valid persisted state.
 
-- `waiting_for_retry`
-- `canceled`
-- `partially_succeeded`
+## Standard result contract
 
-Mỗi job nên có:
+`job_result` should be stable enough for web to render without guessing.
 
-- `job_type`
-- `project_id`
-- `created_by`
-- `input_snapshot_id`
-- `job_payload`
-- `job_result`
-- `error_code`
-- `error_message`
+Important fields include:
 
-Worker phải là nơi update các field runtime này một cách nhất quán.
-
----
-
-## Flow xử lý lý tưởng cho job generate
-
-### 1. Nhận job từ queue
-
-Input:
-
-- `jobId`
-- `projectId`
-- `prompt`
-- `snapshot`
-- `targetNodeId`
-- `canvasGraphContext`
-
-### 2. Đánh dấu job running
-
-Update DB:
-
-- `status = running`
-- clear lỗi cũ nếu có
-
-### 3. Build brief và compile prompt
-
-Nguồn:
-
-- snapshot
-- canvas graph context
-- prompt text
-
-Output:
-
+- `stage`
+- `provider`
 - `editBrief`
-- `compiledPrompt`
+- `compiledPromptMeta`
+- `generatedImages`
+- `assistantMessage`
+- `outputAssetIds`
+- `outputSnapshotId`
 
-### 4. Gọi provider generate
+## Standard error contract
 
-Input:
+Prefer normalized internal error codes such as:
 
-- enhanced prompt
-- generation settings
-- image/reference context nếu provider hỗ trợ
+- `queue_enqueue_failed`
+- `worker_processing_failed`
+- `provider_invalid_request`
+- `provider_rate_limited`
+- `storage_upload_failed`
+- `snapshot_create_failed`
 
-Output:
+## Important boundaries
 
-- raw generated image
-- provider metadata
+### Keep out of `apps/web`
 
-### 5. Lưu asset output
+- direct provider execution for production generate flows
+- heavy storage orchestration
+- long-running image pipeline work
+- retry-ready lifecycle logic
 
-Bao gồm:
+### Keep out of `apps/worker`
 
-- upload image lên storage
-- tạo record asset
-- gắn với project/job/user
-
-### 6. Tạo kết quả trả về cho web
-
-Bao gồm:
-
-- generated image info
-- assistant message nếu cần
-- prompt meta
-- asset ids
-
-### 7. Update job succeeded
-
-Ghi:
-
-- `status = succeeded`
-- `job_result = ...`
-- `provider = ...`
-
-### 8. Nếu lỗi thì update failed
-
-Ghi:
-
-- `status = failed`
-- `error_code`
-- `error_message`
-
----
-
-## Boundary rất quan trọng
-
-### Những gì nên ở `apps/web`
-
-- xác thực request
-- verify quyền project
-- tạo row `ai_jobs`
-- enqueue job
-- poll/subcribe kết quả
-- render output lên chat/canvas
-
-### Những gì không nên ở `apps/web`
-
-- gọi image provider trực tiếp cho flow production
-- orchestration nhiều bước
-- upload output asset sau generate
-- retry logic
-
-### Những gì nên ở `apps/worker`
-
-- prompt execution pipeline
-- provider integration
-- persistence output
-- job status lifecycle
-- retry / failure handling
-
-### Những gì không nên ở `apps/worker`
-
-- React/UI state
+- React UI state
 - canvas interaction logic
-- quyền truy cập browser-side
+- browser-only concerns
 
----
+## Near-term roadmap
 
-## Nguyên tắc refactor worker
+### Done or in progress
 
-1. Không rewrite lớn một lần.
-2. Tách theo trách nhiệm trước, rồi mới chuyển logic generate.
-3. Giữ nguyên contract đang chạy nếu chưa cần đổi.
-4. Mọi payload dùng chung phải nằm ở `packages/shared`.
-5. Mọi queue setup dùng chung phải nằm ở `packages/queue`.
-6. Mọi brief/prompt logic dùng chung phải nằm ở `packages/ai`.
-7. `apps/worker` chỉ orchestration và execution.
+- worker-side generation execution
+- shared `job_result` contract
+- web-side job creation and job polling
+- deprecated `/api/generate`
+- shared storage package extraction
 
----
+### Next useful steps
 
-## Thứ tự triển khai khuyến nghị
+- move remaining library/storage orchestration fully behind shared services
+- add snapshot output persistence when generation creates a new version
+- add retry policy and structured worker logs
+- split analyze/export into dedicated execution handlers
+- remove the deprecated `/api/generate` shim once UI migration is fully complete
 
-### Phase 1
+## Maintenance checklist
 
-Refactor cấu trúc worker mà chưa đổi hành vi lớn:
+When editing worker code, always verify:
 
-- tách `index.ts`
-- tạo `jobs/`, `services/`, `repositories/`, `providers/`
-- giữ nguyên behavior hiện tại: build brief + compile prompt + update job
+- `CarverAiJobPayload` stays in sync with web
+- `job_payload` and `job_result` remain serializable
+- every failure branch updates `ai_jobs` consistently
+- provider errors are mapped to stable internal codes
+- output assets keep project ownership metadata
+- snapshot compatibility is preserved
 
-### Phase 2
+## Quick file map
 
-Chuyển generate thật từ web route sang worker:
-
-- web chỉ tạo job
-- worker gọi OpenAI Images
-- worker lưu kết quả vào `ai_jobs.job_result`
-
-### Phase 3
-
-Persist output asset:
-
-- upload storage
-- tạo asset record
-- trả metadata chuẩn cho web
-
-### Phase 4
-
-Canvas/chat integration hoàn chỉnh:
-
-- web poll/subcribe job
-- ảnh output hiện trong chat
-- ảnh output chèn vào canvas
-
-### Phase 5
-
-Stability:
-
-- retry policy
-- error mapping
-- structured logs
-- metrics/observability nếu cần
-
----
-
-## Checklist bảo trì
-
-Khi sửa worker, luôn kiểm tra:
-
-- contract `CarverAiJobPayload` có còn đồng bộ với web không
-- `ai_jobs.job_payload` và `job_result` có serialize được không
-- worker có update status đủ mọi nhánh lỗi không
-- provider errors có được map rõ ràng không
-- logic generate có làm lộ secret hoặc signed URL không
-- output image có gắn ownership/project đúng không
-- snapshot cũ có vẫn tương thích không
-
----
-
-## Kết luận ngắn
-
-Worker của Carver AI nên là:
-
-- nơi chạy các pipeline AI nền
-- nơi quản lý lifecycle của `ai_jobs`
-- nơi thực thi generate/refine/analyze/export thật
-- nơi giữ orchestration sạch, tách khỏi UI và request route
-
-Hiện tại worker mới ở giai đoạn đầu.
-Refactor đúng hướng là:
-
-- tách cấu trúc theo trách nhiệm
-- sau đó chuyển dần logic generate thật từ `apps/web/app/api/generate/route.ts` sang worker
-- cuối cùng để web chỉ còn nhiệm vụ tạo job và hiển thị kết quả
+- Bootstrap: [index.ts](/E:/Carver-AI/apps/worker/src/index.ts)
+- Queue wiring: [worker.ts](/E:/Carver-AI/apps/worker/src/queue/worker.ts)
+- Job router: [process-ai-job.ts](/E:/Carver-AI/apps/worker/src/jobs/process-ai-job.ts)
+- Generation handler: [generate-concept.ts](/E:/Carver-AI/apps/worker/src/jobs/handlers/generate-concept.ts)
+- Refine handler: [refine-concept.ts](/E:/Carver-AI/apps/worker/src/jobs/handlers/refine-concept.ts)
+- Orchestration: [generation-service.ts](/E:/Carver-AI/apps/worker/src/services/generation-service.ts)
+- OpenAI provider: [generate-image.ts](/E:/Carver-AI/apps/worker/src/providers/openai/generate-image.ts)
+- Job persistence: [ai-job-repository.ts](/E:/Carver-AI/apps/worker/src/repositories/ai-job-repository.ts)
+- Asset persistence: [asset-repository.ts](/E:/Carver-AI/apps/worker/src/repositories/asset-repository.ts)

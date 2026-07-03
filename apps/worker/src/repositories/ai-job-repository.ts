@@ -29,6 +29,8 @@ const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult)
       status: "succeeded",
       provider: result.provider,
       job_result: result.jobResult,
+      output_asset_ids: result.jobResult.outputAssetIds,
+      output_snapshot_id: result.jobResult.outputSnapshotId,
     })
     .eq("id", jobId);
 

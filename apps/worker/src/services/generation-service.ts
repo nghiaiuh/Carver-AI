@@ -7,33 +7,34 @@
 
 import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
-import type { CarverAiJobPayload } from "@carver/shared";
+import type {
+  CanvasGenerationAssistantMessage,
+  CarverAiJobPayload,
+  CarverAiJobResult,
+  CarverCompiledPromptMeta,
+  CarverEditBrief,
+} from "@carver/shared";
+import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
+import { generateImageFromPrompt } from "../providers/openai/generate-image";
+import { persistGeneratedImageAsset } from "./asset-persistence-service";
 
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
 
-type CompiledPromptMeta = {
-  taskType: string;
-  editScope: string;
-  riskLevel: string;
-  targetArea: string | null;
-  targetObject: string | null;
-  formulaUsed: string;
-  shouldShowReview: boolean;
+export type PreparedGenerationState = {
+  editBrief: CarverEditBrief;
+  compiledPromptMeta: CarverCompiledPromptMeta | null;
+  finalPrompt: string | null;
 };
 
 export type PreparedGenerationJobResult = {
-  provider: string;
-  jobResult: {
-    stage: "prompt_compiled" | "brief_ready";
-    editBrief: ReturnType<typeof buildSnapshotAwareEditBrief>;
-    compiledPromptMeta: CompiledPromptMeta | null;
-  };
+  provider: string | null;
+  jobResult: CarverAiJobResult;
 };
 
-export const prepareGenerationJobResult = (
+export const prepareGenerationState = (
   job: CarverAiJobPayload,
-): PreparedGenerationJobResult => {
+): PreparedGenerationState => {
   const snapshotBrief = buildSnapshotAwareEditBrief(job);
   const editBrief = job.canvasGraphContext
     ? buildConnectedGenerationBrief(snapshotBrief, job.canvasGraphContext)
@@ -61,21 +62,78 @@ export const prepareGenerationJobResult = (
     : null;
 
   return {
+    editBrief,
+    compiledPromptMeta: compiledPrompt
+      ? {
+          taskType: compiledPrompt.taskType,
+          editScope: compiledPrompt.editScope,
+          riskLevel: compiledPrompt.riskLevel,
+          targetArea: compiledPrompt.targetArea ?? null,
+          targetObject: compiledPrompt.targetObject ?? null,
+          formulaUsed: compiledPrompt.formulaUsed,
+          shouldShowReview: compiledPrompt.shouldShowReview,
+        }
+      : null,
+    finalPrompt: compiledPrompt?.enhancedPrompt ?? null,
+  };
+};
+
+export const prepareGenerationJobResult = (state: PreparedGenerationState): PreparedGenerationJobResult => ({
+  provider: "carver-worker-briefing",
+  jobResult: buildPreparedJobResult({
     provider: "carver-worker-briefing",
-    jobResult: {
-      stage: shouldCompilePrompt ? "prompt_compiled" : "brief_ready",
-      editBrief,
-      compiledPromptMeta: compiledPrompt
-        ? {
-            taskType: compiledPrompt.taskType,
-            editScope: compiledPrompt.editScope,
-            riskLevel: compiledPrompt.riskLevel,
-            targetArea: compiledPrompt.targetArea ?? null,
-            targetObject: compiledPrompt.targetObject ?? null,
-            formulaUsed: compiledPrompt.formulaUsed,
-            shouldShowReview: compiledPrompt.shouldShowReview,
-          }
-        : null,
-    },
+    stage: state.compiledPromptMeta ? "prompt_compiled" : "brief_ready",
+    editBrief: state.editBrief,
+    compiledPromptMeta: state.compiledPromptMeta,
+  }),
+});
+
+function buildGenerationAssistantMessage(params: {
+  generatedImage: Awaited<ReturnType<typeof persistGeneratedImageAsset>>["generatedImage"];
+}): CanvasGenerationAssistantMessage {
+  return {
+    id: `assistant-generation-${Date.now()}`,
+    role: "assistant",
+    content: "Generated a concept image from the selected canvas target and connected references.",
+    createdAt: new Date().toISOString(),
+    generatedImages: [params.generatedImage],
+  };
+}
+
+export const executeGeneratedImageJob = async (
+  job: CarverAiJobPayload,
+  state: PreparedGenerationState,
+): Promise<PreparedGenerationJobResult> => {
+  if (!state.finalPrompt) {
+    return prepareGenerationJobResult(state);
+  }
+
+  const providerImage = await generateImageFromPrompt(state.finalPrompt);
+  const persisted = await persistGeneratedImageAsset({
+    jobId: job.jobId,
+    projectId: job.projectId,
+    ownerId: job.userId,
+    prompt: providerImage.revisedPrompt ?? state.finalPrompt,
+    title: "Generated concept",
+    buffer: providerImage.buffer,
+    mimeType: providerImage.mimeType,
+    width: providerImage.width,
+    height: providerImage.height,
+    provider: providerImage.provider,
+  });
+  const assistantMessage = buildGenerationAssistantMessage({
+    generatedImage: persisted.generatedImage,
+  });
+
+  return {
+    provider: providerImage.provider,
+    jobResult: buildGeneratedJobResult({
+      provider: providerImage.provider,
+      editBrief: state.editBrief,
+      compiledPromptMeta: state.compiledPromptMeta,
+      generatedImages: [persisted.generatedImage],
+      assistantMessage,
+      outputAssetIds: [persisted.assetId],
+    }),
   };
 };

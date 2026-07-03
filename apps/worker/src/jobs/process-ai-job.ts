@@ -8,14 +8,18 @@
 import type { Job } from "bullmq";
 import type { CarverAiJobPayload } from "@carver/shared";
 import { handleGenerateConceptJob } from "./handlers/generate-concept";
+import { handlePrepareAiJob } from "./handlers/prepare-ai-job";
+import { handleRefineConceptJob } from "./handlers/refine-concept";
 
 export const processAiJob = async (job: Job<CarverAiJobPayload>) => {
   switch (job.data.jobType) {
     case "generate_concept":
+      return handleGenerateConceptJob(job.data);
     case "refine_concept":
+      return handleRefineConceptJob(job.data);
     case "analyze_reference":
     case "export":
     default:
-      return handleGenerateConceptJob(job.data);
+      return handlePrepareAiJob(job.data);
   }
 };

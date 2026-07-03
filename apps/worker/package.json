@@ -12,7 +12,9 @@
   "dependencies": {
     "@carver/ai": "*",
     "@carver/db": "*",
-    "@carver/queue": "*"
+    "@carver/queue": "*",
+    "@carver/shared": "*",
+    "@carver/storage": "*"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",
