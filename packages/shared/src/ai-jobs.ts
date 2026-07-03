@@ -88,6 +88,47 @@ export type CanvasGenerationAssistantMessage = {
   generatedImages: GeneratedCanvasImage[];
 };
 
+export type CarverCompiledPromptMeta = {
+  taskType: string;
+  editScope: string;
+  riskLevel: string;
+  targetArea: string | null;
+  targetObject: string | null;
+  formulaUsed: string;
+  shouldShowReview: boolean;
+};
+
+export type CarverAiJobResultStage = "brief_ready" | "prompt_compiled" | "generated";
+
+export type CarverAiJobResult = {
+  stage: CarverAiJobResultStage;
+  provider: string | null;
+  editBrief: CarverEditBrief;
+  compiledPromptMeta: CarverCompiledPromptMeta | null;
+  generatedImages: GeneratedCanvasImage[];
+  assistantMessage: CanvasGenerationAssistantMessage | null;
+  outputAssetIds: string[];
+  outputSnapshotId: string | null;
+};
+
+export type CarverAiJobRecord = {
+  id: string;
+  projectId: string;
+  threadId: string | null;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  jobType: CarverJobKind;
+  prompt: string | null;
+  inputSnapshotId: string | null;
+  outputSnapshotId: string | null;
+  outputAssetIds: string[];
+  provider: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  jobResult: CarverAiJobResult | null;
+};
+
 export type CreateAiJobRequest = {
   projectId: string;
   jobType: CarverJobKind;
@@ -97,6 +138,7 @@ export type CreateAiJobRequest = {
   promptMode?: "auto" | "review" | "expert";
   referenceAssetIds?: string[];
   selection?: Partial<CanvasSnapshotDocument["selection"]>;
+  snapshot?: CanvasSnapshotDocument;
   targetNodeId?: string;
   canvasGraphContext?: CanvasGenerationContext;
 };
@@ -107,7 +149,7 @@ export type CarverAiJobPayload = {
   userId: string;
   jobType: CarverJobKind;
   prompt: string;
-  inputSnapshotId: string;
+  inputSnapshotId: string | null;
   threadId?: string | null;
   promptMode: "auto" | "review" | "expert";
   snapshot: CanvasSnapshotDocument;
