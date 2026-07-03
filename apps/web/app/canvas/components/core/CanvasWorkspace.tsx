@@ -30,9 +30,13 @@ export default function CanvasWorkspace() {
     canvas;
   const { state, modals, toast, actions, library } = canvas;
   const [isLeftSidebarRendered, setIsLeftSidebarRendered] = useState(state.leftSidebar.open);
+  const [isRightPanelRendered, setIsRightPanelRendered] = useState(state.rightPanelOpen);
   const leftSidebarContentRef = useRef<HTMLDivElement | null>(null);
+  const rightPanelContentRef = useRef<HTMLDivElement | null>(null);
   const leftSidebarTweenRef = useRef<gsap.core.Timeline | null>(null);
+  const rightPanelTweenRef = useRef<gsap.core.Timeline | null>(null);
   const isLeftSidebarAnimatingRef = useRef(false);
+  const isRightPanelAnimatingRef = useRef(false);
 
   // GSAP entry animation – needs rootRef attached to DOM, so it lives here.
   useGSAP(
@@ -57,10 +61,22 @@ export default function CanvasWorkspace() {
   }, [state.leftSidebar.open]);
 
   useEffect(() => {
+    if (state.rightPanelOpen) {
+      setIsRightPanelRendered(true);
+    }
+  }, [state.rightPanelOpen]);
+
+  useEffect(() => {
     const wrapper = leftSidebarPanelRef.current;
     if (!wrapper || !isLeftSidebarRendered || !state.leftSidebar.open || isLeftSidebarAnimatingRef.current) return;
     gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "willChange" });
   }, [isLeftSidebarRendered, leftSidebarPanelRef, leftSidebarResize.width, state.leftSidebar.open]);
+
+  useEffect(() => {
+    const wrapper = rightPanelRef.current;
+    if (!wrapper || !isRightPanelRendered || !state.rightPanelOpen || isRightPanelAnimatingRef.current) return;
+    gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "willChange" });
+  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
 
   useEffect(() => {
     const wrapper = leftSidebarPanelRef.current;
@@ -123,14 +139,64 @@ export default function CanvasWorkspace() {
   }, []);
 
   useEffect(() => {
-    const element = rightPanelRef.current;
-    if (!element || !state.rightPanelOpen || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.fromTo(
-      element,
-      { x: 18, autoAlpha: 0.82 },
-      { x: 0, autoAlpha: 1, duration: 0.28, ease: "power2.out", clearProps: "transform,opacity" },
-    );
-  }, [rightPanelRef, state.rightPanelOpen]);
+    const wrapper = rightPanelRef.current;
+    const element = rightPanelContentRef.current;
+    rightPanelTweenRef.current?.kill();
+
+    if (!isRightPanelRendered || !wrapper || !element) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      if (state.rightPanelOpen) {
+        gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "width,willChange" });
+        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+      } else {
+        gsap.set(wrapper, { width: 0, clearProps: "width,willChange" });
+        setIsRightPanelRendered(false);
+      }
+      return;
+    }
+
+    isRightPanelAnimatingRef.current = true;
+    gsap.set(wrapper, { overflow: "hidden", willChange: "width" });
+    gsap.set(element, { willChange: "transform" });
+
+    if (state.rightPanelOpen) {
+      gsap.set(wrapper, { width: 0 });
+      gsap.set(element, { xPercent: 100 });
+      rightPanelTweenRef.current = gsap.timeline({
+        onComplete: () => {
+          isRightPanelAnimatingRef.current = false;
+          gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "willChange" });
+          gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+        },
+      });
+      rightPanelTweenRef.current
+        .to(wrapper, { width: rightPanelResize.width, duration: 0.34, ease: "power2.out" }, 0)
+        .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
+      return;
+    }
+
+    gsap.set(wrapper, { width: rightPanelResize.width });
+    gsap.set(element, { xPercent: 0 });
+    rightPanelTweenRef.current = gsap.timeline({
+      onComplete: () => {
+        isRightPanelAnimatingRef.current = false;
+        setIsRightPanelRendered(false);
+        gsap.set(wrapper, { width: 0, clearProps: "willChange" });
+        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+      },
+    });
+    rightPanelTweenRef.current
+      .to(element, { xPercent: 100, duration: 0.34, ease: "power3.inOut" }, 0)
+      .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
+  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
+
+  useEffect(() => {
+    return () => {
+      rightPanelTweenRef.current?.kill();
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -283,29 +349,35 @@ export default function CanvasWorkspace() {
           />
 
           {/* Right panel */}
-          {state.rightPanelOpen ? (
+          {isRightPanelRendered ? (
             <div
               ref={rightPanelRef}
               className="relative h-full shrink-0"
-              style={{ width: rightPanelResize.width }}
+              style={{ width: state.rightPanelOpen ? rightPanelResize.width : 0 }}
               data-canvas-ui="true"
               data-shell-panel="right"
             >
-              <EditorRightPanel
-                canvasId="canvas-main"
-                targetTitle={state.activeGenerationTarget?.title ?? null}
-                targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
-                targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}
-                targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
-                connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
-                connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
-                generationAssistantMessages={state.generationAssistantMessages}
-                draft={state.promptText}
-                onDraftChange={actions.setPromptText}
-                onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}
-                onClose={actions.closeRightPanel}
-                onToast={actions.showToast}
-              />
+              <div
+                ref={rightPanelContentRef}
+                className="h-full shrink-0"
+                style={{ width: rightPanelResize.width }}
+              >
+                <EditorRightPanel
+                  canvasId="canvas-main"
+                  targetTitle={state.activeGenerationTarget?.title ?? null}
+                  targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
+                  targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}
+                  targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
+                  connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
+                  connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
+                  generationAssistantMessages={state.generationAssistantMessages}
+                  draft={state.promptText}
+                  onDraftChange={actions.setPromptText}
+                  onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}
+                  onClose={actions.closeRightPanel}
+                  onToast={actions.showToast}
+                />
+              </div>
               <ResizeHandle
                 side="left"
                 ariaLabel="Resize right panel"
@@ -318,7 +390,7 @@ export default function CanvasWorkspace() {
             <button
               type="button"
               onClick={actions.openRightPanel}
-              className="absolute right-3 top-3 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
+              className="absolute right-6 top-20 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
               title={state.language === "vi" ? "Mở chat" : "Open chat"}
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
