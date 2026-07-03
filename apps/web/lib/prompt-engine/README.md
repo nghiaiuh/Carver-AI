@@ -1,58 +1,22 @@
-# Landscape Prompt Engine
+# Web Prompt Engine Compatibility Layer
 
-This folder now has two active groups.
+This folder is no longer an implementation owner.
 
-Pre-submit enhance prompt:
-- `enhance-prompt/enhancePrompt.ts`
-- `enhance-prompt/enhanceTypes.ts`
-- `enhance-prompt/landscapeDictionaries.ts`
-- `enhance-prompt/landscapeRules.ts`
-- `enhance-prompt/promptScoring.ts`
-- `enhance-prompt/promptTemplates.ts`
-- `enhance-prompt/openAiEnhanceFallback.ts`
-- `enhance-prompt/enhancePrompt.test.ts`
+Prompt-engine logic now lives in:
 
-Post-submit compile/generate prompt:
-- `generate/compileFinalPrompt.ts`
-- `generate/enhanceLandscapePrompt.ts`
-- `generate/types.ts`
-- `generate/detectTaskType.ts`
-- `generate/detectEditScope.ts`
-- `generate/detectRiskLevel.ts`
-- `generate/detectTargetArea.ts`
-- `generate/preserveRules.ts`
-- `generate/negativeConstraints.ts`
-- `generate/stylePresets.ts`
-- `generate/formulas.ts`
-- `generate/buildEditBrief.ts`
-- `generate/enhanceLandscapePrompt.test.ts`
+- `packages/ai/src/prompt-engine`
 
-Shared support files:
-- `index.ts`
-- `README.md`
+`apps/web/lib/prompt-engine/index.ts` remains only as a thin compatibility re-export:
 
-Flow:
+- old web imports can continue to resolve
+- runtime prompt logic stays owned by `@carver/ai/prompt-engine`
 
-1. User writes `rawPrompt` in the normal prompt box.
-2. Optional: user clicks Enhance Prompt and `/api/prompt/enhance` returns `{ success: true, data: EnhancePromptResult }`.
-3. The pre-submit flow builds a rule scaffold first, then lets OpenAI refine it while preserving the user's original request.
-4. User edits the enhanced prompt or keeps writing naturally.
-5. User clicks Generate and `/api/generate` runs `compileFinalPrompt()`.
-6. The post-submit compiler silently converts the submitted prompt into the guarded final model prompt.
-7. Return `promptMeta` so the UI can later show an Edit Brief, Review mode, or Expert mode.
+Current flow:
 
-Default Generate API behavior should not expose the final prompt. It is only returned as `enhancedPromptVisible` when `promptMode` is `expert` or `debugPrompt` is `true`.
+1. UI sends prompt-enhance requests to `POST /api/prompt/enhance`.
+2. That route imports prompt logic from `@carver/ai/prompt-engine`.
+3. Generation requests create an `ai_job`.
+4. The worker imports prompt logic from `@carver/ai/prompt-engine`.
+5. The worker stores normalized `job_result` for web polling.
 
-APIs:
-
-- `POST /api/prompt/enhance`: builds a rule-based scaffold from the user's request, then asks OpenAI to refine that scaffold into the final enhanced prompt when AI enhancement is enabled.
-- `POST /api/generate`: compiles `prompt` into the final model prompt and returns generation metadata.
-
-The current Enhance Prompt implementation is hybrid:
-- rule-based detection and scaffolding preserve structure, constraints, and the user's original ask
-- OpenAI refinement turns that scaffold into a more natural final prompt
-- if AI enhancement fails, the scaffold-backed deterministic prompt is returned instead of silently inventing a different request
-
-Removed as unused in the current flow:
-
-- `enhancePromptDraft.ts`: old pre-submit draft enhancer, no longer used by UI or API after the hybrid `enhancePrompt()` flow replaced it
+If more prompt-engine logic appears in `apps/web/lib/prompt-engine`, treat it as drift and move it back into `packages/ai`.

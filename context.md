@@ -33,6 +33,8 @@ Use these boundaries:
   DB types and Supabase-related ownership.
 - `packages/queue`
   Job contracts and queue wiring.
+- `packages/storage`
+  Shared server-side storage and preset-library infrastructure.
 - `packages/shared`
   Shared types, snapshot schema, generation context types.
 
@@ -178,8 +180,8 @@ Graph-aware AI brief logic lives in:
 - `packages/ai/src/connected-generation-brief.ts`
 
 API side:
-- `apps/web/app/api/generate/route.ts`
 - `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
+- `apps/web/app/api/projects/[projectId]/ai-jobs/[jobId]/route.ts`
 
 Worker side:
 - `apps/worker`
@@ -200,6 +202,10 @@ Current direction:
 - one selected target image
 - connected references resolved from the graph
 - graph should be serializable/restorable via snapshot schema
+- canvas generation is job-backed:
+  - web creates an `ai_job`
+  - worker executes the generation
+  - web polls the job result and renders chat/canvas outputs
 
 ## 8. Snapshot/version compatibility
 
@@ -243,8 +249,10 @@ If the task is about generation context or linked references:
 
 If the task is about generation payload / job contract:
 - start with `packages/shared/src/ai-jobs.ts`
-- then `apps/web/app/api/generate/route.ts`
 - then `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
+- then `apps/web/app/api/projects/[projectId]/ai-jobs/[jobId]/route.ts`
+- then `apps/worker/src/jobs/handlers/generate-concept.ts`
+- then `apps/worker/src/services/generation-service.ts`
 
 If the task is about worker processing:
 - start with `apps/worker/src/index.ts`
