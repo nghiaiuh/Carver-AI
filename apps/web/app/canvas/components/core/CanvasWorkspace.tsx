@@ -24,8 +24,8 @@ import RealityCheckPanel from "../panels/RealityCheckPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
 
-export default function CanvasWorkspace() {
-  const canvas = useCanvasWorkspace();
+export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
+  const canvas = useCanvasWorkspace({ projectId });
   const { rootRef, leftSidebarPanelRef, rightPanelRef, leftSidebarResize, rightPanelResize } =
     canvas;
   const { state, modals, toast, actions, library } = canvas;
@@ -364,6 +364,7 @@ export default function CanvasWorkspace() {
               >
                 <EditorRightPanel
                   canvasId="canvas-main"
+                  projectId={projectId}
                   targetTitle={state.activeGenerationTarget?.title ?? null}
                   targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
                   targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}

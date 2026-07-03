@@ -1,16 +1,15 @@
 /*
  * Route: API tao AI job theo project.
  * Thuoc: module background jobs / generation workflow.
- * Vai tro: dong goi yeu cau AI thanh job co snapshot context de worker xu ly bat dong bo.
+ * Vai tro: dong goi yeu cau AI thanh job co snapshot + graph context de worker xu ly bat dong bo.
  * Chuc nang:
- * - `POST`: kiem tra quyen project, lay snapshot hien tai, tao ai_job va enqueue vao queue.
+ * - `POST`: kiem tra quyen project, resolve snapshot, tao ai_job va enqueue vao queue.
  */
 
 import { NextResponse } from "next/server";
-import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
-import type { CarverAiJobPayload, CreateAiJobRequest } from "@carver/shared";
-import { coerceCanvasSnapshotDocument } from "@carver/shared";
+import type { CarverAiJobPayload, CarverAiJobRecord, CarverAiJobResult, CreateAiJobRequest } from "@carver/shared";
+import { coerceCanvasSnapshotDocument, isCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
 import { badRequest, readJsonObject, stringArrayValue, stringValue } from "../../../_lib/http";
 
@@ -25,6 +24,9 @@ const PROMPT_MODES = ["auto", "review", "expert"] as const;
 
 const objectValue = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+
+const snapshotValue = (value: unknown) =>
+  isCanvasSnapshotDocument(value) ? coerceCanvasSnapshotDocument(value) : undefined;
 
 const normalizeJobType = (value: unknown): CreateAiJobRequest["jobType"] =>
   typeof value === "string" && JOB_TYPES.includes(value as CreateAiJobRequest["jobType"])
@@ -82,6 +84,7 @@ export async function POST(
   const jobType = normalizeJobType(body.jobType);
   const targetNodeId = stringValue(body, "targetNodeId");
   const canvasGraphContext = objectValue(body.canvasGraphContext);
+  const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
 
   const { supabase, user } = context;
 
@@ -96,22 +99,25 @@ export async function POST(
   }
 
   const resolvedSnapshotId = inputSnapshotId ?? project.current_canvas_snapshot_id;
-  if (!resolvedSnapshotId) {
-    return badRequest("The project does not have a current canvas snapshot");
-  }
+  const snapshotRow = resolvedSnapshotId
+    ? await supabase
+        .from("canvas_snapshots")
+        .select("id, project_id, version, canvas_json")
+        .eq("id", resolvedSnapshotId)
+        .eq("project_id", projectId)
+        .single()
+    : null;
+  const loadedSnapshot = snapshotRow?.data ?? null;
 
-  const { data: snapshotRow, error: snapshotError } = await supabase
-    .from("canvas_snapshots")
-    .select("id, project_id, version, canvas_json")
-    .eq("id", resolvedSnapshotId)
-    .eq("project_id", projectId)
-    .single();
-
-  if (snapshotError || !snapshotRow) {
+  if (resolvedSnapshotId && (snapshotRow?.error || !loadedSnapshot)) {
     return NextResponse.json({ error: "Snapshot not found" }, { status: 404 });
   }
 
-  const snapshot = coerceCanvasSnapshotDocument(snapshotRow.canvas_json);
+  if (!clientSnapshot && !loadedSnapshot) {
+    return badRequest("A canvas snapshot is required to create an AI job");
+  }
+
+  const snapshot = clientSnapshot ?? coerceCanvasSnapshotDocument(loadedSnapshot!.canvas_json);
   const mergedSnapshot = {
     ...snapshot,
     selection: {
@@ -120,18 +126,6 @@ export async function POST(
       activeAssetIds: selection.activeAssetIds ?? snapshot.selection.activeAssetIds,
     },
   };
-
-  const snapshotEditBrief = buildSnapshotAwareEditBrief({
-    jobType,
-    prompt,
-    snapshot: mergedSnapshot,
-  });
-  const editBrief = canvasGraphContext
-    ? buildConnectedGenerationBrief(
-        snapshotEditBrief,
-        canvasGraphContext as NonNullable<CreateAiJobRequest["canvasGraphContext"]>,
-      )
-    : snapshotEditBrief;
 
   const { data: aiJob, error: aiJobError } = await supabase
     .from("ai_jobs")
@@ -142,12 +136,12 @@ export async function POST(
       status: "queued",
       job_type: jobType,
       prompt,
-      input_snapshot_id: snapshotRow.id,
+      input_snapshot_id: loadedSnapshot?.id ?? null,
       job_payload: {
         promptMode,
         referenceAssetIds,
         selection: mergedSnapshot.selection,
-        snapshotVersion: snapshotRow.version,
+        snapshotVersion: mergedSnapshot.snapshotVersion,
         snapshotSummary: {
           objectCount: mergedSnapshot.objects.length,
           regionCount: mergedSnapshot.regions.length,
@@ -155,10 +149,9 @@ export async function POST(
         },
         targetNodeId,
         canvasGraphContext: canvasGraphContext ?? null,
-        editBrief,
       } as never,
     })
-    .select("id, project_id, status, job_type, input_snapshot_id, created_at")
+    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
     .single();
 
   if (aiJobError || !aiJob) {
@@ -171,7 +164,7 @@ export async function POST(
     userId: user.id,
     jobType,
     prompt,
-    inputSnapshotId: snapshotRow.id,
+    inputSnapshotId: loadedSnapshot?.id ?? null,
     threadId: threadId ?? null,
     promptMode,
     snapshot: mergedSnapshot,
@@ -207,10 +200,50 @@ export async function POST(
     {
       success: true,
       data: {
-        job: aiJob,
-        editBrief,
+        job: mapAiJobRecord(aiJob),
       },
     },
     { status: 201 },
   );
+}
+
+function mapAiJobRecord(row: {
+  id: string;
+  project_id: string;
+  thread_id: string | null;
+  status: CarverAiJobRecord["status"];
+  job_type: CarverAiJobRecord["jobType"];
+  prompt: string | null;
+  input_snapshot_id: string | null;
+  output_snapshot_id: string | null;
+  output_asset_ids: string[] | null;
+  provider: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  job_result: unknown;
+}): CarverAiJobRecord {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    threadId: row.thread_id,
+    status: row.status,
+    jobType: row.job_type,
+    prompt: row.prompt,
+    inputSnapshotId: row.input_snapshot_id,
+    outputSnapshotId: row.output_snapshot_id,
+    outputAssetIds: row.output_asset_ids ?? [],
+    provider: row.provider,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    jobResult: isCarverAiJobResult(row.job_result) ? row.job_result : null,
+  };
+}
+
+function isCarverAiJobResult(value: unknown): value is CarverAiJobResult {
+  const candidate = value as Record<string, unknown> | null;
+  return candidate !== null && typeof candidate === "object" && !Array.isArray(candidate) && "stage" in candidate;
 }

@@ -1,12 +1,8 @@
-import type {
-  CanvasGenerationAssistantMessage,
-  CanvasGenerationContext,
-  GeneratedCanvasImage,
-} from "@carver/shared";
+import type { CanvasGenerationContext, GeneratedCanvasImage } from "@carver/shared";
 import type { CanvasNode } from "../types/canvas";
 import { getDefaultInputPorts } from "../types/canvas";
 
-// Đổi Blob sang data URL để có thể gửi trực tiếp cho API AI.
+// Convert a Blob into a data URL so the backend can receive local canvas images safely.
 async function blobToDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -23,7 +19,7 @@ async function blobToDataUrl(blob: Blob) {
   });
 }
 
-// Chuẩn hóa URL ảnh trước khi generate, nhất là ảnh local/blob trong canvas.
+// Normalize image URLs before generation, especially local/blob-backed canvas images.
 export async function resolveImageUrlForGeneration(imageUrl: string) {
   if (imageUrl.startsWith("data:")) return imageUrl;
   if (typeof window === "undefined") return imageUrl;
@@ -44,7 +40,7 @@ export async function resolveImageUrlForGeneration(imageUrl: string) {
   }
 }
 
-// Resolve toàn bộ asset trong generation context sang URL có thể gửi cho backend.
+// Resolve every image reference in the generation context into a backend-safe URL.
 export async function resolveGenerationContextAssets(context: CanvasGenerationContext) {
   return {
     ...context,
@@ -67,7 +63,7 @@ export async function resolveGenerationContextAssets(context: CanvasGenerationCo
   };
 }
 
-// Tính kích thước node output mới sao cho giữ tỉ lệ ảnh và không quá lớn.
+// Keep generated nodes within a usable visual range while preserving image ratio.
 function getGeneratedNodeSize(image: GeneratedCanvasImage, targetNode: CanvasNode) {
   const sourceWidth = image.width ?? targetNode.sourceImage?.width ?? targetNode.width;
   const sourceHeight = image.height ?? targetNode.sourceImage?.height ?? targetNode.height;
@@ -84,7 +80,7 @@ function getGeneratedNodeSize(image: GeneratedCanvasImage, targetNode: CanvasNod
   };
 }
 
-// Tạo node output từ ảnh generate để thêm lại vào canvas.
+// Create a canvas output node from a generated image so it can be inserted back onto the board.
 export function createGeneratedOutputNode(params: {
   generatedImage: GeneratedCanvasImage;
   prompt: string;
@@ -115,11 +111,3 @@ export function createGeneratedOutputNode(params: {
     role: "output",
   };
 }
-
-// Kiểu dữ liệu response của API generate mà canvas đang sử dụng.
-export type CanvasGenerateResponse = {
-  error?: string;
-  promptMeta?: { enhancedPromptVisible?: string };
-  generatedImages?: GeneratedCanvasImage[];
-  assistantMessage?: CanvasGenerationAssistantMessage;
-};

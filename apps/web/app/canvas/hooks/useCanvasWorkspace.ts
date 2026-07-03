@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
-import type { CanvasGenerationAssistantMessage } from "@carver/shared";
+import type { CanvasGenerationAssistantMessage, CarverAiJobRecord } from "@carver/shared";
 import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
@@ -35,7 +35,6 @@ import {
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import { buildCanvasGenerationContext, buildCanvasSnapshotWithGraph } from "../utils/generationContext";
 import {
-  type CanvasGenerateResponse,
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
 } from "../utils/canvasGeneration";
@@ -80,6 +79,22 @@ type PendingPresetGroupInsert = {
   sourceFolderId?: string;
 };
 
+type PendingGenerationJob = {
+  jobId: string;
+  projectId: string;
+  targetNodeId: string;
+};
+
+type CreateAiJobResponse = {
+  success?: boolean;
+  data?: {
+    job?: CarverAiJobRecord;
+  };
+  error?: string;
+};
+
+type GetAiJobResponse = CreateAiJobResponse;
+
 // ── Seed data ─────────────────────────────────────────────────────────────────
 
 const INITIAL_MARKERS: Marker[] = [];
@@ -103,7 +118,7 @@ function animateIn(selector: string) {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 // Hook trung tâm quản lý state, derived state và action của workspace canvas.
-export function useCanvasWorkspace() {
+export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── DOM Refs ────────────────────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement>(null);
   const leftSidebarPanelRef = useRef<HTMLDivElement>(null);
@@ -133,6 +148,7 @@ export function useCanvasWorkspace() {
   const [activeGenerationTargetId, setActiveGenerationTargetId] = useState<string | null>(null);
   const [generationAssistantMessages, setGenerationAssistantMessages] = useState<CanvasGenerationAssistantMessage[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [pendingGenerationJob, setPendingGenerationJob] = useState<PendingGenerationJob | null>(null);
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<string | null>(null);
@@ -154,6 +170,7 @@ export function useCanvasWorkspace() {
     useState<CanvasLibraryAsset | null>(null);
   const [pendingPresetGroupInsert, setPendingPresetGroupInsert] =
     useState<PendingPresetGroupInsert | null>(null);
+  const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -200,6 +217,103 @@ export function useCanvasWorkspace() {
     if (nodes.some((node) => node.id === activeNodeId)) return;
     setActiveNodeId(null);
   }, [activeNodeId, nodes]);
+
+  useEffect(() => {
+    if (!pendingGenerationJob) return;
+    if (handledGenerationJobIdsRef.current.has(pendingGenerationJob.jobId)) {
+      setPendingGenerationJob((current) =>
+        current?.jobId === pendingGenerationJob.jobId ? null : current,
+      );
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+    let isRequestInFlight = false;
+
+    const pollJob = async () => {
+      if (cancelled || isRequestInFlight) return;
+      isRequestInFlight = true;
+
+      try {
+        const response = await fetch(
+          `/api/projects/${pendingGenerationJob.projectId}/ai-jobs/${pendingGenerationJob.jobId}`,
+          {
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+
+        if (!response.ok || !payload.data?.job) {
+          throw new Error(payload.error || "Unable to load AI job status.");
+        }
+
+        const job = payload.data.job;
+        if (handledGenerationJobIdsRef.current.has(job.id)) {
+          return;
+        }
+        if (job.status === "queued" || job.status === "running") {
+          return;
+        }
+
+        handledGenerationJobIdsRef.current.add(job.id);
+        setPendingGenerationJob((current) => (current?.jobId === job.id ? null : current));
+
+        if (job.status === "failed") {
+          showToast(job.errorMessage || "AI generation failed.");
+          return;
+        }
+
+        const generatedImage = job.jobResult?.generatedImages?.[0] ?? null;
+        const targetNode = nodes.find((node) => node.id === pendingGenerationJob.targetNodeId) ?? activeGenerationTarget;
+
+        const assistantMessage = job.jobResult?.assistantMessage ?? null;
+        if (assistantMessage) {
+          setGenerationAssistantMessages((messages) =>
+            messages.some((message) => message.id === assistantMessage.id)
+              ? messages
+              : [...messages, assistantMessage],
+          );
+        }
+
+        if (!generatedImage || !targetNode) {
+          showToast("Generation completed");
+          return;
+        }
+
+        const outputNode = createGeneratedOutputNode({
+          generatedImage,
+          prompt: generatedImage.prompt || job.prompt || "Generated concept",
+          targetNode,
+        });
+
+        setNodes((items) => [...items, outputNode]);
+        setActiveGenerationTargetId(outputNode.id);
+        setActiveNodeId(outputNode.id);
+        setSelectedItem({ type: "node", id: outputNode.id });
+        showToast("Generated image added to chat and canvas");
+      } catch (error) {
+        setPendingGenerationJob((current) =>
+          current?.jobId === pendingGenerationJob.jobId ? null : current,
+        );
+        showToast(error instanceof Error ? error.message : "Unable to load AI job status.");
+      } finally {
+        isRequestInFlight = false;
+      }
+    };
+
+    void pollJob();
+    intervalId = window.setInterval(() => {
+      void pollJob();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [activeGenerationTarget, nodes, pendingGenerationJob]);
 
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -553,6 +667,11 @@ export function useCanvasWorkspace() {
       return;
     }
 
+    if (!params.projectId) {
+      showToast("Open this canvas with a projectId to use background generation.");
+      return;
+    }
+
     if (!activeGenerationContext) {
       showToast("Unable to build generation context");
       return;
@@ -578,71 +697,47 @@ export function useCanvasWorkspace() {
         activeGenerationTargetId,
       });
       const payload = {
+        projectId: params.projectId,
         prompt: effectivePrompt,
-        rawPrompt: effectivePrompt,
-        generationMode: "image_editing",
         canvasGraphContext: resolvedGenerationContext,
         targetNodeId: activeGenerationTarget.id,
         snapshot,
-        imageContext: {
-          directEditTarget: resolvedGenerationContext.target,
-          imageReferences: resolvedGenerationContext.imageReferences,
-          presetReferences: resolvedGenerationContext.presetReferences,
-          regionPayload,
-        },
-        referenceImages: [
-          ...resolvedGenerationContext.imageReferences.map((reference) => ({
-            label: reference.title,
-            role: reference.role,
-            url: reference.imageUrl,
-          })),
-          ...resolvedGenerationContext.presetReferences.map((reference) => ({
-            label: reference.label,
-            role: reference.role,
-            url: reference.imageSrc,
-          })),
-        ],
-        projectContext: {
-          connectionSummary: resolvedGenerationContext.connectionSummary,
-          preserveRules: resolvedGenerationContext.preserveRules,
-        },
+        promptMode: "auto",
+        jobType: regionPayload ? "refine_concept" : "generate_concept",
       };
 
-      const response = await fetch("/api/generate", {
+      const response = await fetch(`/api/projects/${params.projectId}/ai-jobs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
       });
-      const result = (await response.json().catch(() => ({}))) as CanvasGenerateResponse;
+      const result = (await response.json().catch(() => ({}))) as CreateAiJobResponse;
 
       if (!response.ok) {
         throw new Error(result.error || "Unable to generate from current canvas context.");
       }
 
-      const generatedImage = result.generatedImages?.[0] ?? null;
-      if (!generatedImage) {
-        showToast("Generation context prepared");
-        return;
+      const job = result.data?.job;
+      if (!job) {
+        throw new Error("The AI job was created without a usable job payload.");
       }
 
-      const outputNode = createGeneratedOutputNode({
-        generatedImage,
-        prompt: result.promptMeta?.enhancedPromptVisible ?? generatedImage.prompt ?? payload.prompt,
-        targetNode: activeGenerationTarget,
+      if (handledGenerationJobIdsRef.current.has(job.id)) {
+        handledGenerationJobIdsRef.current.delete(job.id);
+      }
+
+      setPendingGenerationJob({
+        jobId: job.id,
+        projectId: params.projectId,
+        targetNodeId: activeGenerationTarget.id,
       });
 
-      setNodes((items) => [...items, outputNode]);
-      setActiveGenerationTargetId(outputNode.id);
-      setActiveNodeId(outputNode.id);
-      setSelectedItem({ type: "node", id: outputNode.id });
-
-      if (result.assistantMessage) {
-        setGenerationAssistantMessages((messages) => [...messages, result.assistantMessage as CanvasGenerationAssistantMessage]);
+      if (job.status === "queued") {
+        showToast("Generation queued");
+        return;
       }
-
-      showToast("Generated image added to chat and canvas");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to generate from current canvas context.");
     }
@@ -773,6 +868,7 @@ export function useCanvasWorkspace() {
       activeGenerationTargetId,
       generationAssistantMessages,
       activeNodeId,
+      pendingGenerationJob,
       leftSidebar,
       miniMapOpen,
       rightPanelOpen,
@@ -862,6 +958,7 @@ export function useCanvasWorkspace() {
       // Prompt
       setPromptText: updatePromptText,
       setActiveGenerationTargetId,
+      setPendingGenerationJob,
 
       // Generation
       generateConcept,
