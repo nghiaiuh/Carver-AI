@@ -184,6 +184,18 @@ API side:
 Worker side:
 - `apps/worker`
 
+Current worker structure direction:
+- `apps/worker/src/index.ts`
+  Worker bootstrap only.
+- `apps/worker/src/queue/*`
+  BullMQ worker creation and lifecycle events.
+- `apps/worker/src/jobs/*`
+  Job routing by `jobType` and per-job handlers.
+- `apps/worker/src/services/*`
+  Orchestration logic such as brief/prompt preparation and status flow.
+- `apps/worker/src/repositories/*`
+  Persistence for `ai_jobs` and later assets/snapshots.
+
 Current direction:
 - one selected target image
 - connected references resolved from the graph
@@ -233,6 +245,12 @@ If the task is about generation payload / job contract:
 - start with `packages/shared/src/ai-jobs.ts`
 - then `apps/web/app/api/generate/route.ts`
 - then `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
+
+If the task is about worker processing:
+- start with `apps/worker/src/index.ts`
+- then `apps/worker/src/queue/worker.ts`
+- then `apps/worker/src/jobs/process-ai-job.ts`
+- then the relevant handler/service/repository under `apps/worker/src`
 
 ## 10. Known recent changes
 
