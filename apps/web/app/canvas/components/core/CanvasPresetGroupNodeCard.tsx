@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { MoveRight, Star, X } from "lucide-react";
 import type { CanvasEdge, CanvasPresetGroupNode, ImageHandlePosition, SelectedItem } from "../../types/canvas";
-import { PRESET_GROUP_TITLE_HEIGHT, getPresetChildRects } from "../../utils/presetGroup";
+import {
+  PRESET_GROUP_TITLE_HEIGHT,
+  getPresetChildRects,
+} from "../../utils/presetGroupHelpers";
 
 // ─── Adaptive thumbnail renderer ────────────────────────────────────────────
 // Mirrors the AdaptiveImageRenderer in CanvasNodeCard: renders onto a <canvas>

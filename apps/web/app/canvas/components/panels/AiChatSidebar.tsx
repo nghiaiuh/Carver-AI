@@ -27,7 +27,7 @@ import {
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type EditorRightPanelProps = {
+type AiChatSidebarProps = {
   canvasId?: string;
   projectId?: string;
   targetTitle?: string | null;
@@ -207,7 +207,7 @@ async function resolveImageUrlForChat(imageUrl: string) {
   return imageUrl;
 }
 
-export default function EditorRightPanel({
+export default function AiChatSidebar({
   canvasId = DEFAULT_CANVAS_ID,
   projectId,
   targetTitle,
@@ -222,7 +222,7 @@ export default function EditorRightPanel({
   onClearLinkedImage,
   onClose,
   onToast,
-}: EditorRightPanelProps) {
+}: AiChatSidebarProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);

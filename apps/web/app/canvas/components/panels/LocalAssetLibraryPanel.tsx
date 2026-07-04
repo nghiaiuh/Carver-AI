@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import { Bookmark, ImagePlus, Search, Trash2 } from "lucide-react";
 import type { LibraryAsset, LibraryAssetCategory } from "../../types/canvas";
 
-type ObjectLibraryPanelProps = {
+type LocalAssetLibraryPanelProps = {
   assets: LibraryAsset[];
   preferredCategory: LibraryAssetCategory;
   selectedAssetIds: string[];
@@ -29,14 +29,14 @@ const tabs: Array<{ id: LibraryAssetCategory | "saved"; label: string }> = [
   { id: "saved", label: "Saved" },
 ];
 
-export default function ObjectLibraryPanel({
+export default function LocalAssetLibraryPanel({
   assets,
   preferredCategory,
   selectedAssetIds,
   onUseAsset,
   onSaveAsset,
   onRemoveAsset,
-}: ObjectLibraryPanelProps) {
+}: LocalAssetLibraryPanelProps) {
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<LibraryAssetCategory | "saved">(preferredCategory === "unknown" ? "plant" : preferredCategory);
 

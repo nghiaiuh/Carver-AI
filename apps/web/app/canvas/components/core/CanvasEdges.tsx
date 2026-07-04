@@ -10,8 +10,16 @@
 import React from "react";
 import type { CanvasNode, CanvasEdge } from "../../types/canvas";
 import { getVisibleInputPorts } from "../../types/canvas";
-import { buildBezierPath, getImageHandlePoint, getInputPortHandlePoint } from "./imageGraph";
-import { getPresetChildAnchor, getPresetChildRightAnchor, isPresetGroupNode } from "../../utils/presetGroup";
+import {
+  buildBezierPath,
+  getImageHandlePoint,
+  getInputPortHandlePoint,
+} from "./canvasConnectionGeometry";
+import {
+  getPresetChildAnchor,
+  getPresetChildRightAnchor,
+  isPresetGroupNode,
+} from "../../utils/presetGroupHelpers";
 
 type CanvasEdgesProps = {
   nodes: CanvasNode[];

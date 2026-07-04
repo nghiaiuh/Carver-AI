@@ -65,9 +65,9 @@ Canvas board:
   Renders nodes/edges and interaction logic for graph-like behavior.
 
 Node/edge helpers:
-- `apps/web/app/canvas/utils/presetGroup.ts`
+- `apps/web/app/canvas/utils/presetGroupHelpers.ts`
   Preset-group node sizing, child layout, helpers for child connections.
-- `apps/web/app/canvas/utils/generationContext.ts`
+- `apps/web/app/canvas/utils/canvasGenerationContext.ts`
   Converts canvas graph into a generation context for AI.
 
 Important canvas types:
@@ -97,7 +97,7 @@ Important files:
   Preset library UI, flyouts, section/slot logic, library-side selection state.
 - `apps/web/app/canvas/components/core/CanvasPresetGroupNodeCard.tsx`
   Canvas rendering for preset-group nodes and child preset thumbnails.
-- `apps/web/app/canvas/utils/presetGroup.ts`
+- `apps/web/app/canvas/utils/presetGroupHelpers.ts`
   Geometry and helpers for preset child rects and anchors.
 
 Current rule:
@@ -122,7 +122,7 @@ Important concepts:
 - Group-level preset links and child-level preset links are distinct.
 
 Generation context builder:
-- `apps/web/app/canvas/utils/generationContext.ts`
+- `apps/web/app/canvas/utils/canvasGenerationContext.ts`
 
 Key exported helpers:
 - `getInboundEdgesForTarget`
@@ -140,7 +140,7 @@ Current precedence:
 ## 6. Chat + image understanding: current state
 
 Right panel:
-- `apps/web/app/canvas/components/panels/EditorRightPanel.tsx`
+- `apps/web/app/canvas/components/panels/AiChatSidebar.tsx`
 
 This panel currently supports:
 - prompt text entry
@@ -235,15 +235,15 @@ If the task is about preset library/flyout/grid:
 
 If the task is about preset group node rendering:
 - start with `CanvasPresetGroupNodeCard.tsx`
-- then `presetGroup.ts`
+- then `presetGroupHelpers.ts`
 
 If the task is about chat panel behavior:
-- start with `EditorRightPanel.tsx`
+- start with `AiChatSidebar.tsx`
 - then `/api/chat/route.ts`
 - then `apps/web/lib/server/openaiChat.ts`
 
 If the task is about generation context or linked references:
-- start with `generationContext.ts`
+- start with `canvasGenerationContext.ts`
 - then `useCanvasWorkspace.ts`
 - then `packages/shared/src/ai-jobs.ts`
 

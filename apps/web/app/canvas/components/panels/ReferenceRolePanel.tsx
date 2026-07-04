@@ -7,9 +7,9 @@
 
 "use client";
 
-import type { SourceMix, SourceRole } from "../../types/sourceMix";
+import type { SourceMix, SourceRole } from "../../types/referenceSourceMix";
 
-type SourceMixPanelProps = {
+type ReferenceRolePanelProps = {
   mix: SourceMix;
   compact?: boolean;
   onSelectRole?: (role: SourceRole) => void;
@@ -17,7 +17,11 @@ type SourceMixPanelProps = {
 
 const roles: SourceRole[] = ["layout", "style", "material", "object"];
 
-export default function SourceMixPanel({ mix, compact = false, onSelectRole }: SourceMixPanelProps) {
+export default function ReferenceRolePanel({
+  mix,
+  compact = false,
+  onSelectRole,
+}: ReferenceRolePanelProps) {
   return (
     <section className={`rounded-2xl border border-[#E5E7EB] bg-white shadow-xl shadow-black/5 ${compact ? "p-4" : "p-5"}`}>
       <div className="flex items-center justify-between gap-3">

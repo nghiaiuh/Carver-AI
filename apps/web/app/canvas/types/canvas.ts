@@ -5,8 +5,8 @@
  * a dependency on the component itself.
  */
 
-// ImageHandlePosition and ImageConnectionRole are defined here (not in imageGraph.ts)
-// to avoid a circular dependency: canvas.ts ← imageGraph.ts ← canvas.ts
+// ImageHandlePosition and ImageConnectionRole are defined here (not in canvasConnectionGeometry.ts)
+// to avoid a circular dependency: canvas.ts ← canvasConnectionGeometry.ts ← canvas.ts
 export type ImageHandlePosition = "left" | "right";
 
 export type ImageConnectionRole =

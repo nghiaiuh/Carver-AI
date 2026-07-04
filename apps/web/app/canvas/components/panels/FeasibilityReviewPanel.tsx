@@ -9,7 +9,7 @@
 
 import { AlertTriangle, FileText, X } from "lucide-react";
 
-type RealityCheckPanelProps = {
+type FeasibilityReviewPanelProps = {
   open: boolean;
   onClose: () => void;
 };
@@ -30,7 +30,10 @@ const warnings = [
   "Budget requires real site survey.",
 ];
 
-export default function RealityCheckPanel({ open, onClose }: RealityCheckPanelProps) {
+export default function FeasibilityReviewPanel({
+  open,
+  onClose,
+}: FeasibilityReviewPanelProps) {
   if (!open) return null;
 
   return (

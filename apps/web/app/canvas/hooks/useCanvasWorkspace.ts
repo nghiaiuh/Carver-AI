@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import type { CanvasGenerationAssistantMessage, CarverAiJobRecord } from "@carver/shared";
-import { buildCanvasThemeStyle } from "../components/core/canvasTheme";
+import { buildCanvasThemeStyle } from "../components/core/canvasThemeStyle";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
 import { gsap } from "../../components/gsapSetup";
@@ -33,11 +33,14 @@ import {
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
-import { buildCanvasGenerationContext, buildCanvasSnapshotWithGraph } from "../utils/generationContext";
+import {
+  buildCanvasGenerationContext,
+  buildCanvasSnapshotWithGraph,
+} from "../utils/canvasGenerationContext";
 import {
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
-} from "../utils/canvasGeneration";
+} from "../utils/canvasGenerationHelpers";
 import type {
   AddedObject,
   CanvasEdge,
@@ -60,7 +63,7 @@ import {
   reorderPresetChildren,
   syncPresetGroupPreview,
   upsertPresetChild,
-} from "../utils/presetGroup";
+} from "../utils/presetGroupHelpers";
 
 // Lấy node đang được chọn từ trạng thái selection hiện tại của canvas.
 function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
@@ -847,7 +850,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     leftSidebarResize,
     rightPanelResize,
 
-    // Library sub-hook (folders, create, rename, etc. passed to EditorLeftSidebar)
+    // Library sub-hook (folders, create, rename, etc. passed to CanvasLeftSidebar)
     library,
 
     // ── Canvas state ──────────────────────────────────────────────────────────

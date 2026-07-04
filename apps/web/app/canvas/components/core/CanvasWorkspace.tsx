@@ -15,12 +15,12 @@ import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
 import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
-import EditorLeftSidebar from "../panels/EditorLeftSidebar";
-import EditorRightPanel from "../panels/EditorRightPanel";
+import CanvasLeftSidebar from "../panels/CanvasLeftSidebar";
+import AiChatSidebar from "../panels/AiChatSidebar";
 import GroupNameTagModal from "../panels/GroupNameTagModal";
 import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
-import RealityCheckPanel from "../panels/RealityCheckPanel";
+import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
 
@@ -286,7 +286,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                 className="h-full shrink-0"
                 style={{ width: leftSidebarResize.width }}
               >
-                <EditorLeftSidebar
+                <CanvasLeftSidebar
                   language={state.language}
                   panel={state.leftSidebar.panel}
                   folders={library.folders}
@@ -400,7 +400,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                 className="h-full shrink-0"
                 style={{ width: rightPanelResize.width }}
               >
-                <EditorRightPanel
+                <AiChatSidebar
                   canvasId="canvas-main"
                   projectId={projectId}
                   targetTitle={state.activeGenerationTarget?.title ?? null}
@@ -482,7 +482,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           onClose={() => actions.setShowAddObjectMenu(false)}
           onAdd={actions.addObject}
         />
-        <RealityCheckPanel
+        <FeasibilityReviewPanel
           open={modals.showRealityCheckPanel}
           onClose={() => actions.setShowRealityCheckPanel(false)}
         />

@@ -39,7 +39,11 @@ import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
 import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
 import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils";
-import { getImageHandlePoint, inferConnectionRoleFromNode, type ImageHandlePosition } from "./imageGraph";
+import {
+  getImageHandlePoint,
+  inferConnectionRoleFromNode,
+  type ImageHandlePosition,
+} from "./canvasConnectionGeometry";
 import {
   buildPresetSourceImage,
   getPresetChildRightAnchor,
@@ -47,7 +51,7 @@ import {
   isPresetGroupNode,
   resolvePresetGroupDropTarget,
   syncPresetGroupPreview,
-} from "../../utils/presetGroup";
+} from "../../utils/presetGroupHelpers";
 
 type CanvasBoardProps = {
   language: CanvasLanguage;

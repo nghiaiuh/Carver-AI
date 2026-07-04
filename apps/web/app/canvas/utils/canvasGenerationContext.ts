@@ -13,7 +13,7 @@ import type {
   CanvasSnapshotDocument,
 } from "@carver/shared";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
-import { isPresetGroupNode } from "./presetGroup";
+import { isPresetGroupNode } from "./presetGroupHelpers";
 
 function normalizeRole(role?: string | null): ImageConnectionRole {
   return (role as ImageConnectionRole) ?? "generic_reference";

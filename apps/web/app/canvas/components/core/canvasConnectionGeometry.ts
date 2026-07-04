@@ -1,6 +1,6 @@
 import type { CanvasNode } from "../../types/canvas";
 
-// Re-export from the canonical type module so existing callers of imageGraph
+// Re-export from the canonical type module so existing callers of canvasConnectionGeometry
 // that import ImageHandlePosition / ImageConnectionRole continue to work.
 export type { ImageHandlePosition, ImageConnectionRole } from "../../types/canvas";
 import type { ImageHandlePosition, ImageConnectionRole } from "../../types/canvas";

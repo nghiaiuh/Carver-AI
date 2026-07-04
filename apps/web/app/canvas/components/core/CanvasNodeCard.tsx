@@ -21,7 +21,11 @@ import type {
 import { getDefaultInputPorts, getVisibleInputPorts } from "../../types/canvas";
 import { Copy, Image as ImageIcon, ImagePlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
-import { INPUT_PORT_GAP, INPUT_PORT_HANDLE_CENTER_OFFSET, type ImageHandlePosition } from "./imageGraph";
+import {
+  INPUT_PORT_GAP,
+  INPUT_PORT_HANDLE_CENTER_OFFSET,
+  type ImageHandlePosition,
+} from "./canvasConnectionGeometry";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 

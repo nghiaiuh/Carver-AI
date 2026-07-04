@@ -10,12 +10,15 @@
 import { ClipboardList } from "lucide-react";
 import type { AddedObject, LibraryAsset, SketchGroup } from "../../types/canvas";
 
-type SelectionBriefPanelProps = {
+type SelectionEditBriefPanelProps = {
   target?: SketchGroup | AddedObject;
   assets: LibraryAsset[];
 };
 
-export default function SelectionBriefPanel({ target, assets }: SelectionBriefPanelProps) {
+export default function SelectionEditBriefPanel({
+  target,
+  assets,
+}: SelectionEditBriefPanelProps) {
   if (!target) {
     return (
       <div className="border-t border-[#E5E7EB] p-4">

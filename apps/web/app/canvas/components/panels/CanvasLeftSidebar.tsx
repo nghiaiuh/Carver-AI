@@ -5,7 +5,7 @@ import type { CanvasPresetChild, LeftSidebarPanelId, PresetGroupCategory } from 
 import type { CanvasLanguage } from "../../i18n";
 import LibrarySidebar from "../library/LibrarySidebar";
 
-type EditorLeftSidebarProps = {
+type CanvasLeftSidebarProps = {
   language: CanvasLanguage;
   panel: LeftSidebarPanelId;
   folders: LibraryFolder[];
@@ -31,7 +31,7 @@ type EditorLeftSidebarProps = {
   onToast: (message: string) => void;
 };
 
-export default function EditorLeftSidebar(props: EditorLeftSidebarProps) {
+export default function CanvasLeftSidebar(props: CanvasLeftSidebarProps) {
   switch (props.panel) {
     case "adjust-render":
       return <SidebarPlaceholder title="Adjust render" description="This panel can host render sliders, tone controls, and output presets later." onClose={props.onClose} />;

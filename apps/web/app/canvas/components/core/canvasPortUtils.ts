@@ -1,5 +1,5 @@
 /**
- * portUtils.ts
+ * canvasPortUtils.ts
  *
  * Port-related utilities for the named-port connection system.
  * All functions are pure and side-effect-free.
@@ -7,7 +7,7 @@
 
 import type { CanvasEdge, CanvasNode, InputPort } from "../../types/canvas";
 import { getDefaultInputPorts, getVisibleInputPorts } from "../../types/canvas";
-import { getInputPortHandlePoint } from "./imageGraph";
+import { getInputPortHandlePoint } from "./canvasConnectionGeometry";
 
 // ── Port Resolution ──────────────────────────────────────────────────────────
 
