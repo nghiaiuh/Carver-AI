@@ -37,6 +37,16 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const rightPanelTweenRef = useRef<gsap.core.Timeline | null>(null);
   const isLeftSidebarAnimatingRef = useRef(false);
   const isRightPanelAnimatingRef = useRef(false);
+  const leftSidebarWidthRef = useRef(leftSidebarResize.width);
+  const rightPanelWidthRef = useRef(rightPanelResize.width);
+
+  useEffect(() => {
+    leftSidebarWidthRef.current = leftSidebarResize.width;
+  }, [leftSidebarResize.width]);
+
+  useEffect(() => {
+    rightPanelWidthRef.current = rightPanelResize.width;
+  }, [rightPanelResize.width]);
 
   // GSAP entry animation – needs rootRef attached to DOM, so it lives here.
   useGSAP(
@@ -79,6 +89,34 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
 
   useEffect(() => {
+    if (!leftSidebarResize.isResizing) return;
+
+    const wrapper = leftSidebarPanelRef.current;
+    const element = leftSidebarContentRef.current;
+    leftSidebarTweenRef.current?.kill();
+    isLeftSidebarAnimatingRef.current = false;
+
+    if (!wrapper || !element || !state.leftSidebar.open) return;
+
+    gsap.set(wrapper, { width: leftSidebarResize.width, overflow: "hidden", clearProps: "willChange" });
+    gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+  }, [leftSidebarPanelRef, leftSidebarResize.isResizing, leftSidebarResize.width, state.leftSidebar.open]);
+
+  useEffect(() => {
+    if (!rightPanelResize.isResizing) return;
+
+    const wrapper = rightPanelRef.current;
+    const element = rightPanelContentRef.current;
+    rightPanelTweenRef.current?.kill();
+    isRightPanelAnimatingRef.current = false;
+
+    if (!wrapper || !element || !state.rightPanelOpen) return;
+
+    gsap.set(wrapper, { width: rightPanelResize.width, overflow: "hidden", clearProps: "willChange" });
+    gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
+  }, [rightPanelRef, rightPanelResize.isResizing, rightPanelResize.width, state.rightPanelOpen]);
+
+  useEffect(() => {
     const wrapper = leftSidebarPanelRef.current;
     const element = leftSidebarContentRef.current;
     leftSidebarTweenRef.current?.kill();
@@ -107,17 +145,17 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       leftSidebarTweenRef.current = gsap.timeline({
         onComplete: () => {
           isLeftSidebarAnimatingRef.current = false;
-          gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "willChange" });
+          gsap.set(wrapper, { width: leftSidebarWidthRef.current, clearProps: "willChange" });
           gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
         },
       });
       leftSidebarTweenRef.current
-        .to(wrapper, { width: leftSidebarResize.width, duration: 0.34, ease: "power2.out" }, 0)
+        .to(wrapper, { width: leftSidebarWidthRef.current, duration: 0.34, ease: "power2.out" }, 0)
         .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
       return;
     }
 
-    gsap.set(wrapper, { width: leftSidebarResize.width });
+    gsap.set(wrapper, { width: leftSidebarWidthRef.current });
     gsap.set(element, { xPercent: 0 });
     leftSidebarTweenRef.current = gsap.timeline({
       onComplete: () => {
@@ -130,7 +168,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     leftSidebarTweenRef.current
       .to(element, { xPercent: -100, duration: 0.34, ease: "power3.inOut" }, 0)
       .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
-  }, [isLeftSidebarRendered, leftSidebarPanelRef, leftSidebarResize.width, state.leftSidebar.open]);
+  }, [isLeftSidebarRendered, leftSidebarPanelRef, state.leftSidebar.open]);
 
   useEffect(() => {
     return () => {
@@ -167,17 +205,17 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       rightPanelTweenRef.current = gsap.timeline({
         onComplete: () => {
           isRightPanelAnimatingRef.current = false;
-          gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "willChange" });
+          gsap.set(wrapper, { width: rightPanelWidthRef.current, clearProps: "willChange" });
           gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
         },
       });
       rightPanelTweenRef.current
-        .to(wrapper, { width: rightPanelResize.width, duration: 0.34, ease: "power2.out" }, 0)
+        .to(wrapper, { width: rightPanelWidthRef.current, duration: 0.34, ease: "power2.out" }, 0)
         .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
       return;
     }
 
-    gsap.set(wrapper, { width: rightPanelResize.width });
+    gsap.set(wrapper, { width: rightPanelWidthRef.current });
     gsap.set(element, { xPercent: 0 });
     rightPanelTweenRef.current = gsap.timeline({
       onComplete: () => {
@@ -190,7 +228,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     rightPanelTweenRef.current
       .to(element, { xPercent: 100, duration: 0.34, ease: "power3.inOut" }, 0)
       .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
-  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
+  }, [isRightPanelRendered, rightPanelRef, state.rightPanelOpen]);
 
   useEffect(() => {
     return () => {
