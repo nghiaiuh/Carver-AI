@@ -349,7 +349,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onQuickEdit={() => actions.setShowQuickEditModal(true)}
             onMultiAngle={() => actions.setShowMultiAngleModal(true)}
             onAddObject={() => actions.setShowAddObjectMenu(true)}
-            onRealityCheck={() => actions.setShowRealityCheckPanel(true)}
+            onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
             onGenerate={actions.generateConcept}
             onToast={actions.showToast}
             onNodesChange={actions.setNodes}
@@ -483,8 +483,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           onAdd={actions.addObject}
         />
         <FeasibilityReviewPanel
-          open={modals.showRealityCheckPanel}
-          onClose={() => actions.setShowRealityCheckPanel(false)}
+          open={modals.showFeasibilityReviewPanel}
+          onClose={() => actions.setShowFeasibilityReviewPanel(false)}
         />
 
         {/* Toast */}

@@ -130,7 +130,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── Canvas entities ─────────────────────────────────────────────────────────
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({ type: "none" });
   const [activeTool, setActiveTool] = useState<EditorTool>("select");
-  const [gridVisible, setGridVisible] = useState(true);
   const [markers, setMarkers] = useState<Marker[]>(INITIAL_MARKERS);
   const [addedObjects, setAddedObjects] = useState<AddedObject[]>(INITIAL_OBJECTS);
   const [sketchLines, setSketchLines] = useState<SketchLine[]>([]);
@@ -158,7 +157,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [showQuickEditModal, setShowQuickEditModal] = useState(false);
   const [showMultiAngleModal, setShowMultiAngleModal] = useState(false);
   const [showAddObjectMenu, setShowAddObjectMenu] = useState(false);
-  const [showRealityCheckPanel, setShowRealityCheckPanel] = useState(false);
+  const [showFeasibilityReviewPanel, setShowFeasibilityReviewPanel] = useState(false);
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
   const [leftSidebar, setLeftSidebar] = useState<{ open: boolean; panel: LeftSidebarPanelId }>({
     open: true,
@@ -857,7 +856,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     state: {
       selectedItem,
       activeTool,
-      gridVisible,
       markers,
       addedObjects,
       sketchLines,
@@ -898,7 +896,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       showQuickEditModal,
       showMultiAngleModal,
       showAddObjectMenu,
-      showRealityCheckPanel,
+      showFeasibilityReviewPanel,
       showGroupNameModal,
     },
 
@@ -987,9 +985,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       setShowQuickEditModal,
       setShowMultiAngleModal,
       setShowAddObjectMenu,
-      setShowRealityCheckPanel,
+      setShowFeasibilityReviewPanel,
       setShowGroupNameModal,
-      toggleGrid: () => setGridVisible((v) => !v),
     },
   };
 }
