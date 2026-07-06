@@ -8,17 +8,14 @@
  * - `DELETE`: xoa lich su chat cua canvas hoac project hien tai.
  */
 
-import { randomUUID } from "node:crypto";
-
 import { NextResponse } from "next/server";
 import { isUuidLike, requireProjectOwner, requireRequestContext } from "../_lib/authz";
 import { badRequest, readJsonObject, stringValue } from "../_lib/http";
 import {
-  appendChatHistory,
-  clearChatHistoryForCanvas,
-  getChatHistoryForCanvas,
-  type ChatHistoryRecord,
-} from "../../../lib/server/chatHistory";
+  appendProjectChatExchange,
+  clearProjectChatMessages,
+  listProjectChatMessages,
+} from "../../../lib/server/projectChatHistory";
 import { createChatCompletion, type ChatInputImage } from "../../../lib/server/openaiChat";
 
 function readChatInputImages(body: Record<string, unknown>) {
@@ -51,11 +48,6 @@ function readChatInputImages(body: Record<string, unknown>) {
   });
 }
 
-function getCanvasIdFromUrl(request: Request) {
-  const { searchParams } = new URL(request.url);
-  return searchParams.get("canvasId")?.trim() || "canvas-main";
-}
-
 function getProjectIdFromUrl(request: Request) {
   const { searchParams } = new URL(request.url);
   return searchParams.get("projectId")?.trim() || undefined;
@@ -81,10 +73,14 @@ export async function GET(request: Request) {
     return projectResult.error;
   }
 
-  const canvasId = getCanvasIdFromUrl(request);
-  const messages = await getChatHistoryForCanvas(canvasId, projectResult.project.id);
+  try {
+    const messages = await listProjectChatMessages(context.supabase, projectResult.project.id);
 
-  return NextResponse.json({ messages });
+    return NextResponse.json({ messages });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to load chat history right now.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -116,39 +112,29 @@ export async function POST(request: Request) {
     return projectResult.error;
   }
 
-  const history = await getChatHistoryForCanvas(canvasId, projectResult.project.id);
-
   try {
+    const history = await listProjectChatMessages(context.supabase, projectResult.project.id);
     const messageContent =
       content ?? "Describe these image references for landscape design context.";
 
     const assistantContent = await createChatCompletion({
       message: messageContent,
       history,
-      canvasId,
-      projectId,
       images,
     });
-
-    const createdAt = new Date().toISOString();
-    const userMessage: ChatHistoryRecord = {
-      id: randomUUID(),
-      canvasId,
-      projectId: projectResult.project.id,
-      role: "user",
-      content: messageContent,
-      createdAt,
-    };
-    const assistantMessage: ChatHistoryRecord = {
-      id: randomUUID(),
-      canvasId,
-      projectId: projectResult.project.id,
-      role: "assistant",
-      content: assistantContent,
-      createdAt: new Date().toISOString(),
-    };
-
-    await appendChatHistory([userMessage, assistantMessage]);
+    const { userMessage, assistantMessage } = await appendProjectChatExchange(
+      context.supabase,
+      projectResult.project.id,
+      {
+        canvasId,
+        images: images.map((image) => ({
+          label: image.label,
+          source: image.source,
+        })),
+        userMessage: messageContent,
+        assistantMessage: assistantContent,
+      },
+    );
 
     return NextResponse.json({
       userMessage,
@@ -180,8 +166,12 @@ export async function DELETE(request: Request) {
     return projectResult.error;
   }
 
-  const canvasId = getCanvasIdFromUrl(request);
-  await clearChatHistoryForCanvas(canvasId, projectResult.project.id);
+  try {
+    await clearProjectChatMessages(context.supabase, projectResult.project.id);
 
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to clear chat history right now.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

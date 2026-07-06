@@ -1,7 +1,5 @@
 import "server-only";
 
-import type { ChatHistoryRecord } from "./chatHistory";
-
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_MODEL = "gpt-5-mini";
 
@@ -48,6 +46,12 @@ export type ChatInputImage = {
   imageUrl: string;
   label?: string;
   source?: "attachment" | "canvas-target" | "canvas-reference" | "preset-reference";
+};
+
+export type ChatHistoryEntry = {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
 };
 
 function getAssistantText(payload: OpenAIResponse) {
@@ -106,9 +110,7 @@ export async function createOpenAITextResponse(params: {
 
 export async function createChatCompletion(params: {
   message: string;
-  history: ChatHistoryRecord[];
-  canvasId?: string;
-  projectId?: string;
+  history: ChatHistoryEntry[];
   images?: ChatInputImage[];
 }) {
   const conversation: Array<{
