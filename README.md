@@ -92,8 +92,8 @@ flowchart TD
   subgraph "Next.js Web App (apps/web)"
     CanvasUI["Canvas workspace UI"]
     ApiRoutes["API routes\n/api/chat\n/api/prompt/enhance\n/api/library/sync\n/api/projects/:projectId/ai-jobs"]
-    WebHelpers["Server helpers\nchatHistory.ts\nopenaiChat.ts"]
-    LocalHistory["apps/web/data/chat-history.json"]
+    WebHelpers["Server helpers\nprojectChatHistory.ts\nopenaiChat.ts"]
+    ChatDB["Supabase chat_threads + chat_messages"]
   end
 
   subgraph "Shared Packages"
@@ -119,7 +119,7 @@ flowchart TD
   CanvasUI --> ApiRoutes
   ApiRoutes --> WebHelpers
   WebHelpers -->|Responses API| OpenAI
-  WebHelpers --> LocalHistory
+  WebHelpers --> ChatDB
   ApiRoutes -->|auth + data access| DB
   ApiRoutes -->|prompt enhancement| AI
   ApiRoutes -->|enqueue jobs| Queue
@@ -141,7 +141,7 @@ flowchart TD
 ### Current runtime notes
 
 - The web app is the active product surface.
-- Chat history is currently persisted locally in `apps/web/data/chat-history.json`, not Supabase.
+- Chat history is persisted in Supabase `chat_threads` and `chat_messages`, scoped per project.
 - `packages/ai` owns the prompt engine and graph-aware generation brief helpers.
 - `packages/queue` exposes BullMQ queue/worker helpers and Redis connection defaults.
 - `apps/worker` executes queued AI jobs and persists job state/results through shared DB helpers.
@@ -351,9 +351,9 @@ RLS is enabled for all user-owned tables in `002_rls_policies.sql`. Policies are
 
 Current behavior:
 
-- `GET /api/chat` loads chat history from `apps/web/data/chat-history.json`.
+- `GET /api/chat` loads chat history from Supabase `chat_messages`.
 - `POST /api/chat` calls `apps/web/lib/server/openaiChat.ts`.
-- `DELETE /api/chat` clears history for the current canvas/project.
+- `DELETE /api/chat` clears history for the current project thread.
 - The OpenAI chat helper uses the Responses API endpoint `https://api.openai.com/v1/responses`.
 - The current model is configured as `gpt-5-mini`.
 

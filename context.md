@@ -158,6 +158,11 @@ Chat API route:
   Receives:
   - `content`
   - `images[]`
+  - persists project-scoped chat history in Supabase `chat_threads` + `chat_messages`
+
+Project chat persistence helper:
+- `apps/web/lib/server/projectChatHistory.ts`
+  Resolves the default thread for a project and stores chat exchanges in Supabase.
 
 OpenAI server helper:
 - `apps/web/lib/server/openaiChat.ts`
