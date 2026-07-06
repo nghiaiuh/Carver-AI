@@ -87,15 +87,19 @@ export async function appendChatHistory(recordsToAppend: ChatHistoryRecord[]) {
 export async function clearChatHistoryForCanvas(canvasId?: string, projectId?: string) {
   const currentRecords = await readChatHistory();
   const nextRecords = currentRecords.filter((record) => {
-    if (projectId && record.projectId === projectId) {
-      return false;
+    if (projectId && canvasId) {
+      return !(record.projectId === projectId && record.canvasId === canvasId);
     }
 
-    if (canvasId && record.canvasId === canvasId) {
-      return false;
+    if (projectId) {
+      return record.projectId !== projectId;
     }
 
-    if (!projectId && !canvasId && !record.projectId && !record.canvasId) {
+    if (canvasId) {
+      return record.canvasId !== canvasId;
+    }
+
+    if (!record.projectId && !record.canvasId) {
       return false;
     }
 
