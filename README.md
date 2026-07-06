@@ -74,7 +74,7 @@ The intended user experience is closer to a lightweight design tool than a chatb
 | Monorepo         | npm workspaces, Turborepo                                         |
 | Web app          | Next.js App Router, React, TypeScript                             |
 | Styling          | Tailwind CSS, PostCSS, GSAP, Framer Motion, Lucide React          |
-| Database         | Supabase Postgres, Supabase Auth, Supabase Storage, Prisma client |
+| Database / infra | Supabase Postgres, Supabase Auth, Prisma client, Cloudflare R2    |
 | AI orchestration | LangGraph                                                         |
 | Chat model       | OpenAI Responses API                                              |
 | Queue            | BullMQ                                                            |
@@ -87,38 +87,65 @@ The intended user experience is closer to a lightweight design tool than a chatb
 
 ```mermaid
 flowchart TD
-  Client[Next.js Client Canvas UI]
-  ServerRoutes[Next.js API Routes]
-  PromptEngine[apps/web/lib/prompt-engine]
-  ChatService[apps/web/lib/server/openaiChat.ts]
-  ChatHistory[Local chat-history.json]
-  DBPackage["@carver/db"]
-  Supabase[(Supabase Postgres / Auth / Storage)]
-  AI[(packages/ai LangGraph)]
-  Queue[(packages/queue BullMQ / Redis)]
-  Worker[apps/worker]
+  User(("User"))
 
-  Client -->|fetch| ServerRoutes
-  ServerRoutes --> PromptEngine
-  ServerRoutes --> ChatService
-  ChatService -->|Responses API| OpenAI[OpenAI]
-  ChatService --> ChatHistory
-  ServerRoutes --> DBPackage
-  DBPackage --> Supabase
-  ServerRoutes -. future .-> AI
-  ServerRoutes -. future .-> Queue
-  Queue --> Worker
-  Worker --> DBPackage
-  Worker --> Supabase
+  subgraph "Next.js Web App (apps/web)"
+    CanvasUI["Canvas workspace UI"]
+    ApiRoutes["API routes\n/api/chat\n/api/prompt/enhance\n/api/library/sync\n/api/projects/:projectId/ai-jobs"]
+    WebHelpers["Server helpers\nchatHistory.ts\nopenaiChat.ts"]
+    LocalHistory["apps/web/data/chat-history.json"]
+  end
+
+  subgraph "Shared Packages"
+    Shared["@carver/shared\nsnapshot + job contracts"]
+    DB["@carver/db\nSupabase helpers + types"]
+    AI["@carver/ai\nprompt engine + generation brief"]
+    Queue["@carver/queue\nBullMQ contracts"]
+    Storage["@carver/storage\nR2 + library sync"]
+  end
+
+  subgraph "Worker Process"
+    Worker["apps/worker"]
+  end
+
+  subgraph "Infrastructure"
+    Supabase[(Supabase Postgres / Auth / RLS)]
+    Redis[(Redis / BullMQ)]
+    R2[(Cloudflare R2)]
+    OpenAI[(OpenAI Responses API)]
+  end
+
+  User --> CanvasUI
+  CanvasUI --> ApiRoutes
+  ApiRoutes --> WebHelpers
+  WebHelpers -->|Responses API| OpenAI
+  WebHelpers --> LocalHistory
+  ApiRoutes -->|auth + data access| DB
+  ApiRoutes -->|prompt enhancement| AI
+  ApiRoutes -->|enqueue jobs| Queue
+  ApiRoutes -->|library sync / asset sync| Storage
+  DB --> Supabase
+  Queue --> Redis
+  Storage --> R2
+  Storage --> Supabase
+  Worker --> Queue
+  Worker --> AI
+  Worker --> DB
+  Worker --> Storage
+  AI --> OpenAI
+  Shared -. imported by .-> CanvasUI
+  Shared -. imported by .-> ApiRoutes
+  Shared -. imported by .-> Worker
 ```
 
 ### Current runtime notes
 
 - The web app is the active product surface.
 - Chat history is currently persisted locally in `apps/web/data/chat-history.json`, not Supabase.
-- `packages/ai` contains an early LangGraph router state machine.
+- `packages/ai` owns the prompt engine and graph-aware generation brief helpers.
 - `packages/queue` exposes BullMQ queue/worker helpers and Redis connection defaults.
-- `apps/worker` starts a BullMQ worker but image-processing handlers are still TODO.
+- `apps/worker` executes queued AI jobs and persists job state/results through shared DB helpers.
+- `packages/storage` owns Cloudflare R2 asset sync and library import/export helpers.
 
 ## Project Structure
 
@@ -513,7 +540,7 @@ Production hardening items still needed:
 | Prompt engine    | Keep deterministic prompt safety while adding clearer review/expert modes and richer reference handling.                              |
 | AI job pipeline  | Create AI jobs from canvas/chat actions, queue long-running work, execute worker handlers, store outputs, and create design versions. |
 | Spatial lock MVP | Persist locked regions/objects, include them in prompt generation, and prevent accidental edits.                                      |
-| Asset workflow   | Supabase Storage upload, signed URL generation, generated asset persistence, export records.                                          |
+| Asset workflow   | Cloudflare R2 upload/sync, signed URL generation, generated asset persistence, export records.                                        |
 | Product polish   | Project dashboard, version comparison, proposal preview, budget/reality-check scoring, engineer handoff flows.                        |
 
 ## Known Limitations
