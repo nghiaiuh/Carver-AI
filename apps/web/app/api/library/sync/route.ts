@@ -10,21 +10,17 @@
 
 import { NextResponse } from "next/server";
 import { syncLibraryFromBucket } from "@carver/storage";
-import { getRequestContext } from "../../_lib/auth";
+import { requireRequestContext } from "../../_lib/authz";
 
 export async function POST(request: Request) {
-  const context = await getRequestContext(request);
+  const context = await requireRequestContext(request);
   if ("error" in context) {
     return context.error;
   }
 
   try {
-    const body = await request.json().catch(() => ({}));
-    const sourcePrefix = typeof body.sourcePrefix === "string" ? body.sourcePrefix : undefined;
-
     const result = await syncLibraryFromBucket({
       ownerId: context.user.id,
-      sourcePrefix,
     });
     return NextResponse.json(result);
   } catch (error) {

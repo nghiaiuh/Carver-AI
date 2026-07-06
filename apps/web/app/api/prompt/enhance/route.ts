@@ -8,6 +8,7 @@
 
 import { NextResponse } from "next/server";
 import { enhancePrompt, type EnhanceMode } from "@carver/ai/prompt-engine";
+import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../_lib/authz";
 import { badRequest, readJsonObject, stringValue } from "../../_lib/http";
 
 const MODE_VALUES: EnhanceMode[] = [
@@ -34,6 +35,11 @@ function modeValue(body: Record<string, unknown>): EnhanceMode {
 }
 
 export async function POST(request: Request) {
+  const context = await requireRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
+
   const body = await readJsonObject(request);
   const rawPrompt = stringValue(body, "rawPrompt") ?? stringValue(body, "prompt");
 
@@ -42,12 +48,42 @@ export async function POST(request: Request) {
   }
 
   try {
+    const projectId = stringValue(body, "projectId");
+    const projectContext = objectValue(body, "projectContext");
+    const nestedProjectId = typeof projectContext?.projectId === "string" ? projectContext.projectId.trim() : "";
+
+    if (projectId && !isUuidLike(projectId)) {
+      return badRequest("projectId is invalid");
+    }
+
+    if (nestedProjectId && !isUuidLike(nestedProjectId)) {
+      return badRequest("projectContext.projectId is invalid");
+    }
+
+    const scopedProjectId = projectId ?? nestedProjectId;
+    if (scopedProjectId) {
+      const projectResult = await requireProjectOwner(context, scopedProjectId);
+      if ("error" in projectResult) {
+        return projectResult.error;
+      }
+    }
+
+    const sanitizedProjectContext = projectContext
+      ? (() => {
+          const rest = { ...projectContext };
+          delete (rest as { ownerId?: unknown }).ownerId;
+          delete (rest as { userId?: unknown }).userId;
+          delete (rest as { projectId?: unknown }).projectId;
+          return scopedProjectId ? { ...rest, projectId: scopedProjectId } : rest;
+        })()
+      : undefined;
+
     const enhanced = await enhancePrompt({
       prompt: rawPrompt,
       mode: modeValue(body),
       useAiFallback: booleanValue(body, "useAiFallback") ?? true,
       forceAiFallback: booleanValue(body, "forceAiFallback") ?? false,
-      projectContext: objectValue(body, "projectContext"),
+      projectContext: sanitizedProjectContext,
     });
 
     // TODO: Persist enhance-prompt history here once the project adds dedicated prompt history storage.

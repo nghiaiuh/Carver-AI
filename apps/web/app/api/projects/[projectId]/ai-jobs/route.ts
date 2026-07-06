@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type { CarverAiJobPayload, CarverAiJobRecord, CarverAiJobResult, CreateAiJobRequest } from "@carver/shared";
 import { coerceCanvasSnapshotDocument, isCanvasSnapshotDocument } from "@carver/shared";
-import { getRequestContext } from "../../../_lib/auth";
+import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../../_lib/authz";
 import { badRequest, readJsonObject, stringArrayValue, stringValue } from "../../../_lib/http";
 
 const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
@@ -60,7 +60,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ projectId: string }> },
 ) {
-  const context = await getRequestContext(request);
+  const context = await requireRequestContext(request);
   if ("error" in context) {
     return context.error;
   }
@@ -68,6 +68,10 @@ export async function POST(
   const { projectId } = await params;
   if (!projectId) {
     return badRequest("projectId is required");
+  }
+
+  if (!isUuidLike(projectId)) {
+    return badRequest("projectId is invalid");
   }
 
   const body = await readJsonObject(request);
@@ -86,17 +90,12 @@ export async function POST(
   const canvasGraphContext = objectValue(body.canvasGraphContext);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
 
-  const { supabase, user } = context;
-
-  const { data: project, error: projectError } = await supabase
-    .from("projects")
-    .select("id, current_canvas_snapshot_id")
-    .eq("id", projectId)
-    .single();
-
-  if (projectError || !project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const projectResult = await requireProjectOwner(context, projectId);
+  if ("error" in projectResult) {
+    return projectResult.error;
   }
+  const { supabase, user } = context;
+  const { project } = projectResult;
 
   const resolvedSnapshotId = inputSnapshotId ?? project.current_canvas_snapshot_id;
   const snapshotRow = resolvedSnapshotId

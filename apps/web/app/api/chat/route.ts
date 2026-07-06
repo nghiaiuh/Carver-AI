@@ -11,6 +11,7 @@
 import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
+import { isUuidLike, requireProjectOwner, requireRequestContext } from "../_lib/authz";
 import { badRequest, readJsonObject, stringValue } from "../_lib/http";
 import {
   appendChatHistory,
@@ -61,25 +62,61 @@ function getProjectIdFromUrl(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const canvasId = getCanvasIdFromUrl(request);
+  const context = await requireRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
+
   const projectId = getProjectIdFromUrl(request);
-  const messages = await getChatHistoryForCanvas(canvasId, projectId);
+  if (!projectId) {
+    return badRequest("projectId is required");
+  }
+
+  if (!isUuidLike(projectId)) {
+    return badRequest("projectId is invalid");
+  }
+
+  const projectResult = await requireProjectOwner(context, projectId);
+  if ("error" in projectResult) {
+    return projectResult.error;
+  }
+
+  const canvasId = getCanvasIdFromUrl(request);
+  const messages = await getChatHistoryForCanvas(canvasId, projectResult.project.id);
 
   return NextResponse.json({ messages });
 }
 
 export async function POST(request: Request) {
+  const context = await requireRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
+
   const body = await readJsonObject(request);
   const content = stringValue(body, "content");
   const canvasId = stringValue(body, "canvasId") ?? "canvas-main";
-  const projectId = stringValue(body, "projectId");
+  const projectId = stringValue(body, "projectId") ?? getProjectIdFromUrl(request);
   const images = readChatInputImages(body);
 
   if (!content && images.length === 0) {
     return badRequest("content or images are required");
   }
 
-  const history = await getChatHistoryForCanvas(canvasId, projectId);
+  if (!projectId) {
+    return badRequest("projectId is required");
+  }
+
+  if (!isUuidLike(projectId)) {
+    return badRequest("projectId is invalid");
+  }
+
+  const projectResult = await requireProjectOwner(context, projectId);
+  if ("error" in projectResult) {
+    return projectResult.error;
+  }
+
+  const history = await getChatHistoryForCanvas(canvasId, projectResult.project.id);
 
   try {
     const messageContent =
@@ -97,7 +134,7 @@ export async function POST(request: Request) {
     const userMessage: ChatHistoryRecord = {
       id: randomUUID(),
       canvasId,
-      projectId,
+      projectId: projectResult.project.id,
       role: "user",
       content: messageContent,
       createdAt,
@@ -105,7 +142,7 @@ export async function POST(request: Request) {
     const assistantMessage: ChatHistoryRecord = {
       id: randomUUID(),
       canvasId,
-      projectId,
+      projectId: projectResult.project.id,
       role: "assistant",
       content: assistantContent,
       createdAt: new Date().toISOString(),
@@ -124,10 +161,27 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const canvasId = getCanvasIdFromUrl(request);
-  const projectId = getProjectIdFromUrl(request);
+  const context = await requireRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
 
-  await clearChatHistoryForCanvas(canvasId, projectId);
+  const projectId = getProjectIdFromUrl(request);
+  if (!projectId) {
+    return badRequest("projectId is required");
+  }
+
+  if (!isUuidLike(projectId)) {
+    return badRequest("projectId is invalid");
+  }
+
+  const projectResult = await requireProjectOwner(context, projectId);
+  if ("error" in projectResult) {
+    return projectResult.error;
+  }
+
+  const canvasId = getCanvasIdFromUrl(request);
+  await clearChatHistoryForCanvas(canvasId, projectResult.project.id);
 
   return NextResponse.json({ ok: true });
 }
