@@ -110,6 +110,10 @@ Library storage note:
 - `public.library_folders` and `public.library_assets` hold the library metadata in Supabase, including tags, category, prompt, and image URLs.
 - Local `public/assets` demo images were removed; the canvas/library flow now expects cloud-backed image URLs only.
 - `apps/web/app/api/library/sync/route.ts` can backfill existing R2 objects into Supabase metadata for the current user.
+- User-owned library/generated assets are delivered through the app asset gateway:
+  - APIs verify ownership first, then return short-lived `/api/assets/[assetId]/content` URLs.
+  - Client code must not send raw `storage_path` to be signed or streamed.
+  - Snapshot/job result JSON should store stable refs such as `assetId`, not signed URLs/base64/blob/data URLs.
 
 ## 5. Generation graph model
 
@@ -213,6 +217,10 @@ Current direction:
   - web polls the job result and renders chat/canvas outputs
 - current release-ready path is `generate_concept` and `refine_concept`
 - unsupported job kinds should fail fast instead of silently returning placeholder results
+- BullMQ payloads should stay minimal (`jobId` plus non-sensitive tracing/idempotency metadata).
+- Worker uses service role, so it must load job/user/project/snapshot/output path from DB before calling providers.
+- Generate enqueue is idempotent via `ai_jobs.idempotency_key`; duplicate action retries should return the existing job instead of double-charging.
+- Legacy public `/api/generate` is disabled and should not bypass queued `ai-jobs`.
 
 ## 8. Snapshot/version compatibility
 

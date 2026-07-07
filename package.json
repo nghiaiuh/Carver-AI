@@ -11,7 +11,9 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "storage:orphan-r2:dry-run": "node scripts/orphan-r2-cleanup.mjs",
+    "storage:orphan-r2:delete": "node scripts/orphan-r2-cleanup.mjs --delete"
   },
   "devDependencies": {
     "turbo": "latest"
