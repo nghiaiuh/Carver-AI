@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type { CarverAiJobPayload, CarverAiJobRecord, CarverAiJobResult, CreateAiJobRequest } from "@carver/shared";
-import { coerceCanvasSnapshotDocument, isCanvasSnapshotDocument } from "@carver/shared";
+import { coerceCanvasSnapshotDocument } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../../_lib/authz";
 import { badRequest, readJsonObject, stringArrayValue, stringValue } from "../../../_lib/http";
 
@@ -30,7 +30,9 @@ const objectValue = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 
 const snapshotValue = (value: unknown) =>
-  isCanvasSnapshotDocument(value) ? coerceCanvasSnapshotDocument(value) : undefined;
+  value && typeof value === "object" && !Array.isArray(value)
+    ? coerceCanvasSnapshotDocument(value)
+    : undefined;
 
 const normalizeJobType = (value: unknown): CreateAiJobRequest["jobType"] =>
   typeof value === "string" && JOB_TYPES.includes(value as CreateAiJobRequest["jobType"])
