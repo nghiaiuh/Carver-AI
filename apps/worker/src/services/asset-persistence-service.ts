@@ -5,10 +5,19 @@
  * 3. Return a web-friendly generated image payload.
  */
 
-import { randomUUID } from "node:crypto";
 import type { GeneratedCanvasImage } from "@carver/shared";
 import { createGeneratedAsset } from "../repositories/asset-repository";
-import { createR2ObjectKey, getR2Bucket, uploadR2Object } from "@carver/storage";
+import { getR2Bucket, uploadR2Object } from "@carver/storage";
+
+const slugifyFileBase = (value: string) =>
+  value
+    .replace(/\.[^.]+$/, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "generated-concept";
 
 export const persistGeneratedImageAsset = async (params: {
   jobId: string;
@@ -22,18 +31,25 @@ export const persistGeneratedImageAsset = async (params: {
   height: number;
   provider: string;
 }) => {
-  const assetId = randomUUID();
-  const storagePath = createR2ObjectKey(
-    [params.ownerId, "projects", params.projectId, "generated", params.jobId],
-    `${params.title || "generated-concept"}.png`,
-  );
-  const imageUrl = await uploadR2Object({
+  const assetId = params.jobId;
+  const storagePath = [
+    "users",
+    params.ownerId,
+    "projects",
+    params.projectId,
+    "jobs",
+    params.jobId,
+    `${slugifyFileBase(params.title)}.png`,
+  ].join("/");
+
+  await uploadR2Object({
     key: storagePath,
     body: params.buffer,
     contentType: params.mimeType,
   });
 
   const asset = await createGeneratedAsset({
+    assetId,
     projectId: params.projectId,
     ownerId: params.ownerId,
     storageBucket: getR2Bucket(),
@@ -47,14 +63,13 @@ export const persistGeneratedImageAsset = async (params: {
       title: params.title,
       prompt: params.prompt,
       provider: params.provider,
-      imageUrl,
     },
   });
 
   const generatedImage: GeneratedCanvasImage = {
     id: asset.id ?? assetId,
     title: params.title,
-    imageUrl,
+    imageUrl: "",
     width: params.width,
     height: params.height,
     prompt: params.prompt,

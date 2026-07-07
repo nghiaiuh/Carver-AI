@@ -6,25 +6,24 @@
  */
 
 import type { Worker } from "@carver/queue";
-import type { CarverAiJobPayload } from "@carver/shared";
+import { createSafeLogger, type QueuedCarverAiJobPayload } from "@carver/shared";
 
-export const registerAiJobWorkerEvents = (worker: Worker<CarverAiJobPayload>) => {
+const logger = createSafeLogger("worker.ai-jobs");
+
+export const registerAiJobWorkerEvents = (worker: Worker<QueuedCarverAiJobPayload>) => {
   worker.on("active", (job) => {
-    console.log(
-      `[worker] active job=${job.id} project=${job.data.projectId} type=${job.data.jobType}`,
-    );
+    logger.info("job active", { bullJobId: job.id, jobId: job.data.jobId });
   });
 
   worker.on("completed", (job) => {
-    console.log(
-      `[worker] completed job=${job.id} project=${job.data.projectId} type=${job.data.jobType}`,
-    );
+    logger.info("job completed", { bullJobId: job.id, jobId: job.data.jobId });
   });
 
   worker.on("failed", (job, error) => {
-    console.error(
-      `[worker] failed job=${job?.id ?? "unknown"} project=${job?.data.projectId ?? "unknown"} type=${job?.data.jobType ?? "unknown"}:`,
-      error.message,
-    );
+    logger.error("job failed", {
+      bullJobId: job?.id ?? "unknown",
+      jobId: job?.data.jobId ?? "unknown",
+      error,
+    });
   });
 };

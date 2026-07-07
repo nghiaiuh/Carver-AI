@@ -133,6 +133,7 @@ export type CreateAiJobRequest = {
   projectId: string;
   jobType: CarverJobKind;
   prompt: string;
+  idempotencyKey?: string;
   inputSnapshotId?: string;
   threadId?: string;
   promptMode?: "auto" | "review" | "expert";
@@ -141,6 +142,12 @@ export type CreateAiJobRequest = {
   snapshot?: CanvasSnapshotDocument;
   targetNodeId?: string;
   canvasGraphContext?: CanvasGenerationContext;
+};
+
+export type QueuedCarverAiJobPayload = {
+  jobId: string;
+  requestId?: string;
+  idempotencyKey?: string;
 };
 
 export type CarverAiJobPayload = {

@@ -7,11 +7,15 @@
  */
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
+import { createSafeLogger } from "@carver/shared";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
-import type { CarverAiJobPayload, CarverAiJobRecord, CarverAiJobResult, CreateAiJobRequest } from "@carver/shared";
+import type { CarverAiJobRecord, CarverAiJobResult, CreateAiJobRequest, QueuedCarverAiJobPayload } from "@carver/shared";
 import { coerceCanvasSnapshotDocument } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../../_lib/authz";
-import { badRequest, readJsonObject, stringArrayValue, stringValue } from "../../../_lib/http";
+import { apiFailure, apiSuccess, badRequest, readJsonObject, stringArrayValue, stringValue } from "../../../_lib/http";
+import { checkRateLimit } from "../../../_lib/rateLimit";
+import { resolveAiJobResultAssetUrls } from "../../../../../lib/server/aiJobResultAssets";
 
 const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
   "generate_concept",
@@ -25,6 +29,7 @@ const SUPPORTED_JOB_TYPES: CreateAiJobRequest["jobType"][] = [
 ];
 
 const PROMPT_MODES = ["auto", "review", "expert"] as const;
+const logger = createSafeLogger("web.ai-jobs");
 
 const objectValue = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -43,6 +48,28 @@ const normalizePromptMode = (value: unknown): NonNullable<CreateAiJobRequest["pr
   typeof value === "string" && PROMPT_MODES.includes(value as (typeof PROMPT_MODES)[number])
     ? (value as NonNullable<CreateAiJobRequest["promptMode"]>)
     : "auto";
+
+const buildIdempotencyKey = (params: {
+  userId: string;
+  projectId: string;
+  jobType: string;
+  prompt: string;
+  inputSnapshotId: string | null;
+  targetNodeId: string | undefined;
+}) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        userId: params.userId,
+        projectId: params.projectId,
+        jobType: params.jobType,
+        prompt: params.prompt,
+        inputSnapshotId: params.inputSnapshotId,
+        targetNodeId: params.targetNodeId ?? null,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 48);
 
 const normalizeSelection = (
   value: unknown,
@@ -107,6 +134,15 @@ export async function POST(
   const { supabase, user } = context;
   const { project } = projectResult;
 
+  const rateLimit = checkRateLimit({
+    key: `ai-job:${user.id}:${projectId}`,
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.allowed) {
+    return apiFailure("RATE_LIMITED", "Too many generation requests", 429, context.requestId);
+  }
+
   const resolvedSnapshotId = inputSnapshotId ?? project.current_canvas_snapshot_id;
   const snapshotRow = resolvedSnapshotId
     ? await supabase
@@ -136,6 +172,51 @@ export async function POST(
     },
   };
 
+  const idempotencyKey =
+    stringValue(body, "idempotencyKey") ??
+    buildIdempotencyKey({
+      userId: user.id,
+      projectId,
+      jobType,
+      prompt,
+      inputSnapshotId: loadedSnapshot?.id ?? resolvedSnapshotId ?? null,
+      targetNodeId,
+    });
+
+  const { data: existingJob, error: existingJobError } = await supabase
+    .from("ai_jobs")
+    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+    .eq("project_id", projectId)
+    .eq("created_by", user.id)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (existingJobError) {
+    return apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check existing AI job", 500, context.requestId);
+  }
+
+  if (existingJob) {
+    return apiSuccess({
+      job: mapAiJobRecord(existingJob, request.url),
+      idempotent: true,
+    });
+  }
+
+  const { count: activeJobCount, error: activeJobError } = await supabase
+    .from("ai_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("created_by", user.id)
+    .in("status", ["queued", "running"]);
+
+  if (activeJobError) {
+    return apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check active AI jobs", 500, context.requestId);
+  }
+
+  if ((activeJobCount ?? 0) >= 3) {
+    return apiFailure("CONCURRENT_JOB_LIMIT_REACHED", "Too many active generation jobs", 429, context.requestId);
+  }
+
   const { data: aiJob, error: aiJobError } = await supabase
     .from("ai_jobs")
     .insert({
@@ -146,10 +227,13 @@ export async function POST(
       job_type: jobType,
       prompt,
       input_snapshot_id: loadedSnapshot?.id ?? null,
+      idempotency_key: idempotencyKey,
+      target_node_id: targetNodeId ?? null,
       job_payload: {
         promptMode,
         referenceAssetIds,
         selection: mergedSnapshot.selection,
+        snapshot: mergedSnapshot,
         snapshotVersion: mergedSnapshot.snapshotVersion,
         snapshotSummary: {
           objectCount: mergedSnapshot.objects.length,
@@ -164,22 +248,34 @@ export async function POST(
     .single();
 
   if (aiJobError || !aiJob) {
-    return NextResponse.json({ error: "Unable to create AI job" }, { status: 500 });
+    logger.error("ai job create failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      projectId,
+      error: aiJobError,
+    });
+    const { data: racedJob } = await supabase
+      .from("ai_jobs")
+      .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+      .eq("project_id", projectId)
+      .eq("created_by", user.id)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+
+    if (racedJob) {
+      return apiSuccess({
+        job: mapAiJobRecord(racedJob, request.url),
+        idempotent: true,
+      });
+    }
+
+    return apiFailure("AI_JOB_CREATE_FAILED", "Unable to create AI job", 500, context.requestId);
   }
 
-  const payload: CarverAiJobPayload = {
+  const payload: QueuedCarverAiJobPayload = {
     jobId: aiJob.id,
-    projectId,
-    userId: user.id,
-    jobType,
-    prompt,
-    inputSnapshotId: loadedSnapshot?.id ?? null,
-    threadId: threadId ?? null,
-    promptMode,
-    snapshot: mergedSnapshot,
-    referenceAssetIds,
-    targetNodeId: targetNodeId ?? undefined,
-    canvasGraphContext: canvasGraphContext as CreateAiJobRequest["canvasGraphContext"],
+    requestId: context.requestId,
+    idempotencyKey,
   };
 
   const queue = createAiJobQueue();
@@ -191,6 +287,12 @@ export async function POST(
       removeOnFail: 100,
     });
   } catch {
+    logger.error("ai job enqueue failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      projectId,
+      jobId: aiJob.id,
+    });
     await supabase
       .from("ai_jobs")
       .update({
@@ -200,17 +302,15 @@ export async function POST(
       })
       .eq("id", aiJob.id);
 
-    return NextResponse.json({ error: "Unable to enqueue AI job" }, { status: 500 });
+    return apiFailure("QUEUE_UNAVAILABLE", "Unable to enqueue AI job", 500, context.requestId);
   } finally {
     await queue.close();
   }
 
-  return NextResponse.json(
+  return apiSuccess(
     {
-      success: true,
-      data: {
-        job: mapAiJobRecord(aiJob),
-      },
+      job: mapAiJobRecord(aiJob, request.url),
+      idempotent: false,
     },
     { status: 201 },
   );
@@ -232,7 +332,7 @@ function mapAiJobRecord(row: {
   created_at: string;
   updated_at: string;
   job_result: unknown;
-}): CarverAiJobRecord {
+}, requestUrl?: string): CarverAiJobRecord {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -248,7 +348,12 @@ function mapAiJobRecord(row: {
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    jobResult: isCarverAiJobResult(row.job_result) ? row.job_result : null,
+    jobResult: requestUrl
+      ? resolveAiJobResultAssetUrls(
+          requestUrl,
+          isCarverAiJobResult(row.job_result) ? row.job_result : null,
+        )
+      : isCarverAiJobResult(row.job_result) ? row.job_result : null,
   };
 }
 

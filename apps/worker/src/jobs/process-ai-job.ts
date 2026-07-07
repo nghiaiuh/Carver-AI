@@ -6,22 +6,29 @@
  */
 
 import type { Job } from "bullmq";
-import type { CarverAiJobPayload } from "@carver/shared";
+import type { QueuedCarverAiJobPayload } from "@carver/shared";
 import { handleGenerateConceptJob } from "./handlers/generate-concept";
 import { handleRefineConceptJob } from "./handlers/refine-concept";
 import { failJob } from "../services/job-status-service";
 import { buildJobError } from "../mappers/build-job-error";
+import { aiJobRepository } from "../repositories/ai-job-repository";
 
-export const processAiJob = async (job: Job<CarverAiJobPayload>) => {
-  switch (job.data.jobType) {
+export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
+  const dbJob = await aiJobRepository.loadForProcessing(job.data.jobId);
+
+  if (!dbJob) {
+    return;
+  }
+
+  switch (dbJob.jobType) {
     case "generate_concept":
-      return handleGenerateConceptJob(job.data);
+      return handleGenerateConceptJob(dbJob);
     case "refine_concept":
-      return handleRefineConceptJob(job.data);
+      return handleRefineConceptJob(dbJob);
     case "analyze_reference":
     case "export":
     default: {
-      const error = new Error(`Unsupported AI job type: ${job.data.jobType}`);
+      const error = new Error(`Unsupported AI job type: ${dbJob.jobType}`);
       await failJob(job.data.jobId, buildJobError(error));
       throw error;
     }

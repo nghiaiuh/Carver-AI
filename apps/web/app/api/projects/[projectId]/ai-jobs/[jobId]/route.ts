@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import type { CarverAiJobRecord, CarverAiJobResult } from "@carver/shared";
 import { requireProjectScopedJob, requireRequestContext, isUuidLike } from "../../../../_lib/authz";
 import { badRequest } from "../../../../_lib/http";
+import { resolveAiJobResultAssetUrls } from "../../../../../../lib/server/aiJobResultAssets";
 
 export async function GET(
   request: Request,
@@ -61,7 +62,10 @@ export async function GET(
         errorMessage: job.error_message,
         createdAt: job.created_at,
         updatedAt: job.updated_at,
-        jobResult: isCarverAiJobResult(job.job_result) ? job.job_result : null,
+        jobResult: resolveAiJobResultAssetUrls(
+          request.url,
+          isCarverAiJobResult(job.job_result) ? job.job_result : null,
+        ),
       } satisfies CarverAiJobRecord,
     },
   });

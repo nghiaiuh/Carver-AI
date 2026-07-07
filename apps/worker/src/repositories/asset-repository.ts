@@ -11,6 +11,7 @@ import type { Database } from "@carver/db";
 export type AssetRow = Database["public"]["Tables"]["assets"]["Row"];
 
 export const createGeneratedAsset = async (params: {
+  assetId?: string;
   projectId: string;
   ownerId: string;
   storageBucket: string;
@@ -25,7 +26,8 @@ export const createGeneratedAsset = async (params: {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("assets")
-    .insert({
+    .upsert({
+      id: params.assetId,
       project_id: params.projectId,
       owner_id: params.ownerId,
       kind: "generated",
@@ -37,7 +39,7 @@ export const createGeneratedAsset = async (params: {
       size_bytes: params.sizeBytes,
       source_job_id: params.sourceJobId,
       metadata: params.metadata as never,
-    })
+    }, { onConflict: "id" })
     .select()
     .single();
 

@@ -6,21 +6,45 @@
  */
 
 import { Queue, QueueEvents, Worker } from "bullmq";
-import type { CarverAiJobPayload } from "@carver/shared";
+import type { QueuedCarverAiJobPayload } from "@carver/shared";
 
 export { Queue, Worker, QueueEvents };
 
 export const AI_JOB_QUEUE_NAME = "carver-ai-jobs";
 export const AI_JOB_QUEUE_EVENT_NAME = "carver-ai-job";
 
-export const defaultQueueOptions = {
-  connection: {
+const createRedisConnection = () => {
+  if (process.env.REDIS_URL) {
+    const redisUrl = new URL(process.env.REDIS_URL);
+    return {
+      host: redisUrl.hostname,
+      port: Number(redisUrl.port || 6379),
+      username: redisUrl.username || undefined,
+      password: redisUrl.password || undefined,
+      tls: redisUrl.protocol === "rediss:" ? {} : undefined,
+    };
+  }
+
+  return {
     host: process.env.REDIS_HOST ?? "localhost",
     port: Number(process.env.REDIS_PORT ?? 6379),
     username: process.env.REDIS_USERNAME,
     password: process.env.REDIS_PASSWORD,
+  };
+};
+
+export const defaultQueueOptions = {
+  connection: createRedisConnection(),
+  defaultJobOptions: {
+    attempts: Number(process.env.AI_JOB_ATTEMPTS ?? 3),
+    backoff: {
+      type: "exponential",
+      delay: Number(process.env.AI_JOB_BACKOFF_MS ?? 10_000),
+    },
+    removeOnComplete: Number(process.env.AI_JOB_REMOVE_ON_COMPLETE ?? 100),
+    removeOnFail: Number(process.env.AI_JOB_REMOVE_ON_FAIL ?? 100),
   },
 };
 
 export const createAiJobQueue = () =>
-  new Queue<CarverAiJobPayload>(AI_JOB_QUEUE_NAME, defaultQueueOptions);
+  new Queue<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, defaultQueueOptions);

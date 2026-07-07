@@ -7,13 +7,34 @@
 
 import { registerAiJobWorkerEvents } from "./queue/events";
 import { createAiJobWorker } from "./queue/worker";
+import { validateWorkerEnv } from "./config/worker-env";
+import { createSafeLogger } from "@carver/shared";
 
-console.log("Carver worker starting");
+const logger = createSafeLogger("worker.bootstrap");
 
+validateWorkerEnv();
+logger.info("worker starting");
 const aiJobWorker = createAiJobWorker();
 
 registerAiJobWorkerEvents(aiJobWorker);
 
-console.log("Worker listening for jobs");
+logger.info("worker listening for jobs", {
+  concurrency: process.env.AI_WORKER_CONCURRENCY ?? 2,
+});
 
 void aiJobWorker;
+
+async function shutdown(signal: string) {
+  logger.info("worker shutdown requested", { signal });
+  await aiJobWorker.close();
+  logger.info("worker shutdown complete", { signal });
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
