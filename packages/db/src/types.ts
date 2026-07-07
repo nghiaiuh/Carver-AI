@@ -529,7 +529,17 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      save_project_canvas_snapshot: {
+        Args: {
+          snapshot_canvas_json: Json;
+          target_project_id: string;
+        };
+        Returns: {
+          created_at: string;
+          snapshot_id: string;
+          version: number;
+        }[];
+      };
     };
     Enums: {
       plan_type: PlanType;
