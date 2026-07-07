@@ -405,6 +405,8 @@ export interface Database {
           output_snapshot_id: string | null;
           input_asset_ids: string[] | null;
           output_asset_ids: string[] | null;
+          idempotency_key: string | null;
+          target_node_id: string | null;
           job_payload: Json;
           job_result: Json;
           provider: string | null;
@@ -426,6 +428,8 @@ export interface Database {
           output_snapshot_id?: string | null;
           input_asset_ids?: string[] | null;
           output_asset_ids?: string[] | null;
+          idempotency_key?: string | null;
+          target_node_id?: string | null;
           job_payload?: Json;
           job_result?: Json;
           provider?: string | null;
@@ -447,6 +451,8 @@ export interface Database {
           output_snapshot_id?: string | null;
           input_asset_ids?: string[] | null;
           output_asset_ids?: string[] | null;
+          idempotency_key?: string | null;
+          target_node_id?: string | null;
           job_payload?: Json;
           job_result?: Json;
           provider?: string | null;
