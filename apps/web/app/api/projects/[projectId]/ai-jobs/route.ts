@@ -19,6 +19,10 @@ const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
   "analyze_reference",
   "export",
 ];
+const SUPPORTED_JOB_TYPES: CreateAiJobRequest["jobType"][] = [
+  "generate_concept",
+  "refine_concept",
+];
 
 const PROMPT_MODES = ["auto", "review", "expert"] as const;
 
@@ -89,6 +93,10 @@ export async function POST(
   const targetNodeId = stringValue(body, "targetNodeId");
   const canvasGraphContext = objectValue(body.canvasGraphContext);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
+
+  if (!SUPPORTED_JOB_TYPES.includes(jobType)) {
+    return badRequest(`jobType ${jobType} is not supported yet`);
+  }
 
   const projectResult = await requireProjectOwner(context, projectId);
   if ("error" in projectResult) {

@@ -9,11 +9,22 @@ import type { Worker } from "@carver/queue";
 import type { CarverAiJobPayload } from "@carver/shared";
 
 export const registerAiJobWorkerEvents = (worker: Worker<CarverAiJobPayload>) => {
+  worker.on("active", (job) => {
+    console.log(
+      `[worker] active job=${job.id} project=${job.data.projectId} type=${job.data.jobType}`,
+    );
+  });
+
   worker.on("completed", (job) => {
-    console.log(`Job ${job.id} completed`);
+    console.log(
+      `[worker] completed job=${job.id} project=${job.data.projectId} type=${job.data.jobType}`,
+    );
   });
 
   worker.on("failed", (job, error) => {
-    console.error(`Job ${job?.id} failed:`, error.message);
+    console.error(
+      `[worker] failed job=${job?.id ?? "unknown"} project=${job?.data.projectId ?? "unknown"} type=${job?.data.jobType ?? "unknown"}:`,
+      error.message,
+    );
   });
 };

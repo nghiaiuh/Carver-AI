@@ -30,6 +30,13 @@ export const buildJobError = (error: unknown) => {
     };
   }
 
+  if (normalized.includes("unsupported ai job type") || normalized.includes("not supported yet")) {
+    return {
+      errorCode: "unsupported_job_type",
+      errorMessage: message,
+    };
+  }
+
   return {
     errorCode: "worker_processing_failed",
     errorMessage: message,
