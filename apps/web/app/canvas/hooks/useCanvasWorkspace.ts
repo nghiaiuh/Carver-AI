@@ -9,8 +9,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import { useCanvasLibrary } from "./useCanvasLibrary";
-import type { CanvasGenerationAssistantMessage, CarverAiJobRecord } from "@carver/shared";
+import {
+  coerceCanvasSnapshotDocument,
+  type CanvasGenerationAssistantMessage,
+  type CanvasSnapshotDocument,
+  type CarverAiJobRecord,
+} from "@carver/shared";
 import { buildCanvasThemeStyle } from "../components/core/canvasThemeStyle";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import useResizablePanel from "./useResizablePanel";
@@ -37,6 +43,7 @@ import {
   buildCanvasGenerationContext,
   buildCanvasSnapshotWithGraph,
 } from "../utils/canvasGenerationContext";
+import { hydrateCanvasStateFromSnapshot } from "../utils/canvasSnapshotHydration";
 import {
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
@@ -97,6 +104,64 @@ type CreateAiJobResponse = {
 };
 
 type GetAiJobResponse = CreateAiJobResponse;
+
+type SnapshotMeta = {
+  snapshotId: string;
+  version: number;
+  createdAt: string;
+};
+
+type SnapshotRouteResponse = {
+  success?: boolean;
+  data?: {
+    document?: CanvasSnapshotDocument;
+    snapshot?: SnapshotMeta | null;
+  };
+  error?: string;
+};
+
+type BrowserSupabaseClient = NonNullable<ReturnType<typeof getOptionalBrowserSupabaseClient>>;
+
+function requireCanvasSupabaseClient(client: BrowserSupabaseClient | null) {
+  if (!client) {
+    throw new Error("Please sign in before loading or saving project snapshots.");
+  }
+
+  return client;
+}
+
+async function getAccessToken(client: BrowserSupabaseClient) {
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    throw new Error(error.message || "Unable to read the current session.");
+  }
+
+  const accessToken = data.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Please sign in before loading or saving project snapshots.");
+  }
+
+  return accessToken;
+}
+
+async function authedFetch(
+  client: BrowserSupabaseClient,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+) {
+  const accessToken = await getAccessToken(client);
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+}
+
+function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
+  return JSON.stringify(document);
+}
 
 function getTerminalGenerationStatusMessage(job: CarverAiJobRecord) {
   if (job.status === "failed") {
@@ -193,7 +258,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     useState<CanvasLibraryAsset | null>(null);
   const [pendingPresetGroupInsert, setPendingPresetGroupInsert] =
     useState<PendingPresetGroupInsert | null>(null);
+  const [isSnapshotLoading, setIsSnapshotLoading] = useState(false);
+  const [isSnapshotSaving, setIsSnapshotSaving] = useState(false);
+  const [currentSnapshotMeta, setCurrentSnapshotMeta] = useState<SnapshotMeta | null>(null);
+  const [hasUnsavedSnapshotChanges, setHasUnsavedSnapshotChanges] = useState(false);
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
+  const savedSnapshotFingerprintRef = useRef<string | null>(null);
+  const snapshotLoadRequestRef = useRef(0);
+  const snapshotSaveInFlightRef = useRef(false);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -215,6 +287,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   });
 
   const library = useCanvasLibrary();
+  const supabase = getOptionalBrowserSupabaseClient();
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
@@ -229,17 +302,193 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       ? buildCanvasGenerationContext(activeGenerationTarget.id, nodes, edges, promptText)
       : null;
 
+  const applyHydratedSnapshotState = (document: CanvasSnapshotDocument) => {
+    const hydrated = hydrateCanvasStateFromSnapshot(document);
+
+    setNodes(hydrated.nodes);
+    setEdges(hydrated.edges);
+    setPromptText(hydrated.promptText);
+    setActiveGenerationTargetId(hydrated.activeGenerationTargetId);
+    setActiveNodeId(hydrated.activeGenerationTargetId);
+    setSelectedItem(
+      hydrated.activeGenerationTargetId
+        ? { type: "node", id: hydrated.activeGenerationTargetId }
+        : { type: "none" },
+    );
+    setPendingGenerationJob(null);
+    setGenerationAssistantMessages([]);
+    setMarkers(INITIAL_MARKERS);
+    setAddedObjects(INITIAL_OBJECTS);
+    setSketchLines([]);
+    setSketchGroups([]);
+    setPenStrokes([]);
+    setSelectedSketchLineIds([]);
+    handledGenerationJobIdsRef.current.clear();
+  };
+
+  const saveSnapshot = async () => {
+    if (!params.projectId) {
+      showToast("Open this canvas with a projectId before saving snapshots.");
+      return;
+    }
+
+    if (snapshotSaveInFlightRef.current) {
+      return;
+    }
+
+    snapshotSaveInFlightRef.current = true;
+    setIsSnapshotSaving(true);
+
+    const snapshotDocument = buildCanvasSnapshotWithGraph({
+      nodes,
+      edges,
+      activeGenerationTargetId,
+    });
+    const snapshotFingerprint = createSnapshotFingerprint(snapshotDocument);
+
+    try {
+      const response = await authedFetch(
+        requireCanvasSupabaseClient(supabase),
+        `/api/projects/${params.projectId}/snapshot`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            snapshot: snapshotDocument,
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => ({}))) as SnapshotRouteResponse;
+
+      if (!response.ok || !payload.data?.snapshot) {
+        throw new Error(payload.error || "Unable to save the current snapshot.");
+      }
+
+      savedSnapshotFingerprintRef.current = snapshotFingerprint;
+      setCurrentSnapshotMeta(payload.data.snapshot);
+      setHasUnsavedSnapshotChanges(false);
+      showToast(`Snapshot saved as v${payload.data.snapshot.version}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save the current snapshot.");
+    } finally {
+      snapshotSaveInFlightRef.current = false;
+      setIsSnapshotSaving(false);
+    }
+  };
+
   useEffect(() => {
     if (!activeGenerationTargetId) return;
     if (nodes.some((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node))) return;
-    setActiveGenerationTargetId(null);
+
+    queueMicrotask(() => {
+      setActiveGenerationTargetId((current) =>
+        current === activeGenerationTargetId ? null : current,
+      );
+      setPromptText((current) => (current.length > 0 ? "" : current));
+    });
   }, [activeGenerationTargetId, nodes]);
 
   useEffect(() => {
     if (!activeNodeId) return;
     if (nodes.some((node) => node.id === activeNodeId)) return;
-    setActiveNodeId(null);
+
+    queueMicrotask(() => {
+      setActiveNodeId((current) => (current === activeNodeId ? null : current));
+    });
   }, [activeNodeId, nodes]);
+
+  useEffect(() => {
+    if (!params.projectId) {
+      savedSnapshotFingerprintRef.current = null;
+      queueMicrotask(() => {
+        setIsSnapshotLoading(false);
+        setCurrentSnapshotMeta(null);
+        setHasUnsavedSnapshotChanges(false);
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const requestId = snapshotLoadRequestRef.current + 1;
+    snapshotLoadRequestRef.current = requestId;
+    savedSnapshotFingerprintRef.current = null;
+    queueMicrotask(() => {
+      setCurrentSnapshotMeta(null);
+      setHasUnsavedSnapshotChanges(false);
+    });
+
+    const loadSnapshot = async () => {
+      setIsSnapshotLoading(true);
+
+      try {
+        const response = await authedFetch(
+          requireCanvasSupabaseClient(supabase),
+          `/api/projects/${params.projectId}/snapshot`,
+          {
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json().catch(() => ({}))) as SnapshotRouteResponse;
+
+        if (!response.ok || !payload.data?.document) {
+          throw new Error(payload.error || "Unable to load the current canvas snapshot.");
+        }
+
+        const document = coerceCanvasSnapshotDocument(payload.data.document);
+        if (cancelled || requestId !== snapshotLoadRequestRef.current) {
+          return;
+        }
+
+        applyHydratedSnapshotState(document);
+        savedSnapshotFingerprintRef.current = createSnapshotFingerprint(document);
+        setCurrentSnapshotMeta(payload.data.snapshot ?? null);
+        setHasUnsavedSnapshotChanges(false);
+      } catch (error) {
+        if (cancelled || requestId !== snapshotLoadRequestRef.current) {
+          return;
+        }
+
+        const emptyDocument = coerceCanvasSnapshotDocument(undefined);
+        applyHydratedSnapshotState(emptyDocument);
+        savedSnapshotFingerprintRef.current = createSnapshotFingerprint(emptyDocument);
+        setCurrentSnapshotMeta(null);
+        setHasUnsavedSnapshotChanges(false);
+        showToast(
+          error instanceof Error
+            ? error.message
+            : "Unable to load the current canvas snapshot.",
+        );
+      } finally {
+        if (!cancelled && requestId === snapshotLoadRequestRef.current) {
+          setIsSnapshotLoading(false);
+        }
+      }
+    };
+
+    void loadSnapshot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.projectId, supabase]);
+
+  useEffect(() => {
+    if (!params.projectId || savedSnapshotFingerprintRef.current === null) {
+      setHasUnsavedSnapshotChanges(false);
+      return;
+    }
+
+    const currentFingerprint = createSnapshotFingerprint(
+      buildCanvasSnapshotWithGraph({
+        nodes,
+        edges,
+        activeGenerationTargetId,
+      }),
+    );
+    setHasUnsavedSnapshotChanges(savedSnapshotFingerprintRef.current !== currentFingerprint);
+  }, [activeGenerationTargetId, edges, nodes, params.projectId]);
 
   useEffect(() => {
     if (!pendingGenerationJob) return;
@@ -904,6 +1153,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
       pendingPresetGroupInsert,
+      isSnapshotLoading,
+      isSnapshotSaving,
+      currentSnapshotMeta,
+      hasUnsavedSnapshotChanges,
       brushMode,
       regionSelectionTool,
       brushSize,
@@ -991,6 +1244,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       generateConcept,
       generateAngles,
       applyQuickEdit,
+      saveSnapshot,
 
       // Library insert
       setSelectedLibraryAssetId,

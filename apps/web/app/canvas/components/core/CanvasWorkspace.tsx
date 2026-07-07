@@ -323,6 +323,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
 
           {/* Canvas board */}
           <CanvasBoard
+            projectId={projectId}
             language={state.language}
             onLanguageChange={actions.setLanguage}
             selectedItem={state.selectedItem}
@@ -351,12 +352,17 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onAddObject={() => actions.setShowAddObjectMenu(true)}
             onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
             onGenerate={actions.generateConcept}
+            onSaveSnapshot={actions.saveSnapshot}
             onToast={actions.showToast}
             onNodesChange={actions.setNodes}
             onEdgesChange={actions.setEdges}
             activeGenerationTargetId={state.activeGenerationTargetId}
             activeNodeId={state.activeNodeId}
             onSetActiveNode={actions.setActiveNodeId}
+            isSnapshotLoading={state.isSnapshotLoading}
+            isSnapshotSaving={state.isSnapshotSaving}
+            currentSnapshotMeta={state.currentSnapshotMeta}
+            hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
             canvasThemeColor={state.canvasThemeColor}
             onCanvasThemeChange={actions.setCanvasThemeColor}
             activeLeftSidebarPanel={state.leftSidebar.open ? state.leftSidebar.panel : null}

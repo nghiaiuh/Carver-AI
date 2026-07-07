@@ -9,7 +9,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Download, Group, History, Layers3, Menu, Sparkles, Ungroup, Zap } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  Group,
+  History,
+  Layers3,
+  LoaderCircle,
+  Menu,
+  Sparkles,
+  Ungroup,
+  Zap,
+} from "lucide-react";
 import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type {
   AddedObject,
@@ -54,6 +65,7 @@ import {
 } from "../../utils/presetGroupHelpers";
 
 type CanvasBoardProps = {
+  projectId?: string;
   language: CanvasLanguage;
   onLanguageChange: (language: CanvasLanguage) => void;
   selectedItem: SelectedItem;
@@ -82,12 +94,21 @@ type CanvasBoardProps = {
   onAddObject: () => void;
   onRealityCheck: () => void;
   onGenerate: () => void;
+  onSaveSnapshot: () => void;
   onToast: (message: string) => void;
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
   activeGenerationTargetId: string | null;
   activeNodeId: string | null;
   onSetActiveNode: (id: string) => void;
+  isSnapshotLoading: boolean;
+  isSnapshotSaving: boolean;
+  currentSnapshotMeta: {
+    snapshotId: string;
+    version: number;
+    createdAt: string;
+  } | null;
+  hasUnsavedSnapshotChanges: boolean;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
   activeLeftSidebarPanel: LeftSidebarPanelId | null;
@@ -325,6 +346,7 @@ function getPastedImageNodeSize(dimensions: { width: number; height: number } | 
 }
 
 export default function CanvasBoard({
+  projectId,
   language,
   onLanguageChange,
   selectedItem,
@@ -353,12 +375,17 @@ export default function CanvasBoard({
   onAddObject,
   onRealityCheck,
   onGenerate,
+  onSaveSnapshot,
   onToast,
   onNodesChange,
   onEdgesChange,
   activeGenerationTargetId,
   activeNodeId,
   onSetActiveNode,
+  isSnapshotLoading,
+  isSnapshotSaving,
+  currentSnapshotMeta,
+  hasUnsavedSnapshotChanges,
   canvasThemeColor,
   onCanvasThemeChange,
   activeLeftSidebarPanel,
@@ -1589,6 +1616,34 @@ export default function CanvasBoard({
     () => nodes.filter((node) => node.role !== "output").length,
     [nodes],
   );
+  const snapshotStatusText = useMemo(() => {
+    if (!projectId) {
+      return "Local canvas";
+    }
+
+    if (isSnapshotLoading) {
+      return "Loading snapshot";
+    }
+
+    if (isSnapshotSaving) {
+      return "Saving snapshot";
+    }
+
+    if (!currentSnapshotMeta) {
+      return hasUnsavedSnapshotChanges ? "Unsaved changes" : "Not saved yet";
+    }
+
+    return hasUnsavedSnapshotChanges
+      ? `Unsaved changes · v${currentSnapshotMeta.version}`
+      : `Saved · v${currentSnapshotMeta.version}`;
+  }, [
+    currentSnapshotMeta,
+    hasUnsavedSnapshotChanges,
+    isSnapshotLoading,
+    isSnapshotSaving,
+    projectId,
+  ]);
+  const canSaveSnapshot = Boolean(projectId) && !isSnapshotLoading && !isSnapshotSaving;
 
   const miniMapModel = useMemo(() => {
     const viewportWorldWidth = zoom > 0 ? containerSize.width / zoom : 0;
@@ -1782,7 +1837,7 @@ export default function CanvasBoard({
               )}
             </div>
             <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#166534]">
-              Auto Saved
+              {snapshotStatusText}
             </span>
             <ChevronDown className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
           </div>
@@ -1892,11 +1947,16 @@ export default function CanvasBoard({
             </button>
             <button
               type="button"
-              onClick={() => onToast("Snapshot timeline is the next UI pass")}
-              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
+              onClick={onSaveSnapshot}
+              disabled={!canSaveSnapshot}
+              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Layers3 className="h-4 w-4" aria-hidden="true" />
-              <span>Snapshot</span>
+              {isSnapshotSaving ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Layers3 className="h-4 w-4" aria-hidden="true" />
+              )}
+              <span>{isSnapshotSaving ? "Saving" : "Save Snapshot"}</span>
             </button>
             <button
               type="button"
@@ -2043,8 +2103,33 @@ export default function CanvasBoard({
       </div>
 
       <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-transparent bg-transparent px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-none backdrop-blur-0" data-canvas-ui="true">
-        <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
-        <span>30</span>
+        <span className="rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
+          {snapshotStatusText}
+        </span>
+        <button
+          type="button"
+          onClick={onSaveSnapshot}
+          disabled={!canSaveSnapshot}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--canvas-theme-text)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          title={
+            projectId
+              ? isSnapshotSaving
+                ? "Saving snapshot"
+                : "Save snapshot"
+              : "Open a project to save snapshots"
+          }
+        >
+          {isSnapshotSaving ? (
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          <span>{isSnapshotSaving ? "Saving" : "Save"}</span>
+        </button>
+        <div className="flex items-center gap-1">
+          <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
+          <span>30</span>
+        </div>
       </div>
 
       {/* Zoomable + pannable canvas layer */}
