@@ -159,9 +159,14 @@ export type CanvasGraphSnapshot = {
   activeGenerationTargetId: string | null;
 };
 
+export const CURRENT_CANVAS_SNAPSHOT_SCHEMA = "carver-canvas-v3";
+export const CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION = 3;
+export const CURRENT_CANVAS_SNAPSHOT_VERSION = 3;
+
 export type CanvasSnapshotDocument = {
-  schema: "carver-canvas-v3";
-  snapshotVersion: 3;
+  schema: typeof CURRENT_CANVAS_SNAPSHOT_SCHEMA;
+  schemaVersion: typeof CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION;
+  snapshotVersion: typeof CURRENT_CANVAS_SNAPSHOT_VERSION;
   backgroundAssetId?: string;
   camera: CanvasCameraState;
   objects: CanvasAssetPlacement[];
@@ -174,8 +179,9 @@ export type CanvasSnapshotDocument = {
 };
 
 export const createEmptyCanvasSnapshotDocument = (): CanvasSnapshotDocument => ({
-  schema: "carver-canvas-v3",
-  snapshotVersion: 3,
+  schema: CURRENT_CANVAS_SNAPSHOT_SCHEMA,
+  schemaVersion: CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION,
+  snapshotVersion: CURRENT_CANVAS_SNAPSHOT_VERSION,
   camera: {},
   objects: [],
   regions: [],
@@ -200,7 +206,11 @@ export const isCanvasSnapshotDocument = (value: unknown): value is CanvasSnapsho
   }
 
   const snapshot = value as Partial<CanvasSnapshotDocument>;
-  return snapshot.schema === "carver-canvas-v3" && snapshot.snapshotVersion === 3;
+  return (
+    snapshot.schema === CURRENT_CANVAS_SNAPSHOT_SCHEMA &&
+    snapshot.schemaVersion === CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION &&
+    snapshot.snapshotVersion === CURRENT_CANVAS_SNAPSHOT_VERSION
+  );
 };
 
 export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocument => {
@@ -215,6 +225,7 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
 
   const legacy = value as {
     schema?: string;
+    schemaVersion?: number;
     snapshotVersion?: number;
     backgroundAssetId?: string;
     camera?: CanvasCameraState;
@@ -223,11 +234,15 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
     locks?: SpatialLock[];
     references?: CanvasReferenceImage[];
     selection?: Partial<CanvasSelectionState>;
+    graph?: Partial<CanvasGraphSnapshot>;
     metadata?: { [key: string]: SerializableJson | undefined };
   };
 
   return {
     ...fallback,
+    schema: CURRENT_CANVAS_SNAPSHOT_SCHEMA,
+    schemaVersion: CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION,
+    snapshotVersion: CURRENT_CANVAS_SNAPSHOT_VERSION,
     backgroundAssetId: legacy.backgroundAssetId,
     camera: legacy.camera ?? fallback.camera,
     objects: legacy.objects ?? fallback.objects,
@@ -238,6 +253,14 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
       objectIds: legacy.selection?.objectIds ?? fallback.selection.objectIds,
       regionIds: legacy.selection?.regionIds ?? fallback.selection.regionIds,
       activeAssetIds: legacy.selection?.activeAssetIds ?? fallback.selection.activeAssetIds,
+    },
+    graph: {
+      nodes: Array.isArray(legacy.graph?.nodes) ? legacy.graph.nodes : fallback.graph.nodes,
+      edges: Array.isArray(legacy.graph?.edges) ? legacy.graph.edges : fallback.graph.edges,
+      activeGenerationTargetId:
+        typeof legacy.graph?.activeGenerationTargetId === "string"
+          ? legacy.graph.activeGenerationTargetId
+          : fallback.graph.activeGenerationTargetId,
     },
     metadata: legacy.metadata ?? {
       legacyCanvas: value as SerializableJson,

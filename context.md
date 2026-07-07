@@ -221,10 +221,19 @@ Shared snapshot schema already includes graph support.
 Look at:
 - `packages/shared/src/snapshot.ts`
 
+Current save/load path:
+- `apps/web/app/api/projects/[projectId]/snapshot/route.ts`
+  Loads the verified `projects.current_canvas_snapshot_id` snapshot and saves a new current snapshot.
+- `apps/web/lib/server/projectCanvasSnapshots.ts`
+  Owns project-scoped snapshot persistence helpers.
+- `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
+  Bootstraps the current project snapshot into canvas state and exposes manual save.
+
 Important fields:
 - `graph.nodes`
 - `graph.edges`
 - `graph.activeGenerationTargetId`
+- `schemaVersion`
 
 Backward compatibility expectation:
 - old snapshots without `graph` should still open
