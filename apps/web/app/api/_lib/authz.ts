@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { badRequest, serverError } from "./http";
+import { apiFailure } from "./http";
 import { getRequestContext } from "./auth";
 
 const UUID_PATTERN =
@@ -11,8 +11,8 @@ type NotFoundResult = {
   error: NextResponse;
 };
 
-const notFound = (message: string): NotFoundResult => ({
-  error: NextResponse.json({ error: message }, { status: 404 }),
+const notFoundResponse = (message: string, requestId: string): NotFoundResult => ({
+  error: apiFailure("RESOURCE_NOT_FOUND", message, 404, requestId),
 });
 
 export const isUuidLike = (value: string) => UUID_PATTERN.test(value.trim());
@@ -24,7 +24,7 @@ export async function requireRequestContext(request: Request) {
 export async function requireProjectOwner(context: RequestContext, projectId: string) {
   const normalizedProjectId = projectId.trim();
   if (!isUuidLike(normalizedProjectId)) {
-    return { error: badRequest("projectId is invalid") };
+    return { error: apiFailure("BAD_REQUEST", "projectId is invalid", 400, context.requestId) };
   }
 
   const { data: project, error } = await context.supabase
@@ -35,11 +35,11 @@ export async function requireProjectOwner(context: RequestContext, projectId: st
     .maybeSingle();
 
   if (error) {
-    return { error: serverError() };
+    return { error: apiFailure("INTERNAL_SERVER_ERROR", "Internal server error", 500, context.requestId) };
   }
 
   if (!project) {
-    return notFound("Project not found");
+    return notFoundResponse("Project not found", context.requestId);
   }
 
   return { project };
@@ -53,7 +53,7 @@ export async function requireProjectScopedJob(context: RequestContext, projectId
 
   const normalizedJobId = jobId.trim();
   if (!isUuidLike(normalizedJobId)) {
-    return { error: badRequest("jobId is invalid") };
+    return { error: apiFailure("BAD_REQUEST", "jobId is invalid", 400, context.requestId) };
   }
 
   const { data: job, error } = await context.supabase
@@ -63,14 +63,15 @@ export async function requireProjectScopedJob(context: RequestContext, projectId
     )
     .eq("id", normalizedJobId)
     .eq("project_id", projectId.trim())
+    .eq("created_by", context.user.id)
     .maybeSingle();
 
   if (error) {
-    return { error: serverError() };
+    return { error: apiFailure("INTERNAL_SERVER_ERROR", "Internal server error", 500, context.requestId) };
   }
 
   if (!job) {
-    return notFound("AI job not found");
+    return notFoundResponse("AI job not found", context.requestId);
   }
 
   return { project: projectResult.project, job };

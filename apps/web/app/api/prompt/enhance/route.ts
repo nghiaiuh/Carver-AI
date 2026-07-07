@@ -9,7 +9,8 @@
 import { NextResponse } from "next/server";
 import { enhancePrompt, type EnhanceMode } from "@carver/ai/prompt-engine";
 import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../_lib/authz";
-import { badRequest, readJsonObject, stringValue } from "../../_lib/http";
+import { apiFailure, badRequest, readJsonObject, stringValue } from "../../_lib/http";
+import { checkRateLimit } from "../../_lib/rateLimit";
 
 const MODE_VALUES: EnhanceMode[] = [
   "image_generation",
@@ -38,6 +39,15 @@ export async function POST(request: Request) {
   const context = await requireRequestContext(request);
   if ("error" in context) {
     return context.error;
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `prompt-enhance:${context.user.id}`,
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.allowed) {
+    return apiFailure("RATE_LIMITED", "Too many prompt enhance requests", 429, context.requestId);
   }
 
   const body = await readJsonObject(request);
@@ -93,12 +103,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to enhance prompt right now.";
-    return NextResponse.json(
-      {
-        success: false,
-        error: message,
-      },
-      { status: 500 },
-    );
+    return apiFailure("PROMPT_ENHANCE_FAILED", message, 500, context.requestId);
   }
 }

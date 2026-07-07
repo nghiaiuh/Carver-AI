@@ -11,11 +11,22 @@
 import { NextResponse } from "next/server";
 import { syncLibraryFromBucket } from "@carver/storage";
 import { requireRequestContext } from "../../_lib/authz";
+import { apiFailure } from "../../_lib/http";
+import { checkRateLimit } from "../../_lib/rateLimit";
 
 export async function POST(request: Request) {
   const context = await requireRequestContext(request);
   if ("error" in context) {
     return context.error;
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `library-sync:${context.user.id}`,
+    limit: 3,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.allowed) {
+    return apiFailure("RATE_LIMITED", "Too many library sync requests", 429, context.requestId);
   }
 
   try {
@@ -24,9 +35,11 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to sync the library." },
-      { status: 500 },
+    return apiFailure(
+      "LIBRARY_SYNC_FAILED",
+      error instanceof Error ? error.message : "Unable to sync the library.",
+      500,
+      context.requestId,
     );
   }
 }

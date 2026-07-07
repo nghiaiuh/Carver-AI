@@ -8,3 +8,4 @@
 export * from "./snapshot";
 export * from "./ai-jobs";
 export * from "./constants";
+export * from "./safe-logger";

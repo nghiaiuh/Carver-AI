@@ -7,6 +7,56 @@
 
 import { NextResponse } from "next/server";
 
+export type ApiSuccess<T> = {
+  success: true;
+  data: T;
+};
+
+export type ApiFailure = {
+  success: false;
+  code: string;
+  error: string;
+  requestId: string;
+};
+
+export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
+
+const REQUEST_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,128}$/;
+
+export const createRequestId = (request?: Request) => {
+  const forwardedRequestId = request?.headers.get("x-request-id")?.trim();
+  if (forwardedRequestId && REQUEST_ID_PATTERN.test(forwardedRequestId)) {
+    return forwardedRequestId;
+  }
+
+  return crypto.randomUUID();
+};
+
+export const apiSuccess = <T>(data: T, init?: ResponseInit) =>
+  NextResponse.json<ApiSuccess<T>>(
+    {
+      success: true,
+      data,
+    },
+    init,
+  );
+
+export const apiFailure = (
+  code: string,
+  error: string,
+  status: number,
+  requestId: string,
+) =>
+  NextResponse.json<ApiFailure>(
+    {
+      success: false,
+      code,
+      error,
+      requestId,
+    },
+    { status },
+  );
+
 export const readJsonObject = async (
   request: Request
 ): Promise<Record<string, unknown>> => {
@@ -45,7 +95,13 @@ export const stringArrayValue = (
 };
 
 export const badRequest = (message: string) =>
-  NextResponse.json({ error: message }, { status: 400 });
+  apiFailure("BAD_REQUEST", message, 400, createRequestId());
 
 export const serverError = () =>
-  NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  apiFailure("INTERNAL_SERVER_ERROR", "Internal server error", 500, createRequestId());
+
+export const badRequestResponse = (message: string, requestId: string) =>
+  apiFailure("BAD_REQUEST", message, 400, requestId);
+
+export const serverErrorResponse = (requestId: string) =>
+  apiFailure("INTERNAL_SERVER_ERROR", "Internal server error", 500, requestId);
