@@ -98,6 +98,27 @@ type CreateAiJobResponse = {
 
 type GetAiJobResponse = CreateAiJobResponse;
 
+function getTerminalGenerationStatusMessage(job: CarverAiJobRecord) {
+  if (job.status === "failed") {
+    return job.errorMessage || "AI generation failed.";
+  }
+
+  if (job.status === "cancelled") {
+    return "AI generation was cancelled.";
+  }
+
+  switch (job.jobResult?.stage) {
+    case "generated":
+      return "Generated image added to chat and canvas";
+    case "prompt_compiled":
+      return "Prompt compiled successfully, but no generated image was returned.";
+    case "brief_ready":
+      return "Generation brief is ready, but this job did not produce an image.";
+    default:
+      return "Generation completed";
+  }
+}
+
 // ── Seed data ─────────────────────────────────────────────────────────────────
 
 const INITIAL_MARKERS: Marker[] = [];
@@ -262,7 +283,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         setPendingGenerationJob((current) => (current?.jobId === job.id ? null : current));
 
         if (job.status === "failed") {
-          showToast(job.errorMessage || "AI generation failed.");
+          showToast(getTerminalGenerationStatusMessage(job));
+          return;
+        }
+
+        if (job.status === "cancelled") {
+          showToast(getTerminalGenerationStatusMessage(job));
           return;
         }
 
@@ -279,7 +305,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         }
 
         if (!generatedImage || !targetNode) {
-          showToast("Generation completed");
+          showToast(getTerminalGenerationStatusMessage(job));
           return;
         }
 
@@ -293,7 +319,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         setActiveGenerationTargetId(outputNode.id);
         setActiveNodeId(outputNode.id);
         setSelectedItem({ type: "node", id: outputNode.id });
-        showToast("Generated image added to chat and canvas");
+        showToast(getTerminalGenerationStatusMessage(job));
       } catch (error) {
         setPendingGenerationJob((current) =>
           current?.jobId === pendingGenerationJob.jobId ? null : current,
@@ -321,10 +347,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   // Hiển thị toast ngắn và tự ẩn sau một khoảng thời gian cố định.
-  const showToast = (message: string) => {
+  function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 1800);
-  };
+  }
 
   // Bật hoặc tắt panel trái theo tab người dùng chọn.
   const toggleLeftSidebarPanel = (panel: LeftSidebarPanelId) => {

@@ -211,6 +211,8 @@ Current direction:
   - web creates an `ai_job`
   - worker executes the generation
   - web polls the job result and renders chat/canvas outputs
+- current release-ready path is `generate_concept` and `refine_concept`
+- unsupported job kinds should fail fast instead of silently returning placeholder results
 
 ## 8. Snapshot/version compatibility
 
