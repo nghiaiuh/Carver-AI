@@ -14,6 +14,10 @@ import type {
 } from "@carver/shared";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { isPresetGroupNode } from "./presetGroupHelpers";
+import {
+  sanitizeSnapshotImageUrl,
+  sanitizeSourceImageForSnapshot,
+} from "./canvasSnapshotHydration";
 
 function normalizeRole(role?: string | null): ImageConnectionRole {
   return (role as ImageConnectionRole) ?? "generic_reference";
@@ -166,14 +170,16 @@ export function buildCanvasSnapshotWithGraph(params: {
         kind: isPresetGroupNode(node) ? "presetGroup" : "image",
         title: node.title,
         role: node.role,
-        imageUrl: node.imageUrl,
+        imageUrl:
+          sanitizeSnapshotImageUrl(node.imageUrl) ||
+          sanitizeSnapshotImageUrl(node.sourceImage?.url),
         prompt: node.prompt,
         x: node.x,
         y: node.y,
         width: node.width,
         height: node.height,
         scale: node.scale,
-        sourceImage: node.sourceImage,
+        sourceImage: sanitizeSourceImageForSnapshot(node.sourceImage),
         presetGroup: isPresetGroupNode(node)
           ? {
               category: node.presetGroup.category,
@@ -183,12 +189,14 @@ export function buildCanvasSnapshotWithGraph(params: {
                 id: child.id,
                 slot: child.slot,
                 label: child.label,
-                imageSrc: child.imageSrc,
+                imageSrc:
+                  sanitizeSnapshotImageUrl(child.imageSrc) ||
+                  sanitizeSnapshotImageUrl(child.sourceImage?.url),
                 prompt: child.prompt,
                 order: child.order,
                 assetId: child.assetId,
                 sourceFolderId: child.sourceFolderId,
-                sourceImage: child.sourceImage,
+                sourceImage: sanitizeSourceImageForSnapshot(child.sourceImage),
                 metadata: child.metadata,
               })),
             }
