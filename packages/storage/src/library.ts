@@ -259,6 +259,7 @@ const encodeImage = async (
 };
 
 const getFileExtension = (format: "png" | "jpeg") => (format === "png" ? "png" : "jpg");
+const MAX_IMAGE_DIMENSION = 8000;
 
 export const listLibrary = async (ownerId: string) => {
   const supabase = getSupabaseAdmin();
@@ -319,6 +320,14 @@ export const uploadLibraryAssets = async (params: {
   for (const file of params.files) {
     const sourceImage = sharp(file.bytes, { failOn: "none" }).rotate();
     const metadata = await sourceImage.metadata();
+    if (!metadata.width || !metadata.height) {
+      throw new Error("Unable to read image dimensions.");
+    }
+
+    if (metadata.width > MAX_IMAGE_DIMENSION || metadata.height > MAX_IMAGE_DIMENSION) {
+      throw new Error("Image dimensions are too large.");
+    }
+
     const targetFormat = selectTargetFormat(Boolean(metadata.hasAlpha));
     const extension = getFileExtension(targetFormat);
     const assetId = randomUUID();

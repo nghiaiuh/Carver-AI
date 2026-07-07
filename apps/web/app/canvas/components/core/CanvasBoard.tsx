@@ -168,6 +168,7 @@ type MarqueeSelectionState = {
 };
 
 type ImageSourceMetadata = {
+  assetId?: string;
   mimeType?: string;
   sizeBytes?: number;
   name?: string;
@@ -719,6 +720,7 @@ export default function CanvasBoard({
     if (!pendingLibraryInsertAsset) return;
 
     void addImageNode(pendingLibraryInsertAsset.src, pendingLibraryInsertAsset.title ?? "Library Asset", {
+      assetId: pendingLibraryInsertAsset.id,
       name: pendingLibraryInsertAsset.title,
       role: "reference",
       preserveTitle: true,

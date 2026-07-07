@@ -9,6 +9,8 @@
 import { NextResponse } from "next/server";
 import { listLibrary } from "@carver/storage";
 import { getRequestContext } from "../_lib/auth";
+import { apiFailure } from "../_lib/http";
+import { withGatewayLibraryFolderUrls } from "./_lib/libraryAssetUrls";
 
 export async function GET(request: Request) {
   const context = await getRequestContext(request);
@@ -18,11 +20,16 @@ export async function GET(request: Request) {
 
   try {
     const library = await listLibrary(context.user.id);
-    return NextResponse.json(library);
+    return NextResponse.json({
+      ...library,
+      folders: library.folders.map((folder) => withGatewayLibraryFolderUrls(request.url, folder)),
+    });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to load the library." },
-      { status: 500 },
+    return apiFailure(
+      "LIBRARY_LOAD_FAILED",
+      error instanceof Error ? error.message : "Unable to load the library.",
+      500,
+      context.requestId,
     );
   }
 }

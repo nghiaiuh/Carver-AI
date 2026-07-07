@@ -102,8 +102,24 @@ function sanitizeEdgeRole(value: unknown): ImageConnectionRole | undefined {
 
 export function sanitizeSnapshotImageUrl(url: unknown): string {
   const normalizedUrl = stringValue(url);
-  if (!normalizedUrl || normalizedUrl.startsWith("data:")) {
+  if (
+    !normalizedUrl ||
+    normalizedUrl.startsWith("data:") ||
+    normalizedUrl.startsWith("blob:") ||
+    normalizedUrl.startsWith("file:")
+  ) {
     return "";
+  }
+
+  try {
+    const parsed = new URL(normalizedUrl, "https://carver.local");
+    if (parsed.pathname.startsWith("/api/assets/") && parsed.pathname.endsWith("/content")) {
+      return normalizedUrl.startsWith("/")
+        ? parsed.pathname
+        : `${parsed.origin}${parsed.pathname}`;
+    }
+  } catch {
+    // Keep non-URL values as-is after the explicit unsafe scheme checks above.
   }
 
   return normalizedUrl;
@@ -117,6 +133,7 @@ function sanitizeSourceImage(sourceImage: unknown): CanvasSourceImage | undefine
   }
 
   return {
+    assetId: stringValue(source?.assetId) ?? undefined,
     url,
     width: typeof source?.width === "number" ? source.width : null,
     height: typeof source?.height === "number" ? source.height : null,
@@ -321,6 +338,7 @@ export function sanitizeSourceImageForSnapshot(
 
   return {
     url: sanitizedUrl,
+    assetId: sourceImage?.assetId,
     width: sourceImage?.width ?? null,
     height: sourceImage?.height ?? null,
     mimeType: sourceImage?.mimeType,

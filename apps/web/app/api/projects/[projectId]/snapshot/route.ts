@@ -9,6 +9,7 @@ import {
   loadCurrentProjectSnapshot,
   saveProjectSnapshot,
 } from "../../../../../lib/server/projectCanvasSnapshots";
+import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/snapshotAssetUrls";
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -44,7 +45,7 @@ export async function GET(
       success: true,
       data: {
         projectId,
-        document: loaded.document,
+        document: resolveCanvasSnapshotAssetUrls(request.url, loaded.document),
         snapshot: loaded.snapshot,
       },
     });

@@ -18,7 +18,7 @@ export type R2Env = {
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
-  publicBaseUrl: string;
+  publicBaseUrl: string | null;
 };
 
 const stripWrappingQuotes = (value: string) => value.replace(/^['"]|['"]$/g, "");
@@ -37,7 +37,7 @@ export const getR2Env = (env: Record<string, string | undefined> = process.env):
   accessKeyId: readRequired(env, "CLOUDFLARE_R2_ACCESS_KEY_ID"),
   secretAccessKey: readRequired(env, "CLOUDFLARE_R2_SECRET_ACCESS_KEY"),
   bucket: readRequired(env, "CLOUDFLARE_R2_BUCKET"),
-  publicBaseUrl: readRequired(env, "CLOUDFLARE_R2_PUBLIC_BASE_URL"),
+  publicBaseUrl: env.CLOUDFLARE_R2_PUBLIC_BASE_URL ? stripWrappingQuotes(env.CLOUDFLARE_R2_PUBLIC_BASE_URL) : null,
 });
 
 let r2Client: S3Client | null = null;
@@ -63,6 +63,10 @@ export const getR2Bucket = () => getR2Env().bucket;
 
 export const getR2PublicUrl = (key: string) => {
   const { publicBaseUrl } = getR2Env();
+  if (!publicBaseUrl) {
+    return `r2://${key}`;
+  }
+
   return new URL(key, publicBaseUrl.endsWith("/") ? publicBaseUrl : `${publicBaseUrl}/`).toString();
 };
 
@@ -105,7 +109,7 @@ export async function uploadR2Object(params: {
     Key: params.key,
     Body: params.body,
     ContentType: params.contentType,
-    CacheControl: params.cacheControl ?? "public, max-age=31536000, immutable",
+    CacheControl: params.cacheControl ?? "private, max-age=0, no-store",
   };
 
   await client.send(new PutObjectCommand(input));
@@ -167,7 +171,7 @@ export async function listR2Objects(params: { prefix?: string } = {}) {
   return items;
 }
 
-async function bodyToBuffer(body: GetObjectCommandOutput["Body"]) {
+async function bodyToBuffer(body: GetObjectCommandOutput["Body"]): Promise<Buffer> {
   if (!body) {
     throw new Error("Missing R2 object body.");
   }
@@ -193,7 +197,7 @@ async function bodyToBuffer(body: GetObjectCommandOutput["Body"]) {
   return Buffer.concat(chunks);
 }
 
-export async function getR2ObjectBuffer(key: string) {
+export async function getR2ObjectBuffer(key: string): Promise<Buffer> {
   const env = getR2Env();
   const client = getR2Client();
   const input: GetObjectCommandInput = {

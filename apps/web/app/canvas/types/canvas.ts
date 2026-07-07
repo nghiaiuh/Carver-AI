@@ -158,6 +158,7 @@ export type MaskHistory = {
 };
 
 export type CanvasSourceImage = {
+  assetId?: string;
   url: string;
   width: number | null;
   height: number | null;
