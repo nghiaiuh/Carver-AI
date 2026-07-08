@@ -12,7 +12,10 @@ import { executeGeneratedImageJob, prepareGenerationState } from "../../services
 
 export const handleRefineConceptJob = async (job: CarverAiJobPayload) => {
   try {
-    await startJob(job.jobId);
+    const started = await startJob(job.jobId);
+    if (!started) {
+      return;
+    }
 
     const preparedState = prepareGenerationState(job);
     const completedResult = await executeGeneratedImageJob(job, preparedState);

@@ -13,6 +13,11 @@ export type CarverJobKind =
   | "analyze_reference"
   | "export";
 
+export type CarverImageExecutionMode =
+  | "text_to_image"
+  | "image_edit"
+  | "region_edit";
+
 export type CarverEditIntent =
   | "generate"
   | "refine"
@@ -37,6 +42,7 @@ export type CanvasGenerationTarget = {
   nodeId: string;
   title: string;
   imageUrl: string;
+  assetId?: string;
   role: string;
   prompt: string | null;
 };
@@ -45,6 +51,7 @@ export type CanvasGenerationImageReference = {
   nodeId: string;
   title: string;
   imageUrl: string;
+  assetId?: string;
   role: CanvasReferenceRole | string;
   sourcePresetChildId?: string | null;
 };
@@ -56,6 +63,7 @@ export type CanvasGenerationPresetReference = {
   slot?: string | null;
   label: string;
   imageSrc: string;
+  assetId?: string;
   role: CanvasReferenceRole | string;
 };
 
@@ -72,12 +80,21 @@ export type GeneratedCanvasImage = {
   id: string;
   title: string;
   imageUrl: string;
+  expiresAt?: string;
   width: number | null;
   height: number | null;
   prompt: string;
   assetId?: string;
   mimeType?: string;
   provider?: string;
+};
+
+export type CreateAiJobMaskInput = {
+  assetId?: string;
+  dataUrl?: string;
+  width?: number;
+  height?: number;
+  selectionRatio?: number;
 };
 
 export type CanvasGenerationAssistantMessage = {
@@ -133,6 +150,7 @@ export type CreateAiJobRequest = {
   projectId: string;
   jobType: CarverJobKind;
   prompt: string;
+  executionMode?: CarverImageExecutionMode;
   idempotencyKey?: string;
   inputSnapshotId?: string;
   threadId?: string;
@@ -141,6 +159,7 @@ export type CreateAiJobRequest = {
   selection?: Partial<CanvasSnapshotDocument["selection"]>;
   snapshot?: CanvasSnapshotDocument;
   targetNodeId?: string;
+  mask?: CreateAiJobMaskInput;
   canvasGraphContext?: CanvasGenerationContext;
 };
 
@@ -155,12 +174,15 @@ export type CarverAiJobPayload = {
   projectId: string;
   userId: string;
   jobType: CarverJobKind;
+  executionMode: CarverImageExecutionMode;
   prompt: string;
   inputSnapshotId: string | null;
   threadId?: string | null;
   promptMode: "auto" | "review" | "expert";
   snapshot: CanvasSnapshotDocument;
   referenceAssetIds: string[];
+  inputAssetIds: string[];
   targetNodeId?: string;
+  maskAssetId?: string;
   canvasGraphContext?: CanvasGenerationContext;
 };

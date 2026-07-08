@@ -15,14 +15,23 @@ const objectValue = (value: unknown): Record<string, unknown> =>
 const markRunning = async (jobId: string) => {
   const supabase = getSupabaseAdmin();
 
-  await supabase
+  const { data, error } = await supabase
     .from("ai_jobs")
     .update({
       status: "running",
       error_code: null,
       error_message: null,
     })
-    .eq("id", jobId);
+    .eq("id", jobId)
+    .eq("status", "queued")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data?.id);
 };
 
 const loadForProcessing = async (jobId: string): Promise<CarverAiJobPayload | null> => {
@@ -30,7 +39,7 @@ const loadForProcessing = async (jobId: string): Promise<CarverAiJobPayload | nu
   const { data: job, error } = await supabase
     .from("ai_jobs")
     .select(
-      "id, project_id, thread_id, created_by, status, job_type, prompt, input_snapshot_id, job_payload, idempotency_key, target_node_id",
+      "id, project_id, thread_id, created_by, status, job_type, prompt, input_snapshot_id, input_asset_ids, job_payload, idempotency_key, target_node_id",
     )
     .eq("id", jobId)
     .maybeSingle();
@@ -39,7 +48,7 @@ const loadForProcessing = async (jobId: string): Promise<CarverAiJobPayload | nu
     throw error;
   }
 
-  if (!job || job.status === "succeeded") {
+  if (!job || job.status !== "queued") {
     return null;
   }
 
@@ -85,15 +94,24 @@ const loadForProcessing = async (jobId: string): Promise<CarverAiJobPayload | nu
       payload.promptMode === "review" || payload.promptMode === "expert"
         ? payload.promptMode
         : "auto",
+    executionMode:
+      payload.executionMode === "text_to_image" ||
+      payload.executionMode === "region_edit"
+        ? payload.executionMode
+        : "image_edit",
     snapshot,
     referenceAssetIds: Array.isArray(payload.referenceAssetIds)
       ? payload.referenceAssetIds.filter((item): item is string => typeof item === "string")
+      : [],
+    inputAssetIds: Array.isArray(job.input_asset_ids)
+      ? job.input_asset_ids.filter((item): item is string => typeof item === "string")
       : [],
     targetNodeId: typeof job.target_node_id === "string"
       ? job.target_node_id
       : typeof payload.targetNodeId === "string"
         ? payload.targetNodeId
         : undefined,
+    maskAssetId: typeof payload.maskAssetId === "string" ? payload.maskAssetId : undefined,
     canvasGraphContext: "target" in canvasGraphContext
       ? (canvasGraphContext as CreateAiJobRequest["canvasGraphContext"])
       : undefined,
@@ -102,7 +120,7 @@ const loadForProcessing = async (jobId: string): Promise<CarverAiJobPayload | nu
 
 const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult) => {
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("ai_jobs")
     .update({
       status: "succeeded",
@@ -111,10 +129,17 @@ const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult)
       output_asset_ids: result.jobResult.outputAssetIds,
       output_snapshot_id: result.jobResult.outputSnapshotId,
     })
-    .eq("id", jobId);
+    .eq("id", jobId)
+    .eq("status", "running")
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  if (!data?.id) {
+    throw new Error("AI job could not be marked succeeded from the running state.");
   }
 };
 

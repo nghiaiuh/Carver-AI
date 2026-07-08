@@ -9,7 +9,7 @@ import { aiJobRepository } from "../repositories/ai-job-repository";
 import type { PreparedGenerationJobResult } from "./generation-service";
 
 export const startJob = async (jobId: string) => {
-  await aiJobRepository.markRunning(jobId);
+  return aiJobRepository.markRunning(jobId);
 };
 
 export const succeedJob = async (jobId: string, result: PreparedGenerationJobResult) => {

@@ -97,7 +97,7 @@ export type CanvasRegion = {
 
 export type CanvasGraphSourceImage = {
   assetId?: string;
-  url: string;
+  url?: string;
   width?: number | null;
   height?: number | null;
   mimeType?: string;

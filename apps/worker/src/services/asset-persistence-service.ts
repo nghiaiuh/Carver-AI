@@ -7,7 +7,7 @@
 
 import type { GeneratedCanvasImage } from "@carver/shared";
 import { createGeneratedAsset } from "../repositories/asset-repository";
-import { getR2Bucket, uploadR2Object } from "@carver/storage";
+import { extensionForMimeType, getR2Bucket, uploadR2Object } from "@carver/storage";
 
 const slugifyFileBase = (value: string) =>
   value
@@ -26,12 +26,13 @@ export const persistGeneratedImageAsset = async (params: {
   prompt: string;
   title: string;
   buffer: Buffer;
-  mimeType: "image/png";
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
   height: number;
   provider: string;
 }) => {
   const assetId = params.jobId;
+  const fileExtension = extensionForMimeType(params.mimeType);
   const storagePath = [
     "users",
     params.ownerId,
@@ -39,7 +40,7 @@ export const persistGeneratedImageAsset = async (params: {
     params.projectId,
     "jobs",
     params.jobId,
-    `${slugifyFileBase(params.title)}.png`,
+    `${slugifyFileBase(params.title)}.${fileExtension}`,
   ].join("/");
 
   await uploadR2Object({

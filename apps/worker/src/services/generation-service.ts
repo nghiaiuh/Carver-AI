@@ -8,7 +8,6 @@
 import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
 import type {
-  CanvasGenerationAssistantMessage,
   CarverAiJobPayload,
   CarverAiJobResult,
   CarverCompiledPromptMeta,
@@ -17,6 +16,8 @@ import type {
 import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
 import { generateImageFromPrompt } from "../providers/openai/generate-image";
 import { persistGeneratedImageAsset } from "./asset-persistence-service";
+import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGenerationTargetImage } from "./job-image-sources";
+import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
@@ -88,27 +89,35 @@ export const prepareGenerationJobResult = (state: PreparedGenerationState): Prep
   }),
 });
 
-function buildGenerationAssistantMessage(params: {
-  generatedImage: Awaited<ReturnType<typeof persistGeneratedImageAsset>>["generatedImage"];
-}): CanvasGenerationAssistantMessage {
-  return {
-    id: `assistant-generation-${Date.now()}`,
-    role: "assistant",
-    content: "Generated a concept image from the selected canvas target and connected references.",
-    createdAt: new Date().toISOString(),
-    generatedImages: [params.generatedImage],
-  };
-}
-
 export const executeGeneratedImageJob = async (
   job: CarverAiJobPayload,
   state: PreparedGenerationState,
 ): Promise<PreparedGenerationJobResult> => {
   if (!state.finalPrompt) {
-    return prepareGenerationJobResult(state);
+    throw new Error("Image-generating jobs require a compiled prompt.");
   }
 
-  const providerImage = await generateImageFromPrompt(state.finalPrompt);
+  const [targetImage, referenceImages, maskImage] = await Promise.all([
+    resolveGenerationTargetImage(job),
+    resolveGenerationReferenceImages(job),
+    resolveGenerationMaskImage(job),
+  ]);
+
+  if ((job.executionMode === "image_edit" || job.executionMode === "region_edit") && !targetImage) {
+    throw new Error("Image edit jobs require a resolved target image.");
+  }
+
+  if (job.executionMode === "region_edit" && !maskImage) {
+    throw new Error("Region edit jobs require a resolved mask image.");
+  }
+
+  const providerImage = await generateImageFromPrompt({
+    prompt: state.finalPrompt,
+    mode: job.executionMode,
+    targetImage,
+    referenceImages,
+    maskImage,
+  });
   const persisted = await persistGeneratedImageAsset({
     jobId: job.jobId,
     projectId: job.projectId,
@@ -121,8 +130,23 @@ export const executeGeneratedImageJob = async (
     height: providerImage.height,
     provider: providerImage.provider,
   });
-  const assistantMessage = buildGenerationAssistantMessage({
-    generatedImage: persisted.generatedImage,
+
+  if (!persisted.assetId) {
+    throw new Error("Generated image persistence did not return an asset id.");
+  }
+
+  const assistantContent =
+    job.executionMode === "text_to_image"
+      ? "Generated an image from the current prompt."
+      : job.executionMode === "region_edit"
+        ? "Generated a region edit from the selected canvas target and mask."
+        : "Generated a concept image from the selected canvas target and connected references.";
+
+  const assistantMessage = await persistGeneratedAssistantMessage({
+    projectId: job.projectId,
+    threadId: job.threadId,
+    content: assistantContent,
+    generatedImages: [persisted.generatedImage],
   });
 
   return {

@@ -6,6 +6,7 @@
  */
 
 import {
+  type CarverImageExecutionMode,
   OPENAI_IMAGE_MODEL,
   OPENAI_IMAGE_OUTPUT_FORMAT,
   OPENAI_IMAGE_PARTIAL_IMAGES,
@@ -13,6 +14,7 @@ import {
   OPENAI_IMAGE_SIZE,
   OPENAI_IMAGES_URL,
 } from "@carver/shared";
+import { hasAllowedMagicBytes } from "@carver/storage";
 
 type OpenAIImageGenerationResponse = {
   data?: Array<{
@@ -27,12 +29,21 @@ type OpenAIImageGenerationResponse = {
 
 export type OpenAiGeneratedImage = {
   buffer: Buffer;
-  mimeType: "image/png";
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
   height: number;
   revisedPrompt: string | null;
   provider: string;
 };
+
+type ImageInput = {
+  buffer: Buffer;
+  mimeType: string;
+};
+
+function toBlobPart(buffer: Buffer) {
+  return new Uint8Array(buffer);
+}
 
 function parseImageSize(size: string): { width: number; height: number } {
   const [width, height] = size.split("x").map(Number);
@@ -51,35 +62,23 @@ async function imageUrlToBuffer(imageUrl: string) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-export async function generateImageFromPrompt(prompt: string): Promise<OpenAiGeneratedImage> {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is required to generate images.");
+function inferOutputMimeType(buffer: Buffer): OpenAiGeneratedImage["mimeType"] {
+  if (hasAllowedMagicBytes(buffer, "image/png")) {
+    return "image/png";
   }
 
-  const response = await fetch(OPENAI_IMAGES_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: OPENAI_IMAGE_MODEL,
-      prompt,
-      size: OPENAI_IMAGE_SIZE,
-      quality: OPENAI_IMAGE_QUALITY,
-      output_format: OPENAI_IMAGE_OUTPUT_FORMAT,
-      partial_images: OPENAI_IMAGE_PARTIAL_IMAGES,
-      n: 1,
-    }),
-  });
-
-  const payload = (await response.json().catch(() => ({}))) as OpenAIImageGenerationResponse;
-  if (!response.ok) {
-    throw new Error(payload.error?.message || "Image generation failed.");
+  if (hasAllowedMagicBytes(buffer, "image/webp")) {
+    return "image/webp";
   }
 
+  if (hasAllowedMagicBytes(buffer, "image/jpeg")) {
+    return "image/jpeg";
+  }
+
+  throw new Error("OpenAI returned image bytes with an unsupported format.");
+}
+
+async function parseGeneratedImage(payload: OpenAIImageGenerationResponse) {
   const firstImage = payload.data?.[0];
   if (!firstImage) {
     throw new Error("Image generation returned no image.");
@@ -95,13 +94,118 @@ export async function generateImageFromPrompt(prompt: string): Promise<OpenAiGen
     throw new Error("Image generation returned no image buffer.");
   }
 
+  return {
+    buffer,
+    revisedPrompt: firstImage.revised_prompt ?? null,
+  };
+}
+
+async function createImagesEditRequest(params: {
+  prompt: string;
+  targetImage: ImageInput;
+  referenceImages: ImageInput[];
+  maskImage?: ImageInput | null;
+}) {
+  const formData = new FormData();
+  formData.set("model", OPENAI_IMAGE_MODEL);
+  formData.set("prompt", params.prompt);
+  formData.set("size", OPENAI_IMAGE_SIZE);
+  formData.set("quality", OPENAI_IMAGE_QUALITY);
+  formData.set("output_format", OPENAI_IMAGE_OUTPUT_FORMAT);
+
+  formData.append(
+    "image[]",
+    new File([toBlobPart(params.targetImage.buffer)], "target.png", { type: params.targetImage.mimeType }),
+  );
+
+  params.referenceImages.forEach((image, index) => {
+    formData.append(
+      "image[]",
+      new File([toBlobPart(image.buffer)], `reference-${index + 1}.png`, { type: image.mimeType }),
+    );
+  });
+
+  if (params.maskImage) {
+    formData.set(
+      "mask",
+      new File([toBlobPart(params.maskImage.buffer)], "mask.png", { type: params.maskImage.mimeType }),
+    );
+  }
+
+  return formData;
+}
+
+export async function generateImageFromPrompt(params: {
+  prompt: string;
+  mode: CarverImageExecutionMode;
+  targetImage?: ImageInput | null;
+  referenceImages?: ImageInput[];
+  maskImage?: ImageInput | null;
+}): Promise<OpenAiGeneratedImage> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is required to generate images.");
+  }
+
+  const endpoint =
+    params.mode === "text_to_image"
+      ? OPENAI_IMAGES_URL
+      : OPENAI_IMAGES_URL.replace("/generations", "/edits");
+
+  if (params.mode !== "text_to_image" && !params.targetImage) {
+    throw new Error("Image edit requires a target image.");
+  }
+
+  const resolvedTargetImage = params.targetImage ?? null;
+
+  const requestBody =
+    params.mode === "text_to_image"
+      ? JSON.stringify({
+          model: OPENAI_IMAGE_MODEL,
+          prompt: params.prompt,
+          size: OPENAI_IMAGE_SIZE,
+          quality: OPENAI_IMAGE_QUALITY,
+          output_format: OPENAI_IMAGE_OUTPUT_FORMAT,
+          partial_images: OPENAI_IMAGE_PARTIAL_IMAGES,
+          n: 1,
+        })
+      : await createImagesEditRequest({
+          prompt: params.prompt,
+          targetImage: resolvedTargetImage as ImageInput,
+          referenceImages: params.referenceImages ?? [],
+          maskImage: params.maskImage,
+        });
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers:
+      requestBody instanceof FormData
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+    body: requestBody,
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as OpenAIImageGenerationResponse;
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "Image generation failed.");
+  }
+
+  const { buffer, revisedPrompt } = await parseGeneratedImage(payload);
+  const mimeType = inferOutputMimeType(buffer);
+
   const { width, height } = parseImageSize(OPENAI_IMAGE_SIZE);
   return {
     buffer,
-    mimeType: "image/png",
+    mimeType,
     width,
     height,
-    revisedPrompt: firstImage.revised_prompt ?? null,
+    revisedPrompt,
     provider: OPENAI_IMAGE_MODEL,
   };
 }
