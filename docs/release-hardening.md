@@ -30,6 +30,7 @@ Worker:
 - `CLOUDFLARE_R2_BUCKET`
 - `REDIS_URL` or `REDIS_HOST`
 - optional `AI_WORKER_CONCURRENCY`, `AI_JOB_ATTEMPTS`, `AI_JOB_BACKOFF_MS`
+- optional `LIBRARY_R2_SYNC_ENABLED`, `LIBRARY_SYNC_INTERVAL_MS`
 
 ## Production Smoke
 
@@ -38,6 +39,7 @@ Worker:
 - User A cannot read User B projects, jobs, library assets, chat, snapshots, or asset gateway URLs.
 - Library upload rejects SVG, wrong magic bytes, oversized files, and invalid dimensions.
 - Library list returns gateway URLs, not permanent public R2 URLs.
+- Worker syncs R2 library metadata automatically; frontend manual `/api/library/sync` returns `410`.
 - Snapshot load returns resolved gateway URLs for stable `assetId` refs.
 - Generate double-click returns one logical job through `idempotency_key`.
 - Worker queue payload contains only `jobId` plus non-sensitive metadata.

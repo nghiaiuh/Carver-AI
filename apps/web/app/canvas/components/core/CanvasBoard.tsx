@@ -109,6 +109,7 @@ type CanvasBoardProps = {
     createdAt: string;
   } | null;
   hasUnsavedSnapshotChanges: boolean;
+  creditsAmount: number | null;
   canvasThemeColor: string;
   onCanvasThemeChange: (color: string) => void;
   activeLeftSidebarPanel: LeftSidebarPanelId | null;
@@ -387,6 +388,7 @@ export default function CanvasBoard({
   isSnapshotSaving,
   currentSnapshotMeta,
   hasUnsavedSnapshotChanges,
+  creditsAmount,
   canvasThemeColor,
   onCanvasThemeChange,
   activeLeftSidebarPanel,
@@ -1646,6 +1648,7 @@ export default function CanvasBoard({
     projectId,
   ]);
   const canSaveSnapshot = Boolean(projectId) && !isSnapshotLoading && !isSnapshotSaving;
+  const creditsDisplayText = typeof creditsAmount === "number" ? String(creditsAmount) : "--";
 
   const miniMapModel = useMemo(() => {
     const viewportWorldWidth = zoom > 0 ? containerSize.width / zoom : 0;
@@ -1978,7 +1981,7 @@ export default function CanvasBoard({
             </button>
             <div className="ml-1 inline-flex items-center gap-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)]">
               <Zap className="h-4 w-4 fill-current" aria-hidden="true" />
-              <span>30 credits</span>
+              <span>{creditsDisplayText} credits</span>
             </div>
           </div>
         </div>
@@ -2130,7 +2133,7 @@ export default function CanvasBoard({
         </button>
         <div className="flex items-center gap-1">
           <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
-          <span>30</span>
+          <span>{creditsDisplayText}</span>
         </div>
       </div>
 

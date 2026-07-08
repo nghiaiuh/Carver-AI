@@ -23,6 +23,28 @@ function normalizeRole(role?: string | null): ImageConnectionRole {
   return (role as ImageConnectionRole) ?? "generic_reference";
 }
 
+function sanitizePersistedNodeImageUrl(node: CanvasNode) {
+  if (node.sourceImage?.assetId) {
+    return "";
+  }
+
+  return (
+    sanitizeSnapshotImageUrl(node.imageUrl) ||
+    sanitizeSnapshotImageUrl(node.sourceImage?.url)
+  );
+}
+
+function sanitizePersistedPresetImageUrl(child: CanvasPresetGroupNode["presetGroup"]["children"][number]) {
+  if (child.assetId || child.sourceImage?.assetId) {
+    return "";
+  }
+
+  return (
+    sanitizeSnapshotImageUrl(child.imageSrc) ||
+    sanitizeSnapshotImageUrl(child.sourceImage?.url)
+  );
+}
+
 export function getInboundEdgesForTarget(targetNodeId: string, edges: CanvasEdge[]) {
   return edges.filter((edge) => edge.targetId === targetNodeId);
 }
@@ -47,6 +69,7 @@ export function resolveConnectedImageReferences(
       nodeId: sourceNode.id,
       title: sourceNode.title,
       imageUrl: sourceNode.imageUrl,
+      assetId: sourceNode.sourceImage?.assetId,
       role: normalizeRole(edge.role),
       sourcePresetChildId: edge.sourcePresetChildId ?? null,
     });
@@ -80,15 +103,16 @@ export function resolveConnectedPresetReferences(
 
     const key = `${sourceNode.id}:${child.id}`;
     explicitChildKeys.add(key);
-    references.set(key, {
-      nodeId: sourceNode.id,
-      category: sourceNode.presetGroup.category,
-      childId: child.id,
-      slot: child.slot,
-      label: child.label,
-      imageSrc: child.imageSrc,
-      role: normalizeRole(edge.role ?? child.metadata?.roleHint),
-    });
+      references.set(key, {
+        nodeId: sourceNode.id,
+        category: sourceNode.presetGroup.category,
+        childId: child.id,
+        slot: child.slot,
+        label: child.label,
+        imageSrc: child.imageSrc,
+        assetId: child.assetId ?? child.sourceImage?.assetId,
+        role: normalizeRole(edge.role ?? child.metadata?.roleHint),
+      });
   }
 
   for (const edge of inboundEdges) {
@@ -109,6 +133,7 @@ export function resolveConnectedPresetReferences(
         slot: child.slot,
         label: child.label,
         imageSrc: child.imageSrc,
+        assetId: child.assetId ?? child.sourceImage?.assetId,
         role: normalizeRole(child.metadata?.roleHint ?? edge.role),
       });
     }
@@ -139,6 +164,7 @@ export function buildCanvasGenerationContext(
       nodeId: target.id,
       title: target.title,
       imageUrl: target.imageUrl,
+      assetId: target.sourceImage?.assetId,
       role: "direct_edit_target",
       prompt: promptText.trim() || target.prompt || null,
     },
@@ -170,9 +196,7 @@ export function buildCanvasSnapshotWithGraph(params: {
         kind: isPresetGroupNode(node) ? "presetGroup" : "image",
         title: node.title,
         role: node.role,
-        imageUrl:
-          sanitizeSnapshotImageUrl(node.imageUrl) ||
-          sanitizeSnapshotImageUrl(node.sourceImage?.url),
+        imageUrl: sanitizePersistedNodeImageUrl(node),
         prompt: node.prompt,
         x: node.x,
         y: node.y,
@@ -189,9 +213,7 @@ export function buildCanvasSnapshotWithGraph(params: {
                 id: child.id,
                 slot: child.slot,
                 label: child.label,
-                imageSrc:
-                  sanitizeSnapshotImageUrl(child.imageSrc) ||
-                  sanitizeSnapshotImageUrl(child.sourceImage?.url),
+                imageSrc: sanitizePersistedPresetImageUrl(child),
                 prompt: child.prompt,
                 order: child.order,
                 assetId: child.assetId,

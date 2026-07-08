@@ -128,12 +128,13 @@ export function sanitizeSnapshotImageUrl(url: unknown): string {
 function sanitizeSourceImage(sourceImage: unknown): CanvasSourceImage | undefined {
   const source = objectValue(sourceImage);
   const url = sanitizeSnapshotImageUrl(source?.url);
-  if (!url) {
+  const assetId = stringValue(source?.assetId) ?? undefined;
+  if (!url && !assetId) {
     return undefined;
   }
 
   return {
-    assetId: stringValue(source?.assetId) ?? undefined,
+    assetId,
     url,
     width: typeof source?.width === "number" ? source.width : null,
     height: typeof source?.height === "number" ? source.height : null,
@@ -332,12 +333,12 @@ export function sanitizeSourceImageForSnapshot(
   sourceImage?: CanvasSourceImage,
 ): CanvasGraphSourceImage | undefined {
   const sanitizedUrl = sanitizeSnapshotImageUrl(sourceImage?.url);
-  if (!sanitizedUrl) {
+  if (!sanitizedUrl && !sourceImage?.assetId) {
     return undefined;
   }
 
   return {
-    url: sanitizedUrl,
+    url: sanitizedUrl || undefined,
     assetId: sourceImage?.assetId,
     width: sourceImage?.width ?? null,
     height: sourceImage?.height ?? null,
