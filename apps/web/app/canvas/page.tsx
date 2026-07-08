@@ -15,17 +15,27 @@ function resolveProjectId(value: string | string[] | undefined) {
     : undefined;
 }
 
-export default function CanvasPage({
+type CanvasSearchParams = {
+  projectId?: string | string[];
+  project?: string | string[];
+};
+
+function isPromiseLike<T>(value: Promise<T> | T | undefined): value is Promise<T> {
+  return Boolean(value) && typeof (value as Promise<T>).then === "function";
+}
+
+export default async function CanvasPage({
   searchParams,
 }: {
-  searchParams?: {
-    projectId?: string | string[];
-    project?: string | string[];
-  };
+  searchParams?: Promise<CanvasSearchParams> | CanvasSearchParams;
 }) {
+  const resolvedSearchParams: CanvasSearchParams | undefined = isPromiseLike(searchParams)
+    ? await searchParams
+    : searchParams;
+
   const projectId =
-    resolveProjectId(searchParams?.projectId) ??
-    resolveProjectId(searchParams?.project);
+    resolveProjectId(resolvedSearchParams?.projectId) ??
+    resolveProjectId(resolvedSearchParams?.project);
 
   return <CanvasWorkspace projectId={projectId} />;
 }

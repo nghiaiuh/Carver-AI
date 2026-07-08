@@ -5,21 +5,13 @@
  * 3. Return the route UI for users.
  */
 
-import { ArrowRight, Eye, FileText, Leaf, Plus, Sparkles, Sprout, Video, Wand2 } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
+import { ArrowRight, Eye, FileText, Leaf, Sparkles, Sprout, Video, Wand2 } from "lucide-react";
 import HeroPromptBox from "./components/HeroPromptBox";
+import RecentProjectsSection from "./components/RecentProjectsSection";
 import { AnimatedSection, FilterBar, ReviewPanel } from "./gallery/components/GalleryComponents";
 import { GalleryShell, MagneticButton } from "./gallery/components/GalleryShell";
-import { projects } from "./gallery/data/galleryData";
 
 export default function HomePage() {
-  const recentProjects = [
-    { title: "Tropical Courtyard", date: "Updated Jun 08, 2026", image: projects[3].image, href: `/canvas?project=${projects[3].slug}` },
-    { title: "Koi Pond Residence", date: "Updated Jun 06, 2026", image: projects[1].image, href: `/canvas?project=${projects[1].slug}` },
-    { title: "Palm Arrival Walk", date: "Updated Jun 03, 2026", image: projects[2].image, href: `/canvas?project=${projects[2].slug}` },
-    { title: "Villa Concept Plan", date: "Updated May 31, 2026", image: projects[0].image, href: `/canvas?project=${projects[0].slug}` },
-  ];
   const promptTypes = [
     { label: "AI Plant Mix", Icon: Sparkles, active: true },
     { label: "3D Concept", Icon: Wand2, active: false },
@@ -65,38 +57,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mt-24">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-2xl font-black tracking-[-0.04em]">Recent Projects</h2>
-              <a href="/submit" className="inline-flex items-center gap-2 text-sm font-black text-black/42 transition hover:text-black">
-                See All
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </a>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <Link href="/canvas" className="flex min-h-[216px] flex-col justify-between rounded-[1.75rem] border border-dashed border-black/12 bg-white/35 p-6 transition hover:border-[#2f7a4f]/40 hover:bg-white/60">
-                <span className="grid flex-1 place-items-center text-black/35">
-                  <Plus className="h-8 w-8" aria-hidden="true" />
-                </span>
-                <span className="text-lg font-black">New Project</span>
-              </Link>
-              {recentProjects.map((project) => (
-                <Link key={project.title} href={project.href} className="group">
-                  <div className="relative aspect-[1.75/1] overflow-hidden rounded-[1.5rem] border border-black/10 bg-white shadow-lg shadow-black/[0.04]">
-                    <Image
-                      src={project.image}
-                      alt=""
-                      fill
-                      sizes="(min-width: 1280px) 20vw, (min-width: 768px) 50vw, 100vw"
-                      className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                    />
-                  </div>
-                  <h3 className="mt-3 text-lg font-black leading-tight">{project.title}</h3>
-                  <p className="mt-1 text-sm font-bold text-black/38">{project.date}</p>
-                </Link>
-              ))}
-            </div>
-          </div>
+          <RecentProjectsSection />
         </div>
       </section>
 

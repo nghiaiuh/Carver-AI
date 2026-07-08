@@ -11,6 +11,28 @@ import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
 import { readJsonObject, serverError, stringValue } from "../_lib/http";
 
+export async function GET(request: Request) {
+  const context = await getRequestContext(request);
+  if ("error" in context) {
+    return context.error;
+  }
+
+  const { supabase, user } = context;
+  const { data: projects, error } = await supabase
+    .from("projects")
+    .select("id, name, description, status, current_canvas_snapshot_id, landscape_goal, created_at, updated_at")
+    .eq("owner_id", user.id)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    return serverError();
+  }
+
+  return NextResponse.json({
+    projects: projects ?? [],
+  });
+}
+
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
   if ("error" in context) {
