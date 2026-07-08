@@ -8,6 +8,7 @@
 import { registerAiJobWorkerEvents } from "./queue/events";
 import { createAiJobWorker } from "./queue/worker";
 import { validateWorkerEnv } from "./config/worker-env";
+import { startLibrarySyncScheduler } from "./services/library-sync-service";
 import { createSafeLogger } from "@carver/shared";
 
 const logger = createSafeLogger("worker.bootstrap");
@@ -15,6 +16,7 @@ const logger = createSafeLogger("worker.bootstrap");
 validateWorkerEnv();
 logger.info("worker starting");
 const aiJobWorker = createAiJobWorker();
+const stopLibrarySyncScheduler = startLibrarySyncScheduler();
 
 registerAiJobWorkerEvents(aiJobWorker);
 
@@ -26,6 +28,7 @@ void aiJobWorker;
 
 async function shutdown(signal: string) {
   logger.info("worker shutdown requested", { signal });
+  stopLibrarySyncScheduler();
   await aiJobWorker.close();
   logger.info("worker shutdown complete", { signal });
   process.exit(0);

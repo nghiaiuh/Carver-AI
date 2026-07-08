@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { EnhanceMode, EnhanceProjectContext } from "./enhanceTypes";
 import { createOpenAITextResponse } from "../../server/openaiChat";
 
