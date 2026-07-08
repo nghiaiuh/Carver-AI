@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { enhancePrompt, type EnhanceMode } from "@carver/ai/prompt-engine";
 import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../_lib/authz";
+import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../_lib/credits";
 import { apiFailure, badRequest, readJsonObject, stringValue } from "../../_lib/http";
 import { checkRateLimit } from "../../_lib/rateLimit";
 
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
     return badRequest("prompt is required");
   }
 
+  let reservedCredits = false;
+
   try {
     const projectId = stringValue(body, "projectId");
     const projectContext = objectValue(body, "projectContext");
@@ -88,6 +91,12 @@ export async function POST(request: Request) {
         })()
       : undefined;
 
+    const creditReservation = await reserveUserCredits(context, AI_CREDIT_COSTS.promptEnhance);
+    if ("error" in creditReservation) {
+      return creditReservation.error;
+    }
+    reservedCredits = true;
+
     const enhanced = await enhancePrompt({
       prompt: rawPrompt,
       mode: modeValue(body),
@@ -99,9 +108,15 @@ export async function POST(request: Request) {
     // TODO: Persist enhance-prompt history here once the project adds dedicated prompt history storage.
     return NextResponse.json({
       success: true,
-      data: enhanced,
+      data: {
+        ...enhanced,
+        creditsRemaining: creditReservation.creditsRemaining,
+      },
     });
   } catch (error) {
+    if (reservedCredits) {
+      await restoreUserCredits(context, AI_CREDIT_COSTS.promptEnhance).catch(() => undefined);
+    }
     const message = error instanceof Error ? error.message : "Unable to enhance prompt right now.";
     return apiFailure("PROMPT_ENHANCE_FAILED", message, 500, context.requestId);
   }

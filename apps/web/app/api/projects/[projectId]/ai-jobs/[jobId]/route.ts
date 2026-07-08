@@ -65,6 +65,7 @@ export async function GET(
         jobResult: resolveAiJobResultAssetUrls(
           request.url,
           isCarverAiJobResult(job.job_result) ? job.job_result : null,
+          job.status,
         ),
       } satisfies CarverAiJobRecord,
     },
