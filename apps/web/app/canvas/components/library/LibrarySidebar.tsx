@@ -42,7 +42,6 @@ type LibrarySidebarProps = {
     replaceAllChildren?: boolean;
   }) => void;
   onUploadAssets: (folderId: string, files: FileList | File[]) => void;
-  onSyncLibraryFromBucket: () => Promise<void> | void;
   onClose: () => void;
   onToast: (message: string) => void;
 };
@@ -54,6 +53,35 @@ type ReferenceTemplate = {
   previewSrc: string;
   originalSrc: string;
 };
+
+function TemplatePreviewImage({
+  previewSrc,
+  originalSrc,
+  label,
+}: {
+  previewSrc: string;
+  originalSrc: string;
+  label: string;
+}) {
+  const [src, setSrc] = useState(previewSrc);
+
+  useEffect(() => {
+    setSrc(previewSrc);
+  }, [previewSrc]);
+
+  return (
+    <img
+      src={src}
+      alt={label}
+      className="absolute inset-0 h-full w-full object-cover"
+      onError={() => {
+        if (src !== originalSrc) {
+          setSrc(originalSrc);
+        }
+      }}
+    />
+  );
+}
 
 type SlotConfig = { id: string; label: string };
 type GroupConfig = { label: string; slots: SlotConfig[] };
@@ -347,7 +375,6 @@ export default function LibrarySidebar({
   onAddAssetToCanvas,
   onUpsertPresetGroup,
   onUploadAssets,
-  onSyncLibraryFromBucket,
   onClose,
   onToast,
 }: LibrarySidebarProps) {
@@ -357,7 +384,6 @@ export default function LibrarySidebar({
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
   const [referenceTab, setReferenceTab] = useState<ReferenceTabId>("presets");
   const [flyoutBounds, setFlyoutBounds] = useState<{ top: number; left: number; height: number } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // Storing templates selected for each section category
   const [selectedTemplates, setSelectedTemplates] = useState<
@@ -477,20 +503,6 @@ export default function LibrarySidebar({
     syncSectionGroup(categoryId, nextSectionSelections);
   };
 
-  const handleSyncLibraryFromBucket = async () => {
-    if (isSyncing) return;
-
-    setIsSyncing(true);
-    try {
-      await onSyncLibraryFromBucket();
-      onToast("Synced R2 library to Supabase");
-    } catch (error) {
-      onToast(error instanceof Error ? error.message : "Unable to sync library.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   useLayoutEffect(() => {
     if (!openSection || !activeSlotId) {
       return;
@@ -599,15 +611,6 @@ export default function LibrarySidebar({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSyncLibraryFromBucket}
-                disabled={isSyncing}
-                className="rounded-[12px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 text-xs font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                title="Sync R2 bucket to library"
-              >
-                {isSyncing ? "Syncing..." : "Sync R2"}
-              </button>
               <button
                 type="button"
                 onClick={onClose}
@@ -853,10 +856,10 @@ function ReferenceFlyout({
                         : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)]",
                     ].join(" ")}
                   >
-                    <img
-                      src={template.previewSrc}
-                      alt={template.label}
-                      className="absolute inset-0 h-full w-full object-cover"
+                    <TemplatePreviewImage
+                      previewSrc={template.previewSrc}
+                      originalSrc={template.originalSrc}
+                      label={template.label}
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-[var(--canvas-theme-surface-panel)]/88 px-2 py-1.5">
                       <p className="text-[10px] font-medium leading-none text-[var(--canvas-theme-text)]">{template.label}</p>

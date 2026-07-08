@@ -8,3 +8,4 @@
 export * from "./r2";
 export * from "./library";
 export * from "./librarySync";
+export * from "./imageData";

@@ -13,9 +13,64 @@ import { isUuidLike } from "../../../_lib/authz";
 const logger = createSafeLogger("web.assets.content");
 
 type ResolvedAssetObject = {
-  storagePath: string;
+  source: "project-asset" | "library-asset";
+  storagePaths: string[];
   mimeType: string | null;
 };
+
+const dedupeStoragePaths = (paths: Array<string | null | undefined>) =>
+  [...new Set(paths.map((path) => path?.trim()).filter((path): path is string => Boolean(path)))];
+
+function isMissingR2ObjectError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeError = error as {
+    name?: string;
+    Code?: string;
+    message?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+
+  if (maybeError.$metadata?.httpStatusCode === 404) {
+    return true;
+  }
+
+  return (
+    maybeError.name === "NoSuchKey" ||
+    maybeError.Code === "NoSuchKey" ||
+    maybeError.message?.includes("NoSuchKey") === true
+  );
+}
+
+function classifyR2AccessError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return "ASSET_DELIVERY_FAILED";
+  }
+
+  const maybeError = error as {
+    name?: string;
+    Code?: string;
+    message?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+
+  if (maybeError.message?.includes("Missing required environment variable:")) {
+    return "ASSET_STORAGE_CONFIG_MISSING";
+  }
+
+  if (
+    maybeError.$metadata?.httpStatusCode === 403 ||
+    maybeError.name === "AccessDenied" ||
+    maybeError.Code === "AccessDenied" ||
+    maybeError.message?.includes("AccessDenied")
+  ) {
+    return "ASSET_STORAGE_ACCESS_FAILED";
+  }
+
+  return "ASSET_DELIVERY_FAILED";
+}
 
 function corsHeaders(request: Request, contentType: string) {
   const headers = new Headers({
@@ -51,7 +106,8 @@ async function resolveAssetObject(
 
   if (asset) {
     return {
-      storagePath: asset.storage_path,
+      source: "project-asset",
+      storagePaths: dedupeStoragePaths([asset.storage_path]),
       mimeType: asset.mime_type,
     };
   }
@@ -71,13 +127,26 @@ async function resolveAssetObject(
   }
 
   const storagePathByVariant = {
-    thumb: libraryAsset.thumb_storage_path,
-    preview: libraryAsset.preview_storage_path,
-    original: libraryAsset.original_storage_path,
+    thumb: dedupeStoragePaths([
+      libraryAsset.thumb_storage_path,
+      libraryAsset.preview_storage_path,
+      libraryAsset.original_storage_path,
+    ]),
+    preview: dedupeStoragePaths([
+      libraryAsset.preview_storage_path,
+      libraryAsset.original_storage_path,
+      libraryAsset.thumb_storage_path,
+    ]),
+    original: dedupeStoragePaths([
+      libraryAsset.original_storage_path,
+      libraryAsset.preview_storage_path,
+      libraryAsset.thumb_storage_path,
+    ]),
   };
 
   return {
-    storagePath: storagePathByVariant[variant],
+    source: "library-asset",
+    storagePaths: storagePathByVariant[variant],
     mimeType: libraryAsset.mime_type,
   };
 }
@@ -105,30 +174,72 @@ export async function GET(
   const token = url.searchParams.get("token") ?? "";
 
   if (!verifyAssetDeliveryToken({ assetId, variant, expiresAt, token })) {
+    logger.warn("asset delivery token invalid", {
+      requestId,
+      assetId,
+      variant,
+    });
     return apiFailure("ASSET_NOT_FOUND", "Asset not found", 404, requestId);
   }
 
   try {
     const asset = await resolveAssetObject(assetId, variant);
     if (!asset) {
-      return apiFailure("ASSET_NOT_FOUND", "Asset not found", 404, requestId);
+      logger.warn("asset metadata missing", {
+        requestId,
+        assetId,
+        variant,
+      });
+      return apiFailure("ASSET_METADATA_NOT_FOUND", "Asset not found", 404, requestId);
     }
 
-    const body = await getR2ObjectBuffer(asset.storagePath);
+    let body: Buffer | null = null;
+    for (const storagePath of asset.storagePaths) {
+      try {
+        body = await getR2ObjectBuffer(storagePath);
+        break;
+      } catch (error) {
+        if (!isMissingR2ObjectError(error)) {
+          throw error;
+        }
+
+        logger.warn("asset variant fallback", {
+          requestId,
+          assetId,
+          source: asset.source,
+          variant,
+          attemptedPathCount: asset.storagePaths.length,
+        });
+      }
+    }
+
+    if (!body) {
+      logger.warn("asset object missing", {
+        requestId,
+        assetId,
+        source: asset.source,
+        variant,
+        attemptedPathCount: asset.storagePaths.length,
+      });
+      return apiFailure("ASSET_OBJECT_NOT_FOUND", "Asset not found", 404, requestId);
+    }
+
     return new Response(Uint8Array.from(body), {
       status: 200,
       headers: corsHeaders(request, asset.mimeType ?? "application/octet-stream"),
     });
-  } catch {
+  } catch (error) {
+    const errorCode = classifyR2AccessError(error);
     logger.error("asset delivery failed", {
       requestId,
       assetId,
       variant,
+      error,
     });
     return NextResponse.json(
       {
         success: false,
-        code: "ASSET_DELIVERY_FAILED",
+        code: errorCode,
         error: "Unable to load asset",
         requestId,
       },

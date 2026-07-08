@@ -352,26 +352,6 @@ export function useCanvasLibrary() {
     return uploaded[0] ?? null;
   };
 
-  const syncLibraryFromBucket = async () => {
-    const client = requireLibraryClient(supabase);
-    const response = await authedFetch(client, "/api/library/sync", {
-      method: "POST",
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      summary?: {
-        createdAssets?: number;
-        createdFolders?: number;
-      };
-      error?: string;
-    };
-
-    if (!response.ok) {
-      throw new Error(payload.error || "Unable to sync the library.");
-    }
-
-    setFolders(await refreshLibrary(client));
-  };
-
   return {
     folders,
     activeFolder,
@@ -419,6 +399,5 @@ export function useCanvasLibrary() {
     removeAssetFromFolder,
     uploadAssetsToFolder,
     addAiResultToLibrary,
-    syncLibraryFromBucket,
   };
 }

@@ -6,9 +6,14 @@ import { buildAssetContentUrl } from "./assetDelivery";
 export function resolveAiJobResultAssetUrls(
   requestUrl: string,
   result: CarverAiJobResult | null,
+  jobStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled",
 ): CarverAiJobResult | null {
   if (!result) {
     return null;
+  }
+
+  if (jobStatus && jobStatus !== "succeeded") {
+    return result;
   }
 
   const resolveImage = <T extends { assetId?: string; imageUrl: string }>(image: T): T => {
@@ -16,12 +21,15 @@ export function resolveAiJobResultAssetUrls(
       return image;
     }
 
+    const signed = buildAssetContentUrl(requestUrl, {
+      assetId: image.assetId,
+      variant: "original",
+    });
+
     return {
       ...image,
-      imageUrl: buildAssetContentUrl(requestUrl, {
-        assetId: image.assetId,
-        variant: "original",
-      }).url,
+      imageUrl: signed.url,
+      expiresAt: signed.expiresAt,
     };
   };
 
