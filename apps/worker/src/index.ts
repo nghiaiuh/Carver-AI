@@ -8,13 +8,21 @@
 import { registerAiJobWorkerEvents } from "./queue/events";
 import { createAiJobWorker } from "./queue/worker";
 import { validateWorkerEnv } from "./config/worker-env";
+import { loadWorkerEnvFiles } from "./config/load-worker-env";
 import { startLibrarySyncScheduler } from "./services/library-sync-service";
 import { createSafeLogger } from "@carver/shared";
+import { describeRedisConnection } from "@carver/queue";
 
 const logger = createSafeLogger("worker.bootstrap");
 
+const loadedEnvFiles = loadWorkerEnvFiles();
+if (loadedEnvFiles.length > 0) {
+  logger.info("worker loaded env files", { files: loadedEnvFiles });
+}
+
 validateWorkerEnv();
 logger.info("worker starting");
+logger.info("worker redis connection", describeRedisConnection());
 const aiJobWorker = createAiJobWorker();
 const stopLibrarySyncScheduler = startLibrarySyncScheduler();
 

@@ -13,7 +13,7 @@ export { Queue, Worker, QueueEvents };
 export const AI_JOB_QUEUE_NAME = "carver-ai-jobs";
 export const AI_JOB_QUEUE_EVENT_NAME = "carver-ai-job";
 
-const createRedisConnection = () => {
+const resolveRedisConnection = () => {
   if (process.env.REDIS_URL) {
     const redisUrl = new URL(process.env.REDIS_URL);
     return {
@@ -33,8 +33,21 @@ const createRedisConnection = () => {
   };
 };
 
+export const describeRedisConnection = () => {
+  const connection = resolveRedisConnection();
+
+  return {
+    host: connection.host,
+    port: connection.port,
+    hasUsername: Boolean(connection.username),
+    hasPassword: Boolean(connection.password),
+    tls: Boolean(connection.tls),
+    source: process.env.REDIS_URL ? "REDIS_URL" : "REDIS_HOST/REDIS_PORT",
+  };
+};
+
 export const defaultQueueOptions = {
-  connection: createRedisConnection(),
+  connection: resolveRedisConnection(),
   defaultJobOptions: {
     attempts: Number(process.env.AI_JOB_ATTEMPTS ?? 3),
     backoff: {
