@@ -1,20 +1,26 @@
 /*
  * Flow: Renders the canvas AI chat panel.
- * 1. Load persisted chat history for the current canvas.
- * 2. Let the user send messages to the backend chat route.
- * 3. Show assistant replies, loading states, and friendly errors inline.
+ * 1. Load persisted chat history for the current project.
+ * 2. Let the user send text chat or image-generation requests through `/api/chat`.
+ * 3. Poll queued generation jobs and render images back into chat.
  */
 
 "use client";
 
 import type {
   CanvasGenerationAssistantMessage,
+  CanvasGenerationContext,
   CanvasGenerationImageReference,
   CanvasGenerationPresetReference,
+  CanvasSnapshotDocument,
+  CarverAiJobRecord,
   GeneratedCanvasImage,
 } from "@carver/shared";
+import { DEFAULT_OPENAI_CHAT_MODEL, OPENAI_CHAT_MODEL_OPTIONS } from "../../../../lib/openaiChatModels";
+import { getBrowserAuthClient } from "../../../components/auth/authClient";
 import {
   ArrowRight,
+  ChevronDown,
   LoaderCircle,
   Paperclip,
   Plus,
@@ -30,15 +36,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type AiChatSidebarProps = {
   canvasId?: string;
   projectId?: string;
+  targetNodeId?: string | null;
   targetTitle?: string | null;
   targetImageUrl?: string | null;
   targetReferenceCount?: number;
   targetPresetCount?: number;
+  generationContext?: CanvasGenerationContext | null;
+  generationSnapshot?: CanvasSnapshotDocument | null;
   connectedImageReferences?: CanvasGenerationImageReference[];
   connectedPresetReferences?: CanvasGenerationPresetReference[];
   generationAssistantMessages?: CanvasGenerationAssistantMessage[];
   draft: string;
   onDraftChange: (value: string) => void;
+  onCreditsChange?: (creditsRemaining: number) => void;
+  onGenerationComplete?: (params: {
+    job: CarverAiJobRecord;
+    targetNodeId?: string | null;
+  }) => void;
   onClearLinkedImage: () => void;
   onClose: () => void;
   onToast: (message: string) => void;
@@ -63,7 +77,7 @@ type ChatMessage = {
   content: string;
   createdAt: string;
   generatedImages?: GeneratedCanvasImage[];
-  status?: "error";
+  status?: "error" | "pending";
 };
 
 type ChatRouteMessage = {
@@ -74,6 +88,23 @@ type ChatRouteMessage = {
   projectId?: string;
   canvasId?: string;
   generatedImages?: GeneratedCanvasImage[];
+};
+
+type ChatRouteResponse = {
+  mode?: "chat" | "generation";
+  error?: string;
+  userMessage?: ChatRouteMessage;
+  assistantMessage?: ChatRouteMessage;
+  job?: CarverAiJobRecord;
+  creditsRemaining?: number | null;
+};
+
+type GetAiJobResponse = {
+  success?: boolean;
+  data?: {
+    job?: CarverAiJobRecord;
+  };
+  error?: string;
 };
 
 type EnhancePromptResult = {
@@ -92,9 +123,12 @@ type EnhancePromptResult = {
   fallbackError: string | null;
   attemptedAiFallback: boolean;
   scoringReasons: string[];
+  creditsRemaining?: number;
 };
 
 const DEFAULT_CANVAS_ID = "canvas-main";
+const CHAT_MODEL_STORAGE_KEY = "carver-chat-model";
+const PROJECT_REQUIRED_MESSAGE = "Create or open a project before using AI chat.";
 
 function formatPresetReferenceLabel(reference: CanvasGenerationPresetReference) {
   if (reference.slot?.trim()) {
@@ -102,6 +136,44 @@ function formatPresetReferenceLabel(reference: CanvasGenerationPresetReference) 
   }
 
   return `${reference.label} (${reference.category})`;
+}
+
+function mapRouteMessage(message: ChatRouteMessage): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    generatedImages: message.generatedImages,
+  };
+}
+
+function replaceMessage(messages: ChatMessage[], placeholderId: string, nextMessage: ChatMessage) {
+  return [
+    ...messages.filter((message) => message.id !== placeholderId),
+    nextMessage,
+  ];
+}
+
+async function getAuthorizedHeaders(init?: HeadersInit) {
+  const client = getBrowserAuthClient();
+  if (!client) {
+    throw new Error("Please sign in to use Carver AI.");
+  }
+
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    throw new Error(error.message || "Unable to read the current session.");
+  }
+
+  const accessToken = data.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Please sign in to use Carver AI.");
+  }
+
+  const headers = new Headers(init);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+  return headers;
 }
 
 function buildPromptContent(params: {
@@ -207,18 +279,27 @@ async function resolveImageUrlForChat(imageUrl: string) {
   return imageUrl;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export default function AiChatSidebar({
   canvasId = DEFAULT_CANVAS_ID,
   projectId,
+  targetNodeId,
   targetTitle,
   targetImageUrl,
   targetReferenceCount = 0,
   targetPresetCount = 0,
+  generationContext = null,
+  generationSnapshot = null,
   connectedImageReferences = [],
   connectedPresetReferences = [],
   generationAssistantMessages = [],
   draft,
   onDraftChange,
+  onCreditsChange,
+  onGenerationComplete,
   onClearLinkedImage,
   onClose,
   onToast,
@@ -228,6 +309,7 @@ export default function AiChatSidebar({
   const [historyLoading, setHistoryLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_OPENAI_CHAT_MODEL);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastOriginalPrompt, setLastOriginalPrompt] = useState<string | null>(null);
   const [enhanceMeta, setEnhanceMeta] = useState<EnhancePromptResult | null>(null);
@@ -235,11 +317,13 @@ export default function AiChatSidebar({
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<PromptAttachment[]>([]);
+  const activeGenerationPollsRef = useRef<Set<string>>(new Set());
+  const isUnmountedRef = useRef(false);
   const hasCanvasLinkedImage = Boolean(targetImageUrl);
 
   const canSend = useMemo(
-    () => !isSending && (draft.trim().length > 0 || attachments.length > 0 || hasCanvasLinkedImage),
-    [attachments.length, draft, hasCanvasLinkedImage, isSending],
+    () => Boolean(projectId) && !isSending && (draft.trim().length > 0 || attachments.length > 0 || hasCanvasLinkedImage),
+    [attachments.length, draft, hasCanvasLinkedImage, isSending, projectId],
   );
   const canEnhance = !isEnhancing && draft.trim().length > 0;
 
@@ -251,6 +335,30 @@ export default function AiChatSidebar({
   }, [draft]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const savedModel = window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY);
+    if (!savedModel) {
+      return;
+    }
+
+    const matchedOption = OPENAI_CHAT_MODEL_OPTIONS.find((option) => option.value === savedModel);
+    if (matchedOption) {
+      setSelectedModel(matchedOption.value);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
+  }, [selectedModel]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [isSending, messages.length]);
 
@@ -258,6 +366,13 @@ export default function AiChatSidebar({
     let active = true;
 
     const loadHistory = async () => {
+      if (!projectId) {
+        setMessages([]);
+        setHistoryLoading(false);
+        setErrorMessage(null);
+        return;
+      }
+
       setHistoryLoading(true);
       setErrorMessage(null);
 
@@ -267,6 +382,7 @@ export default function AiChatSidebar({
 
         const response = await fetch(`/api/chat?${params.toString()}`, {
           cache: "no-store",
+          headers: await getAuthorizedHeaders(),
         });
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string;
@@ -279,15 +395,7 @@ export default function AiChatSidebar({
 
         if (!active) return;
 
-        setMessages(
-          (payload.messages ?? []).map((message) => ({
-            id: message.id,
-            role: message.role,
-            content: message.content,
-            createdAt: message.createdAt,
-            generatedImages: message.generatedImages,
-          })),
-        );
+        setMessages((payload.messages ?? []).map(mapRouteMessage));
       } catch (error) {
         if (!active) return;
 
@@ -313,7 +421,15 @@ export default function AiChatSidebar({
 
     setMessages((current) => {
       const existingIds = new Set(current.map((message) => message.id));
-      const nextMessages = generationAssistantMessages.filter((message) => !existingIds.has(message.id));
+      const nextMessages = generationAssistantMessages
+        .filter((message) => !existingIds.has(message.id))
+        .map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.createdAt,
+          generatedImages: message.generatedImages,
+        }));
       if (nextMessages.length === 0) return current;
       return [...current, ...nextMessages];
     });
@@ -325,6 +441,7 @@ export default function AiChatSidebar({
 
   useEffect(() => {
     return () => {
+      isUnmountedRef.current = true;
       attachmentsRef.current.forEach((attachment) => URL.revokeObjectURL(attachment.url));
     };
   }, []);
@@ -363,12 +480,19 @@ export default function AiChatSidebar({
   };
 
   const clearChat = async () => {
+    if (!projectId) {
+      setErrorMessage(PROJECT_REQUIRED_MESSAGE);
+      onToast(PROJECT_REQUIRED_MESSAGE);
+      return;
+    }
+
     try {
       const params = new URLSearchParams({ canvasId });
       if (projectId) params.set("projectId", projectId);
 
       const response = await fetch(`/api/chat?${params.toString()}`, {
         method: "DELETE",
+        headers: await getAuthorizedHeaders(),
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
 
@@ -399,9 +523,9 @@ export default function AiChatSidebar({
     try {
       const response = await fetch("/api/prompt/enhance", {
         method: "POST",
-        headers: {
+        headers: await getAuthorizedHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           prompt: originalPrompt,
           mode: "image_editing",
@@ -425,6 +549,9 @@ export default function AiChatSidebar({
 
       setLastOriginalPrompt(originalPrompt);
       setEnhanceMeta(payload.data);
+      if (typeof payload.data.creditsRemaining === "number") {
+        onCreditsChange?.(payload.data.creditsRemaining);
+      }
       onDraftChange(payload.data.enhancedPrompt);
       onToast(payload.data.usedAiFallback ? "Prompt enhanced by AI" : "Prompt enhanced by rules");
     } catch (error) {
@@ -441,7 +568,184 @@ export default function AiChatSidebar({
     onToast("Original prompt restored");
   };
 
+  const buildGenerationContextPayload = async (rawPrompt: string, promptAttachments: PromptAttachment[]) => {
+    const selectedTarget = generationContext?.target
+      ? {
+          ...generationContext.target,
+          imageUrl: await resolveImageUrlForChat(generationContext.target.imageUrl),
+          prompt: rawPrompt || generationContext.target.prompt || null,
+        }
+      : null;
+
+    const attachmentTarget = !selectedTarget && promptAttachments.length > 0
+      ? {
+          nodeId: `chat-attachment-target-${promptAttachments[0]?.id ?? "image"}`,
+          title: promptAttachments[0]?.name ?? "Attached image",
+          imageUrl: promptAttachments[0]?.dataUrl ?? "",
+          role: "attachment-target",
+          prompt: rawPrompt || null,
+        }
+      : null;
+
+    const remainingAttachments = selectedTarget ? promptAttachments : promptAttachments.slice(1);
+    const attachmentReferences = remainingAttachments.map((attachment, index) => ({
+      nodeId: `chat-attachment-reference-${attachment.id}-${index}`,
+      title: attachment.name,
+      imageUrl: attachment.dataUrl,
+      role: "attachment",
+    }));
+
+    const imageReferences = generationContext
+      ? await Promise.all(
+          generationContext.imageReferences.map(async (reference) => ({
+            ...reference,
+            imageUrl: await resolveImageUrlForChat(reference.imageUrl),
+          })),
+        )
+      : [];
+
+    const presetReferences = generationContext
+      ? await Promise.all(
+          generationContext.presetReferences.map(async (reference) => ({
+            ...reference,
+            imageSrc: await resolveImageUrlForChat(reference.imageSrc),
+          })),
+        )
+      : [];
+
+    const target = selectedTarget ?? attachmentTarget;
+    if (!target && imageReferences.length === 0 && presetReferences.length === 0) {
+      return undefined;
+    }
+
+    return {
+      target: target ?? {
+        nodeId: "chat-text-to-image",
+        title: "Prompt-only generation",
+        imageUrl: "",
+        role: "text-to-image",
+        prompt: rawPrompt || null,
+      },
+      imageReferences: [
+        ...imageReferences,
+        ...attachmentReferences,
+      ],
+      presetReferences,
+      preserveRules: generationContext?.preserveRules ?? [],
+      referenceSummary: generationContext?.referenceSummary ?? "",
+      connectionSummary: generationContext?.connectionSummary ?? "",
+    };
+  };
+
+  const pollGenerationJob = async (params: {
+    jobId: string;
+    projectId: string;
+    placeholderMessageId: string;
+    targetNodeId?: string | null;
+  }) => {
+    if (activeGenerationPollsRef.current.has(params.jobId)) {
+      return;
+    }
+
+    activeGenerationPollsRef.current.add(params.jobId);
+
+    try {
+      const startedAt = Date.now();
+      while (!isUnmountedRef.current) {
+        const response = await fetch(
+          `/api/projects/${params.projectId}/ai-jobs/${params.jobId}`,
+          {
+            cache: "no-store",
+            headers: await getAuthorizedHeaders(),
+          },
+        );
+        const payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+
+        if (!response.ok || !payload.data?.job) {
+          throw new Error(payload.error || "Unable to load AI job status.");
+        }
+
+        const job = payload.data.job;
+        if (job.status === "queued" || job.status === "running") {
+          if (Date.now() - startedAt >= 30_000) {
+            throw new Error(
+              "The image job is still waiting in the queue. Make sure Redis and apps/worker are running, then try again.",
+            );
+          }
+          await wait(2000);
+          continue;
+        }
+
+        if (job.status === "failed" || job.status === "cancelled") {
+          const terminalMessage =
+            job.errorMessage ||
+            (job.status === "cancelled"
+              ? "Image generation was cancelled."
+              : "Image generation failed.");
+          setMessages((current) =>
+            replaceMessage(current, params.placeholderMessageId, {
+              id: `job-error-${job.id}`,
+              role: "assistant",
+              content: terminalMessage,
+              createdAt: new Date().toISOString(),
+              status: "error",
+            }),
+          );
+          setErrorMessage(terminalMessage);
+          return;
+        }
+
+        const assistantMessage = job.jobResult?.assistantMessage
+          ? {
+              id: job.jobResult.assistantMessage.id,
+              role: job.jobResult.assistantMessage.role,
+              content: job.jobResult.assistantMessage.content,
+              createdAt: job.jobResult.assistantMessage.createdAt,
+              generatedImages: job.jobResult.assistantMessage.generatedImages,
+            }
+          : {
+              id: `job-result-${job.id}`,
+              role: "assistant" as const,
+              content: "Generated an image from your request.",
+              createdAt: job.updatedAt,
+              generatedImages: job.jobResult?.generatedImages ?? [],
+            };
+
+        setMessages((current) => replaceMessage(current, params.placeholderMessageId, assistantMessage));
+        onGenerationComplete?.({
+          job,
+          targetNodeId: params.targetNodeId,
+        });
+        return;
+      }
+    } catch (error) {
+      const friendlyMessage =
+        error instanceof Error
+          ? error.message
+          : "Unable to load AI job status.";
+      setMessages((current) =>
+        replaceMessage(current, params.placeholderMessageId, {
+          id: `job-poll-error-${Date.now()}`,
+          role: "assistant",
+          content: friendlyMessage,
+          createdAt: new Date().toISOString(),
+          status: "error",
+        }),
+      );
+      setErrorMessage(friendlyMessage);
+    } finally {
+      activeGenerationPollsRef.current.delete(params.jobId);
+    }
+  };
+
   const send = async () => {
+    if (!projectId) {
+      setErrorMessage(PROJECT_REQUIRED_MESSAGE);
+      onToast(PROJECT_REQUIRED_MESSAGE);
+      return;
+    }
+
+    const rawPrompt = draft.trim();
     const content = buildPromptContent({
       prompt: draft,
       attachments,
@@ -497,12 +801,17 @@ export default function AiChatSidebar({
       ).values(),
     );
 
+    const generationContextPayload = await buildGenerationContextPayload(rawPrompt, attachments);
     const optimisticUserMessage: ChatMessage = {
       id: `local_user_${Date.now()}`,
       role: "user",
       content,
       createdAt: new Date().toISOString(),
     };
+    const requestId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `chat-${Date.now()}`;
 
     setMessages((prev) => [...prev, optimisticUserMessage]);
     setErrorMessage(null);
@@ -514,24 +823,61 @@ export default function AiChatSidebar({
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
+        headers: await getAuthorizedHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           canvasId,
           projectId,
           content,
+          rawPrompt,
           images,
+          model: selectedModel,
+          idempotencyKey: requestId,
+          targetNodeId: targetNodeId ?? generationContext?.target.nodeId,
+          canvasGraphContext: generationContextPayload,
+          snapshot: generationSnapshot,
         }),
       });
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        userMessage?: ChatRouteMessage;
-        assistantMessage?: ChatRouteMessage;
-      };
+      const payload = (await response.json().catch(() => ({}))) as ChatRouteResponse;
 
-      if (!response.ok || !payload.userMessage || !payload.assistantMessage) {
+      if (!response.ok) {
+        throw new Error(payload.error || "Carver AI could not answer right now.");
+      }
+
+      if (typeof payload.creditsRemaining === "number") {
+        onCreditsChange?.(payload.creditsRemaining);
+      }
+
+      if (payload.mode === "generation" && payload.job) {
+        const placeholderMessageId = `local_job_${payload.job.id}`;
+        const persistedUserMessage = payload.userMessage
+          ? mapRouteMessage(payload.userMessage)
+          : optimisticUserMessage;
+
+        setMessages((prev) => [
+          ...prev.filter((message) => message.id !== optimisticUserMessage.id),
+          persistedUserMessage,
+          {
+            id: placeholderMessageId,
+            role: "assistant",
+            content: "Carver AI is generating an image from your request...",
+            createdAt: new Date().toISOString(),
+            status: "pending",
+          },
+        ]);
+
+        void pollGenerationJob({
+          jobId: payload.job.id,
+          projectId,
+          placeholderMessageId,
+          targetNodeId: targetNodeId ?? generationContext?.target.nodeId ?? null,
+        });
+        return;
+      }
+
+      if (!payload.userMessage || !payload.assistantMessage) {
         throw new Error(payload.error || "Carver AI could not answer right now.");
       }
 
@@ -540,19 +886,8 @@ export default function AiChatSidebar({
 
       setMessages((prev) => [
         ...prev.filter((message) => message.id !== optimisticUserMessage.id),
-        {
-          id: userMessage.id,
-          role: userMessage.role,
-          content: userMessage.content,
-          createdAt: userMessage.createdAt,
-        },
-        {
-          id: assistantMessage.id,
-          role: assistantMessage.role,
-          content: assistantMessage.content,
-          createdAt: assistantMessage.createdAt,
-          generatedImages: assistantMessage.generatedImages,
-        },
+        mapRouteMessage(userMessage),
+        mapRouteMessage(assistantMessage),
       ]);
     } catch (error) {
       const friendlyMessage =
@@ -574,7 +909,6 @@ export default function AiChatSidebar({
     } finally {
       setIsSending(false);
     }
-
   };
 
   return (
@@ -600,7 +934,9 @@ export default function AiChatSidebar({
             <div className="max-w-[280px] text-center">
               <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--canvas-theme-text)]">Ask Carver AI</h3>
               <p className="mt-3 text-sm leading-6 text-[var(--canvas-theme-text-muted)]">
-                Describe your landscape idea, preserved layout constraints, planting goals, or material direction and we&apos;ll continue from there.
+                {projectId
+                  ? "Describe your landscape idea, preserved layout constraints, planting goals, or material direction and we&apos;ll continue from there."
+                  : "Open or create a project first, then Carver AI can save chat history and work against that project canvas."}
               </p>
             </div>
           </div>
@@ -794,12 +1130,12 @@ export default function AiChatSidebar({
               </div>
             ) : attachments.length > 0 ? (
               <p className="mb-2 text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-                Attached images will be sent to Carver AI as real image inputs for analysis.
+                Attached images will be sent to Carver AI as real image inputs for analysis or image generation.
               </p>
             ) : null}
 
-            <div className="mt-1 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[var(--canvas-theme-icon)]">
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-[var(--canvas-theme-icon)]">
                 <ComposerIcon label="Attach image" icon={Paperclip} onClick={() => fileInputRef.current?.click()} />
                 <button
                   type="button"
@@ -827,6 +1163,22 @@ export default function AiChatSidebar({
                     Restore
                   </button>
                 ) : null}
+                <label className="relative inline-flex items-center">
+                  <span className="sr-only">Chat model</span>
+                  <select
+                    value={selectedModel}
+                    onChange={(event) => setSelectedModel(event.target.value)}
+                    className="h-8 appearance-none rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] pl-3 pr-8 text-xs font-semibold text-[var(--canvas-theme-text)] outline-none transition hover:bg-[var(--canvas-theme-hover)]"
+                    title="Select chat model"
+                  >
+                    {OPENAI_CHAT_MODEL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+                </label>
               </div>
 
               <button
@@ -839,7 +1191,7 @@ export default function AiChatSidebar({
                     ? "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
                     : "bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] opacity-60",
                 ].join(" ")}
-                title="Send"
+                title={projectId ? "Send" : PROJECT_REQUIRED_MESSAGE}
               >
                 {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <SendHorizontal className="h-4 w-4" aria-hidden="true" />}
               </button>

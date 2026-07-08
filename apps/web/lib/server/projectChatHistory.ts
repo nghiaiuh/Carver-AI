@@ -1,6 +1,8 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import type { Database, Json } from "@carver/db";
+import type { GeneratedCanvasImage } from "@carver/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ChatRole = "user" | "assistant";
@@ -19,6 +21,7 @@ export type ProjectChatHistoryRecord = {
   canvasId?: string;
   role: ChatRole;
   content: string;
+  generatedImages?: GeneratedCanvasImage[];
   createdAt: string;
 };
 
@@ -39,8 +42,54 @@ function normalizeRole(role: ChatMessageRow["role"]): ChatRole | null {
   return role === "user" || role === "assistant" ? role : null;
 }
 
+function generatedImageValue(value: Json): GeneratedCanvasImage | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const image = value as Record<string, Json>;
+  const assetId = typeof image.assetId === "string" && image.assetId.trim() ? image.assetId.trim() : undefined;
+  const title = typeof image.title === "string" && image.title.trim() ? image.title.trim() : "Generated concept";
+  const imageUrl = typeof image.imageUrl === "string" ? image.imageUrl : "";
+  const prompt = typeof image.prompt === "string" && image.prompt.trim() ? image.prompt.trim() : title;
+
+  return {
+    id: typeof image.id === "string" && image.id.trim() ? image.id.trim() : assetId ?? randomUUID(),
+    title,
+    imageUrl,
+    width: typeof image.width === "number" ? image.width : null,
+    height: typeof image.height === "number" ? image.height : null,
+    prompt,
+    assetId,
+    mimeType: typeof image.mimeType === "string" ? image.mimeType : undefined,
+    provider: typeof image.provider === "string" ? image.provider : undefined,
+  };
+}
+
+function readGeneratedImages(
+  metadata: Json,
+  referencedAssetIds: string[] | null,
+): GeneratedCanvasImage[] | undefined {
+  const metadataObject = asJsonObject(metadata);
+  const rawImages = metadataObject?.generatedImages;
+  if (!Array.isArray(rawImages)) {
+    return undefined;
+  }
+
+  const referencedIds = Array.isArray(referencedAssetIds) ? referencedAssetIds : [];
+  const images = rawImages
+    .map(generatedImageValue)
+    .filter((image): image is GeneratedCanvasImage => image !== null)
+    .map((image, index) => ({
+      ...image,
+      assetId: image.assetId ?? referencedIds[index],
+    }));
+
+  return images.length > 0 ? images : undefined;
+}
+
 function mapChatMessage(
-  row: Pick<ChatMessageRow, "id" | "project_id" | "role" | "content" | "metadata" | "created_at">,
+  row: Pick<ChatMessageRow, "id" | "project_id" | "role" | "content" | "metadata" | "created_at" | "referenced_asset_ids">,
 ): ProjectChatHistoryRecord | null {
   const role = normalizeRole(row.role);
   if (!role) {
@@ -48,6 +97,7 @@ function mapChatMessage(
   }
 
   const canvasId = readCanvasId(row.metadata);
+  const generatedImages = readGeneratedImages(row.metadata, row.referenced_asset_ids);
 
   return {
     id: row.id,
@@ -55,6 +105,7 @@ function mapChatMessage(
     ...(canvasId ? { canvasId } : {}),
     role,
     content: row.content,
+    ...(generatedImages ? { generatedImages } : {}),
     createdAt: row.created_at,
   } satisfies ProjectChatHistoryRecord;
 }
@@ -149,7 +200,7 @@ export async function listProjectChatMessages(
 
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, project_id, role, content, metadata, created_at")
+    .select("id, project_id, role, content, referenced_asset_ids, metadata, created_at")
     .eq("project_id", projectId)
     .eq("thread_id", thread.id)
     .order("created_at", { ascending: true });
@@ -203,7 +254,7 @@ export async function appendProjectChatExchange(
         }),
       },
     ])
-    .select("id, project_id, role, content, metadata, created_at");
+    .select("id, project_id, role, content, referenced_asset_ids, metadata, created_at");
 
   if (error || !data) {
     throw new Error(error?.message || "Unable to save the chat exchange.");
@@ -227,6 +278,53 @@ export async function appendProjectChatExchange(
   return {
     userMessage,
     assistantMessage,
+  };
+}
+
+export async function appendProjectUserMessage(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+  params: {
+    canvasId?: string;
+    images?: ProjectChatImageReference[];
+    userMessage: string;
+  },
+) {
+  const thread = await getOrCreateProjectChatThread(supabase, projectId);
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .insert({
+      thread_id: thread.id,
+      project_id: projectId,
+      role: "user",
+      content: params.userMessage,
+      metadata: buildMessageMetadata({
+        canvasId: params.canvasId,
+        images: params.images,
+        kind: "user",
+      }),
+    })
+    .select("id, project_id, role, content, referenced_asset_ids, metadata, created_at")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || "Unable to save the user chat message.");
+  }
+
+  await supabase
+    .from("chat_threads")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", thread.id);
+
+  const userMessage = mapChatMessage(data);
+  if (!userMessage || userMessage.role !== "user") {
+    throw new Error("The user chat message was saved incompletely.");
+  }
+
+  return {
+    threadId: thread.id,
+    userMessage,
   };
 }
 

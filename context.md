@@ -109,7 +109,9 @@ Library storage note:
 - Uploaded preset-library images are processed on the server and stored in Cloudflare R2 as `thumb`, `preview`, and `original` versions.
 - `public.library_folders` and `public.library_assets` hold the library metadata in Supabase, including tags, category, prompt, and image URLs.
 - Local `public/assets` demo images were removed; the canvas/library flow now expects cloud-backed image URLs only.
-- `apps/web/app/api/library/sync/route.ts` can backfill existing R2 objects into Supabase metadata for the current user.
+- R2-to-library metadata sync is worker-owned now:
+  - `apps/worker/src/services/library-sync-service.ts` syncs known owners on startup and interval.
+  - `/api/library/sync` is a deprecated compatibility shim and must not be called from frontend UI.
 - User-owned library/generated assets are delivered through the app asset gateway:
   - APIs verify ownership first, then return short-lived `/api/assets/[assetId]/content` URLs.
   - Client code must not send raw `storage_path` to be signed or streamed.
@@ -163,6 +165,7 @@ Chat API route:
   - `content`
   - `images[]`
   - persists project-scoped chat history in Supabase `chat_threads` + `chat_messages`
+  - auto-routes image-generation prompts into project `ai_jobs` so chat can return generated images, not just text
 
 Project chat persistence helper:
 - `apps/web/lib/server/projectChatHistory.ts`

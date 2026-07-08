@@ -1,22 +1,45 @@
 /*
  * Route: API chat cho canvas editor.
  * Thuoc: module tro ly AI / hoi thoai theo canvas.
- * Vai tro: lam dau moi doc, ghi va xoa lich su chat gan voi `canvasId` / `projectId`.
+ * Vai tro: lam dau moi doc, ghi va xoa lich su chat gan voi project hien tai.
  * Chuc nang:
  * - `GET`: lay lich su chat hien co.
- * - `POST`: gui prompt + anh tham chieu den AI va luu cap tin nhan user/assistant.
- * - `DELETE`: xoa lich su chat cua canvas hoac project hien tai.
+ * - `POST`: gui prompt + anh tham chieu den AI hoac enqueue generation job neu prompt muon tao/chinh anh.
+ * - `DELETE`: xoa lich su chat cua project hien tai.
  */
 
 import { NextResponse } from "next/server";
+import type { CreateAiJobRequest } from "@carver/shared";
 import { isUuidLike, requireProjectOwner, requireRequestContext } from "../_lib/authz";
 import { badRequest, readJsonObject, stringValue } from "../_lib/http";
+import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../_lib/credits";
+import { createProjectAiJob } from "../_lib/createProjectAiJob";
 import {
   appendProjectChatExchange,
+  appendProjectUserMessage,
   clearProjectChatMessages,
   listProjectChatMessages,
 } from "../../../lib/server/projectChatHistory";
+import { resolveProjectChatMessageAssetUrls } from "../../../lib/server/chatMessageAssets";
+import { normalizeOpenAIChatModel } from "../../../lib/openaiChatModels";
+import { detectChatGenerationIntent } from "../../../lib/server/chatGenerationIntent";
 import { createChatCompletion, type ChatInputImage } from "../../../lib/server/openaiChat";
+
+function buildChatDebugHeaders(params: {
+  mode: "chat" | "generation";
+  requestId: string;
+  generationIntent: boolean;
+  jobId?: string;
+}) {
+  const headers = new Headers();
+  headers.set("x-carver-request-id", params.requestId);
+  headers.set("x-carver-chat-mode", params.mode);
+  headers.set("x-carver-generation-intent", params.generationIntent ? "true" : "false");
+  if (params.jobId) {
+    headers.set("x-carver-job-id", params.jobId);
+  }
+  return headers;
+}
 
 function readChatInputImages(body: Record<string, unknown>) {
   const value = body.images;
@@ -48,9 +71,44 @@ function readChatInputImages(body: Record<string, unknown>) {
   });
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function getProjectIdFromUrl(request: Request) {
   const { searchParams } = new URL(request.url);
   return searchParams.get("projectId")?.trim() || undefined;
+}
+
+function buildChatGenerationBody(params: {
+  projectId: string;
+  prompt: string;
+  canvasId: string;
+  body: Record<string, unknown>;
+  threadId: string;
+  executionMode: CreateAiJobRequest["executionMode"];
+  jobType: CreateAiJobRequest["jobType"];
+}) {
+  const payload: Record<string, unknown> = {
+    projectId: params.projectId,
+    prompt: params.prompt,
+    rawPrompt: params.prompt,
+    canvasId: params.canvasId,
+    threadId: params.threadId,
+    executionMode: params.executionMode,
+    jobType: params.jobType,
+  };
+
+  const optionalKeys = ["idempotencyKey", "snapshot", "canvasSnapshot", "targetNodeId", "canvasGraphContext"];
+  optionalKeys.forEach((key) => {
+    if (key in params.body) {
+      payload[key] = params.body[key];
+    }
+  });
+
+  return payload;
 }
 
 export async function GET(request: Request) {
@@ -76,7 +134,9 @@ export async function GET(request: Request) {
   try {
     const messages = await listProjectChatMessages(context.supabase, projectResult.project.id);
 
-    return NextResponse.json({ messages });
+    return NextResponse.json({
+      messages: resolveProjectChatMessageAssetUrls(request.url, messages),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to load chat history right now.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -90,12 +150,18 @@ export async function POST(request: Request) {
   }
 
   const body = await readJsonObject(request);
+  const rawPrompt = stringValue(body, "rawPrompt");
   const content = stringValue(body, "content");
   const canvasId = stringValue(body, "canvasId") ?? "canvas-main";
   const projectId = stringValue(body, "projectId") ?? getProjectIdFromUrl(request);
+  const model = normalizeOpenAIChatModel(stringValue(body, "model"));
   const images = readChatInputImages(body);
+  const messageContent =
+    content ??
+    rawPrompt ??
+    (images.length > 0 ? "Describe these image references for landscape design context." : undefined);
 
-  if (!content && images.length === 0) {
+  if (!messageContent && images.length === 0) {
     return badRequest("content or images are required");
   }
 
@@ -112,15 +178,89 @@ export async function POST(request: Request) {
     return projectResult.error;
   }
 
+  const generationContext = objectValue(body.canvasGraphContext);
+  const imageReferenceCount =
+    (Array.isArray(generationContext?.imageReferences) ? generationContext.imageReferences.length : 0) +
+    (Array.isArray(generationContext?.presetReferences) ? generationContext.presetReferences.length : 0);
+  const generationIntent = detectChatGenerationIntent({
+    prompt: rawPrompt ?? messageContent ?? "",
+    hasTargetImage: Boolean(generationContext?.target),
+    attachmentCount: images.filter((image) => image.source === "attachment").length,
+    referenceImageCount: imageReferenceCount,
+  });
+
+  if (generationIntent.shouldGenerate) {
+    try {
+      const { threadId, userMessage } = await appendProjectUserMessage(
+        context.supabase,
+        projectResult.project.id,
+        {
+          canvasId,
+          images: images.map((image) => ({
+            label: image.label,
+            source: image.source,
+          })),
+          userMessage: messageContent ?? rawPrompt ?? "",
+        },
+      );
+
+      const jobResult = await createProjectAiJob({
+        request,
+        context,
+        projectId: projectResult.project.id,
+        body: buildChatGenerationBody({
+          projectId: projectResult.project.id,
+          prompt: rawPrompt ?? messageContent ?? "",
+          canvasId,
+          body,
+          threadId,
+          executionMode: generationIntent.executionMode,
+          jobType: generationIntent.jobType,
+        }),
+      });
+
+      if (!jobResult.ok) {
+        return jobResult.response;
+      }
+
+      return NextResponse.json({
+        mode: "generation",
+        userMessage,
+        job: jobResult.data.job,
+        creditsRemaining: jobResult.data.creditsRemaining ?? null,
+      }, {
+        headers: buildChatDebugHeaders({
+          mode: "generation",
+          requestId: context.requestId,
+          generationIntent: true,
+          jobId: jobResult.data.job.id,
+        }),
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Carver AI could not queue image generation right now.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  let reservedCredits = false;
+  let creditsRemaining: number | null = null;
+
   try {
     const history = await listProjectChatMessages(context.supabase, projectResult.project.id);
-    const messageContent =
-      content ?? "Describe these image references for landscape design context.";
+
+    const creditReservation = await reserveUserCredits(context, AI_CREDIT_COSTS.chat);
+    if ("error" in creditReservation) {
+      return creditReservation.error;
+    }
+    reservedCredits = true;
+    creditsRemaining = creditReservation.creditsRemaining;
 
     const assistantContent = await createChatCompletion({
-      message: messageContent,
+      message: messageContent ?? "Describe these image references for landscape design context.",
       history,
       images,
+      model,
     });
     const { userMessage, assistantMessage } = await appendProjectChatExchange(
       context.supabase,
@@ -131,16 +271,27 @@ export async function POST(request: Request) {
           label: image.label,
           source: image.source,
         })),
-        userMessage: messageContent,
+        userMessage: messageContent ?? "Describe these image references for landscape design context.",
         assistantMessage: assistantContent,
       },
     );
 
     return NextResponse.json({
+      mode: "chat",
       userMessage,
       assistantMessage,
+      creditsRemaining,
+    }, {
+      headers: buildChatDebugHeaders({
+        mode: "chat",
+        requestId: context.requestId,
+        generationIntent: generationIntent.shouldGenerate,
+      }),
     });
   } catch (error) {
+    if (reservedCredits) {
+      await restoreUserCredits(context, AI_CREDIT_COSTS.chat).catch(() => undefined);
+    }
     const message = error instanceof Error ? error.message : "Carver AI could not answer right now.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

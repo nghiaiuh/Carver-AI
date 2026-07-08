@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import {
@@ -99,6 +99,7 @@ type CreateAiJobResponse = {
   success?: boolean;
   data?: {
     job?: CarverAiJobRecord;
+    creditsRemaining?: number;
   };
   error?: string;
 };
@@ -116,6 +117,13 @@ type SnapshotRouteResponse = {
   data?: {
     document?: CanvasSnapshotDocument;
     snapshot?: SnapshotMeta | null;
+  };
+  error?: string;
+};
+
+type ProfileRouteResponse = {
+  profile?: {
+    credits_amount?: number;
   };
   error?: string;
 };
@@ -262,6 +270,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [isSnapshotSaving, setIsSnapshotSaving] = useState(false);
   const [currentSnapshotMeta, setCurrentSnapshotMeta] = useState<SnapshotMeta | null>(null);
   const [hasUnsavedSnapshotChanges, setHasUnsavedSnapshotChanges] = useState(false);
+  const [creditsAmount, setCreditsAmount] = useState<number | null>(null);
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
   const savedSnapshotFingerprintRef = useRef<string | null>(null);
   const snapshotLoadRequestRef = useRef(0);
@@ -289,6 +298,22 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const library = useCanvasLibrary();
   const supabase = getOptionalBrowserSupabaseClient();
 
+  const refreshProfileCredits = useCallback(async () => {
+    const client = requireCanvasSupabaseClient(supabase);
+    const response = await authedFetch(client, "/api/profiles", {
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => ({}))) as ProfileRouteResponse;
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to load profile credits.");
+    }
+
+    setCreditsAmount(
+      typeof payload.profile?.credits_amount === "number" ? payload.profile.credits_amount : null,
+    );
+  }, [supabase]);
+
   // ── Derived values ──────────────────────────────────────────────────────────
   const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
   const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
@@ -301,6 +326,26 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     activeGenerationTarget
       ? buildCanvasGenerationContext(activeGenerationTarget.id, nodes, edges, promptText)
       : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfileCredits = async () => {
+      try {
+        await refreshProfileCredits();
+      } catch {
+        if (!cancelled) {
+          setCreditsAmount(null);
+        }
+      }
+    };
+
+    void loadProfileCredits();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshProfileCredits]);
 
   const applyHydratedSnapshotState = (document: CanvasSnapshotDocument) => {
     const hydrated = hydrateCanvasStateFromSnapshot(document);
@@ -325,6 +370,44 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setSelectedSketchLineIds([]);
     handledGenerationJobIdsRef.current.clear();
   };
+
+  const applyCompletedGenerationJob = useCallback((params: {
+    job: CarverAiJobRecord;
+    targetNodeId?: string | null;
+    syncAssistantMessage?: boolean;
+  }) => {
+    const assistantMessage = params.job.jobResult?.assistantMessage ?? null;
+    if (params.syncAssistantMessage !== false && assistantMessage) {
+      setGenerationAssistantMessages((messages) =>
+        messages.some((message) => message.id === assistantMessage.id)
+          ? messages
+          : [...messages, assistantMessage],
+      );
+    }
+
+    const generatedImage = params.job.jobResult?.generatedImages?.[0] ?? null;
+    if (!generatedImage) {
+      showToast(getTerminalGenerationStatusMessage(params.job));
+      return;
+    }
+
+    const targetNode =
+      (params.targetNodeId
+        ? nodes.find((node) => node.id === params.targetNodeId)
+        : null) ?? activeGenerationTarget;
+    const outputNode = createGeneratedOutputNode({
+      generatedImage,
+      prompt: generatedImage.prompt || params.job.prompt || "Generated concept",
+      targetNode,
+      existingNodes: nodes,
+    });
+
+    setNodes((items) => [...items, outputNode]);
+    setActiveGenerationTargetId(outputNode.id);
+    setActiveNodeId(outputNode.id);
+    setSelectedItem({ type: "node", id: outputNode.id });
+    showToast(getTerminalGenerationStatusMessage(params.job));
+  }, [activeGenerationTarget, nodes]);
 
   const saveSnapshot = async () => {
     if (!params.projectId) {
@@ -508,7 +591,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       isRequestInFlight = true;
 
       try {
-        const response = await fetch(
+        const response = await authedFetch(
+          requireCanvasSupabaseClient(supabase),
           `/api/projects/${pendingGenerationJob.projectId}/ai-jobs/${pendingGenerationJob.jobId}`,
           {
             cache: "no-store",
@@ -541,34 +625,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           return;
         }
 
-        const generatedImage = job.jobResult?.generatedImages?.[0] ?? null;
-        const targetNode = nodes.find((node) => node.id === pendingGenerationJob.targetNodeId) ?? activeGenerationTarget;
-
-        const assistantMessage = job.jobResult?.assistantMessage ?? null;
-        if (assistantMessage) {
-          setGenerationAssistantMessages((messages) =>
-            messages.some((message) => message.id === assistantMessage.id)
-              ? messages
-              : [...messages, assistantMessage],
-          );
-        }
-
-        if (!generatedImage || !targetNode) {
-          showToast(getTerminalGenerationStatusMessage(job));
-          return;
-        }
-
-        const outputNode = createGeneratedOutputNode({
-          generatedImage,
-          prompt: generatedImage.prompt || job.prompt || "Generated concept",
-          targetNode,
+        applyCompletedGenerationJob({
+          job,
+          targetNodeId: pendingGenerationJob.targetNodeId,
+          syncAssistantMessage: true,
         });
-
-        setNodes((items) => [...items, outputNode]);
-        setActiveGenerationTargetId(outputNode.id);
-        setActiveNodeId(outputNode.id);
-        setSelectedItem({ type: "node", id: outputNode.id });
-        showToast(getTerminalGenerationStatusMessage(job));
       } catch (error) {
         setPendingGenerationJob((current) =>
           current?.jobId === pendingGenerationJob.jobId ? null : current,
@@ -590,7 +651,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         window.clearInterval(intervalId);
       }
     };
-  }, [activeGenerationTarget, nodes, pendingGenerationJob]);
+  }, [applyCompletedGenerationJob, pendingGenerationJob, supabase]);
 
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -966,6 +1027,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         : null;
 
     try {
+      const client = requireCanvasSupabaseClient(supabase);
       const resolvedGenerationContext = await resolveGenerationContextAssets(activeGenerationContext);
 
       const snapshot = buildCanvasSnapshotWithGraph({
@@ -980,10 +1042,19 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         targetNodeId: activeGenerationTarget.id,
         snapshot,
         promptMode: "auto",
+        executionMode: regionPayload ? "region_edit" : "image_edit",
         jobType: regionPayload ? "refine_concept" : "generate_concept",
+        mask: regionPayload
+          ? {
+              dataUrl: regionPayload.mask.dataUrl,
+              width: regionPayload.mask.width,
+              height: regionPayload.mask.height,
+              selectionRatio: regionPayload.mask.selectionRatio,
+            }
+          : undefined,
       };
 
-      const response = await fetch(`/api/projects/${params.projectId}/ai-jobs`, {
+      const response = await authedFetch(client, `/api/projects/${params.projectId}/ai-jobs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -999,6 +1070,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       const job = result.data?.job;
       if (!job) {
         throw new Error("The AI job was created without a usable job payload.");
+      }
+
+      if (typeof result.data?.creditsRemaining === "number") {
+        setCreditsAmount(result.data.creditsRemaining);
       }
 
       if (handledGenerationJobIdsRef.current.has(job.id)) {
@@ -1157,6 +1232,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       isSnapshotSaving,
       currentSnapshotMeta,
       hasUnsavedSnapshotChanges,
+      creditsAmount,
       brushMode,
       regionSelectionTool,
       brushSize,
@@ -1226,7 +1302,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       handleImageAction,
       addObject,
       uploadAssetsToFolder,
-      syncLibraryFromBucket: library.syncLibraryFromBucket,
       deleteLibraryFolder,
       removeLibraryAsset,
 
@@ -1244,7 +1319,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       generateConcept,
       generateAngles,
       applyQuickEdit,
+      applyCompletedGenerationJob,
       saveSnapshot,
+      refreshProfileCredits,
 
       // Library insert
       setSelectedLibraryAssetId,

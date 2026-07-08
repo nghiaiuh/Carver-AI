@@ -1,0 +1,684 @@
+import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
+import { createSafeLogger, coerceCanvasSnapshotDocument } from "@carver/shared";
+import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
+import type {
+  CarverAiJobRecord,
+  CarverAiJobResult,
+  CarverImageExecutionMode,
+  CreateAiJobRequest,
+  QueuedCarverAiJobPayload,
+} from "@carver/shared";
+import type { RequestContext } from "./authz";
+import { isUuidLike, requireProjectOwner } from "./authz";
+import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "./credits";
+import { apiFailure, badRequest, stringArrayValue, stringValue } from "./http";
+import { checkRateLimit } from "./rateLimit";
+import { resolveAiJobResultAssetUrls } from "../../../lib/server/aiJobResultAssets";
+import { persistTemporaryProjectImageAsset } from "../../../lib/server/projectInputAssets";
+
+const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
+  "generate_concept",
+  "refine_concept",
+  "analyze_reference",
+  "export",
+];
+const SUPPORTED_JOB_TYPES: CreateAiJobRequest["jobType"][] = [
+  "generate_concept",
+  "refine_concept",
+];
+
+const PROMPT_MODES = ["auto", "review", "expert"] as const;
+const EXECUTION_MODES = ["text_to_image", "image_edit", "region_edit"] as const;
+const INLINE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
+const logger = createSafeLogger("web.ai-jobs");
+
+const objectValue = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+
+const snapshotValue = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? coerceCanvasSnapshotDocument(value)
+    : undefined;
+
+const normalizeJobType = (value: unknown): CreateAiJobRequest["jobType"] =>
+  typeof value === "string" && JOB_TYPES.includes(value as CreateAiJobRequest["jobType"])
+    ? (value as CreateAiJobRequest["jobType"])
+    : "generate_concept";
+
+const normalizePromptMode = (value: unknown): NonNullable<CreateAiJobRequest["promptMode"]> =>
+  typeof value === "string" && PROMPT_MODES.includes(value as (typeof PROMPT_MODES)[number])
+    ? (value as NonNullable<CreateAiJobRequest["promptMode"]>)
+    : "auto";
+
+const normalizeExecutionMode = (value: unknown): CarverImageExecutionMode | undefined =>
+  typeof value === "string" && EXECUTION_MODES.includes(value as (typeof EXECUTION_MODES)[number])
+    ? (value as CarverImageExecutionMode)
+    : undefined;
+
+const buildIdempotencyKey = (params: {
+  userId: string;
+  projectId: string;
+  jobType: string;
+  prompt: string;
+  inputSnapshotId: string | null;
+  targetNodeId: string | undefined;
+  executionMode: CarverImageExecutionMode;
+}) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        userId: params.userId,
+        projectId: params.projectId,
+        jobType: params.jobType,
+        prompt: params.prompt,
+        inputSnapshotId: params.inputSnapshotId,
+        targetNodeId: params.targetNodeId ?? null,
+        executionMode: params.executionMode,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 48);
+
+function imageSourceValue(
+  value: unknown,
+  imageKey: "imageUrl" | "imageSrc",
+): (Record<string, unknown> & {
+  assetId?: string;
+  imageUrl?: string;
+  imageSrc?: string;
+  title?: string;
+  label?: string;
+}) | null {
+  const source = objectValue(value);
+  if (!source) {
+    return null;
+  }
+
+  return {
+    ...source,
+    assetId: typeof source.assetId === "string" && source.assetId.trim() ? source.assetId.trim() : undefined,
+    title: typeof source.title === "string" ? source.title.trim() : undefined,
+    label: typeof source.label === "string" ? source.label.trim() : undefined,
+    [imageKey]: typeof source[imageKey] === "string" ? source[imageKey].trim() : "",
+  };
+}
+
+function maskValue(value: unknown) {
+  const source = objectValue(value);
+  if (!source) {
+    return null;
+  }
+
+  return {
+    assetId: typeof source.assetId === "string" && source.assetId.trim() ? source.assetId.trim() : undefined,
+    dataUrl: typeof source.dataUrl === "string" ? source.dataUrl.trim() : "",
+    width: typeof source.width === "number" ? source.width : undefined,
+    height: typeof source.height === "number" ? source.height : undefined,
+    selectionRatio: typeof source.selectionRatio === "number" ? source.selectionRatio : undefined,
+  };
+}
+
+function isInlineImageUrl(imageUrl: string) {
+  return imageUrl.startsWith("data:image/");
+}
+
+function isRemoteImageUrl(imageUrl: string) {
+  return /^https?:\/\//i.test(imageUrl);
+}
+
+const normalizeSelection = (
+  value: unknown,
+): NonNullable<CreateAiJobRequest["selection"]> => {
+  const source = objectValue(value);
+
+  return {
+    objectIds: Array.isArray(source?.objectIds)
+      ? source.objectIds.filter((item): item is string => typeof item === "string")
+      : undefined,
+    regionIds: Array.isArray(source?.regionIds)
+      ? source.regionIds.filter((item): item is string => typeof item === "string")
+      : undefined,
+    activeAssetIds: Array.isArray(source?.activeAssetIds)
+      ? source.activeAssetIds.filter((item): item is string => typeof item === "string")
+      : undefined,
+  };
+};
+
+export type CreateProjectAiJobSuccess = {
+  created: boolean;
+  idempotent: boolean;
+  creditsRemaining?: number;
+  job: CarverAiJobRecord;
+};
+
+export type CreateProjectAiJobResult =
+  | { ok: true; data: CreateProjectAiJobSuccess }
+  | { ok: false; response: NextResponse };
+
+export async function createProjectAiJob(params: {
+  request: Request;
+  context: RequestContext;
+  projectId: string;
+  body: Record<string, unknown>;
+}) : Promise<CreateProjectAiJobResult> {
+  const { request, context, projectId, body } = params;
+
+  if (!projectId) {
+    return { ok: false, response: badRequest("projectId is required") };
+  }
+
+  if (!isUuidLike(projectId)) {
+    return { ok: false, response: badRequest("projectId is invalid") };
+  }
+
+  const prompt = stringValue(body, "prompt") ?? stringValue(body, "rawPrompt");
+  if (!prompt) {
+    return { ok: false, response: badRequest("prompt is required") };
+  }
+
+  const inputSnapshotId = stringValue(body, "inputSnapshotId");
+  const threadId = stringValue(body, "threadId");
+  const referenceAssetIds = stringArrayValue(body, "referenceAssetIds") ?? [];
+  const selection = normalizeSelection(body.selection);
+  const promptMode = normalizePromptMode(body.promptMode);
+  const jobType = normalizeJobType(body.jobType);
+  const requestedExecutionMode = normalizeExecutionMode(body.executionMode);
+  const targetNodeId = stringValue(body, "targetNodeId");
+  const canvasGraphContext = objectValue(body.canvasGraphContext);
+  const maskInput = maskValue(body.mask);
+  const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
+
+  if (!SUPPORTED_JOB_TYPES.includes(jobType)) {
+    return { ok: false, response: badRequest(`jobType ${jobType} is not supported yet`) };
+  }
+
+  const projectResult = await requireProjectOwner(context, projectId);
+  if ("error" in projectResult) {
+    return { ok: false, response: projectResult.error };
+  }
+
+  const { supabase, user } = context;
+  const { project } = projectResult;
+
+  const rateLimit = checkRateLimit({
+    key: `ai-job:${user.id}:${projectId}`,
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.allowed) {
+    return {
+      ok: false,
+      response: apiFailure("RATE_LIMITED", "Too many generation requests", 429, context.requestId),
+    };
+  }
+
+  const resolvedSnapshotId = inputSnapshotId ?? project.current_canvas_snapshot_id;
+  const snapshotRow = resolvedSnapshotId
+    ? await supabase
+        .from("canvas_snapshots")
+        .select("id, project_id, version, canvas_json")
+        .eq("id", resolvedSnapshotId)
+        .eq("project_id", projectId)
+        .single()
+    : null;
+  const loadedSnapshot = snapshotRow?.data ?? null;
+
+  if (resolvedSnapshotId && (snapshotRow?.error || !loadedSnapshot)) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Snapshot not found" }, { status: 404 }),
+    };
+  }
+
+  if (!clientSnapshot && !loadedSnapshot) {
+    return { ok: false, response: badRequest("A canvas snapshot is required to create an AI job") };
+  }
+
+  const snapshot = clientSnapshot ?? coerceCanvasSnapshotDocument(loadedSnapshot!.canvas_json);
+  const mergedSnapshot = {
+    ...snapshot,
+    selection: {
+      objectIds: selection.objectIds ?? snapshot.selection.objectIds,
+      regionIds: selection.regionIds ?? snapshot.selection.regionIds,
+      activeAssetIds: selection.activeAssetIds ?? snapshot.selection.activeAssetIds,
+    },
+  };
+
+  const normalizedTarget = canvasGraphContext
+    ? imageSourceValue(canvasGraphContext.target, "imageUrl")
+    : null;
+  const normalizedImageReferences = Array.isArray(canvasGraphContext?.imageReferences)
+    ? canvasGraphContext.imageReferences
+        .map((reference) => imageSourceValue(reference, "imageUrl"))
+        .filter((reference): reference is NonNullable<ReturnType<typeof imageSourceValue>> => reference !== null)
+    : [];
+  const normalizedPresetReferences = Array.isArray(canvasGraphContext?.presetReferences)
+    ? canvasGraphContext.presetReferences
+        .map((reference) => imageSourceValue(reference, "imageSrc"))
+        .filter((reference): reference is NonNullable<ReturnType<typeof imageSourceValue>> => reference !== null)
+    : [];
+
+  const executionMode =
+    requestedExecutionMode ??
+    (maskInput?.assetId || maskInput?.dataUrl
+      ? "region_edit"
+      : normalizedTarget
+        ? "image_edit"
+        : "text_to_image");
+
+  if (executionMode !== "text_to_image" && !normalizedTarget) {
+    return { ok: false, response: badRequest("Image edit jobs require a target image.") };
+  }
+
+  if (executionMode === "region_edit" && !maskInput) {
+    return { ok: false, response: badRequest("Region edit jobs require a mask.") };
+  }
+
+  const inputAssetIds = new Set<string>(referenceAssetIds);
+
+  const persistInlineImage = async (persistParams: {
+    label: string;
+    imageUrl: string;
+    kind?: "upload" | "reference";
+    metadata?: Record<string, unknown>;
+  }) => {
+    if (!isInlineImageUrl(persistParams.imageUrl)) {
+      if (persistParams.imageUrl && isRemoteImageUrl(persistParams.imageUrl)) {
+        throw new Error("Remote image URLs are not allowed for AI job inputs.");
+      }
+
+      if (persistParams.imageUrl) {
+        throw new Error("Unsupported AI job image source.");
+      }
+
+      return undefined;
+    }
+
+    if (persistParams.imageUrl.length > INLINE_IMAGE_LIMIT_BYTES * 2) {
+      throw new Error("Inline image is too large.");
+    }
+
+    const persisted = await persistTemporaryProjectImageAsset({
+      supabase,
+      projectId,
+      ownerId: user.id,
+      requestId: context.requestId,
+      label: persistParams.label,
+      dataUrl: persistParams.imageUrl,
+      kind: persistParams.kind ?? "reference",
+      metadata: persistParams.metadata,
+    });
+
+    inputAssetIds.add(persisted.assetId);
+    return persisted.assetId;
+  };
+
+  let sanitizedTarget: typeof normalizedTarget = null;
+  let sanitizedImageReferences: typeof normalizedImageReferences = [];
+  let sanitizedPresetReferences: typeof normalizedPresetReferences = [];
+  let resolvedMaskAssetId: string | undefined;
+
+  try {
+    sanitizedTarget = normalizedTarget
+      ? {
+          ...normalizedTarget,
+          assetId:
+            normalizedTarget.assetId ??
+            (await persistInlineImage({
+              label: normalizedTarget.title ?? "target-image",
+              imageUrl: normalizedTarget.imageUrl ?? "",
+              kind: "upload",
+              metadata: {
+                sourceType: "ai-job-target",
+                targetNodeId,
+              },
+            })),
+          imageUrl: normalizedTarget.assetId ? normalizedTarget.imageUrl : "",
+        }
+      : null;
+
+    if (sanitizedTarget?.assetId) {
+      inputAssetIds.add(sanitizedTarget.assetId);
+    }
+
+    sanitizedImageReferences = await Promise.all(
+      normalizedImageReferences.map(async (reference, index) => {
+        const assetId =
+          reference.assetId ??
+          (await persistInlineImage({
+            label: reference.title ?? `reference-image-${index + 1}`,
+            imageUrl: reference.imageUrl ?? "",
+            kind: "reference",
+            metadata: {
+              sourceType: "ai-job-reference",
+              referenceIndex: index,
+            },
+          }));
+
+        if (reference.assetId) {
+          inputAssetIds.add(reference.assetId);
+        }
+
+        return {
+          ...reference,
+          assetId,
+          imageUrl: assetId ? "" : reference.imageUrl,
+        };
+      }),
+    );
+
+    sanitizedPresetReferences = await Promise.all(
+      normalizedPresetReferences.map(async (reference, index) => {
+        const assetId =
+          reference.assetId ??
+          (await persistInlineImage({
+            label: reference.label ?? `preset-reference-${index + 1}`,
+            imageUrl: reference.imageSrc ?? "",
+            kind: "reference",
+            metadata: {
+              sourceType: "ai-job-preset-reference",
+              referenceIndex: index,
+            },
+          }));
+
+        if (reference.assetId) {
+          inputAssetIds.add(reference.assetId);
+        }
+
+        return {
+          ...reference,
+          assetId,
+          imageSrc: assetId ? "" : reference.imageSrc,
+        };
+      }),
+    );
+
+    resolvedMaskAssetId =
+      maskInput?.assetId ??
+      (maskInput?.dataUrl
+        ? await persistInlineImage({
+            label: "region-mask",
+            imageUrl: maskInput.dataUrl,
+            kind: "reference",
+            metadata: {
+              sourceType: "ai-job-mask",
+              width: maskInput.width,
+              height: maskInput.height,
+              selectionRatio: maskInput.selectionRatio,
+            },
+          })
+        : undefined);
+  } catch (error) {
+    return {
+      ok: false,
+      response: badRequest(
+        error instanceof Error ? error.message : "Unable to validate AI job image inputs.",
+      ),
+    };
+  }
+
+  if (executionMode !== "text_to_image" && !sanitizedTarget?.assetId) {
+    return { ok: false, response: badRequest("Image edit jobs require a persisted target asset.") };
+  }
+
+  if (executionMode === "region_edit" && !resolvedMaskAssetId) {
+    return { ok: false, response: badRequest("Region edit jobs require a persisted mask asset.") };
+  }
+
+  const resolvedReferenceAssetIds = Array.from(
+    new Set([
+      ...referenceAssetIds,
+      ...sanitizedImageReferences
+        .map((reference) => reference.assetId)
+        .filter((assetId): assetId is string => typeof assetId === "string" && assetId.length > 0),
+      ...sanitizedPresetReferences
+        .map((reference) => reference.assetId)
+        .filter((assetId): assetId is string => typeof assetId === "string" && assetId.length > 0),
+    ]),
+  );
+
+  const idempotencyKey =
+    stringValue(body, "idempotencyKey") ??
+    buildIdempotencyKey({
+      userId: user.id,
+      projectId,
+      jobType,
+      prompt,
+      inputSnapshotId: loadedSnapshot?.id ?? resolvedSnapshotId ?? null,
+      targetNodeId,
+      executionMode,
+    });
+
+  const sanitizedCanvasGraphContext = canvasGraphContext
+    ? {
+        ...canvasGraphContext,
+        ...(sanitizedTarget ? { target: sanitizedTarget } : {}),
+        imageReferences: sanitizedImageReferences,
+        presetReferences: sanitizedPresetReferences,
+      }
+    : null;
+
+  const { data: existingJob, error: existingJobError } = await supabase
+    .from("ai_jobs")
+    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+    .eq("project_id", projectId)
+    .eq("created_by", user.id)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (existingJobError) {
+    return {
+      ok: false,
+      response: apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check existing AI job", 500, context.requestId),
+    };
+  }
+
+  if (existingJob) {
+    return {
+      ok: true,
+      data: {
+        created: false,
+        idempotent: true,
+        job: mapAiJobRecord(existingJob, request.url),
+      },
+    };
+  }
+
+  const { count: activeJobCount, error: activeJobError } = await supabase
+    .from("ai_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("created_by", user.id)
+    .in("status", ["queued", "running"]);
+
+  if (activeJobError) {
+    return {
+      ok: false,
+      response: apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check active AI jobs", 500, context.requestId),
+    };
+  }
+
+  if ((activeJobCount ?? 0) >= 3) {
+    return {
+      ok: false,
+      response: apiFailure(
+        "CONCURRENT_JOB_LIMIT_REACHED",
+        "Too many active generation jobs",
+        429,
+        context.requestId,
+      ),
+    };
+  }
+
+  const generationCreditCost =
+    jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept;
+  const creditReservation = await reserveUserCredits(context, generationCreditCost);
+  if ("error" in creditReservation) {
+    return { ok: false, response: creditReservation.error };
+  }
+
+  const { data: aiJob, error: aiJobError } = await supabase
+    .from("ai_jobs")
+    .insert({
+      project_id: projectId,
+      thread_id: threadId ?? null,
+      created_by: user.id,
+      status: "queued",
+      job_type: jobType,
+      prompt,
+      input_snapshot_id: loadedSnapshot?.id ?? null,
+      input_asset_ids: [...inputAssetIds],
+      idempotency_key: idempotencyKey,
+      target_node_id: targetNodeId ?? null,
+      job_payload: {
+        executionMode,
+        promptMode,
+        referenceAssetIds: resolvedReferenceAssetIds,
+        inputAssetIds: [...inputAssetIds],
+        selection: mergedSnapshot.selection,
+        snapshot: mergedSnapshot,
+        snapshotVersion: mergedSnapshot.snapshotVersion,
+        snapshotSummary: {
+          objectCount: mergedSnapshot.objects.length,
+          regionCount: mergedSnapshot.regions.length,
+          lockCount: mergedSnapshot.locks.length,
+        },
+        targetNodeId,
+        maskAssetId: resolvedMaskAssetId ?? null,
+        canvasGraphContext: sanitizedCanvasGraphContext,
+      } as never,
+    })
+    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+    .single();
+
+  if (aiJobError || !aiJob) {
+    logger.error("ai job create failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      projectId,
+      error: aiJobError,
+    });
+    const { data: racedJob } = await supabase
+      .from("ai_jobs")
+      .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+      .eq("project_id", projectId)
+      .eq("created_by", user.id)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+
+    if (racedJob) {
+      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+      return {
+        ok: true,
+        data: {
+          created: false,
+          idempotent: true,
+          job: mapAiJobRecord(racedJob, request.url),
+        },
+      };
+    }
+
+    await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    return {
+      ok: false,
+      response: apiFailure("AI_JOB_CREATE_FAILED", "Unable to create AI job", 500, context.requestId),
+    };
+  }
+
+  const payload: QueuedCarverAiJobPayload = {
+    jobId: aiJob.id,
+    requestId: context.requestId,
+    idempotencyKey,
+  };
+
+  const queue = createAiJobQueue();
+
+  try {
+    await queue.add(AI_JOB_QUEUE_EVENT_NAME, payload, {
+      jobId: aiJob.id,
+      removeOnComplete: 100,
+      removeOnFail: 100,
+    });
+  } catch {
+    logger.error("ai job enqueue failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      projectId,
+      jobId: aiJob.id,
+    });
+    await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    await supabase
+      .from("ai_jobs")
+      .update({
+        status: "failed",
+        error_code: "queue_enqueue_failed",
+        error_message: "Unable to enqueue the AI job",
+      })
+      .eq("id", aiJob.id);
+
+    return {
+      ok: false,
+      response: apiFailure("QUEUE_UNAVAILABLE", "Unable to enqueue AI job", 500, context.requestId),
+    };
+  } finally {
+    await queue.close();
+  }
+
+  return {
+    ok: true,
+    data: {
+      created: true,
+      idempotent: false,
+      job: mapAiJobRecord(aiJob, request.url),
+      creditsRemaining: creditReservation.creditsRemaining,
+    },
+  };
+}
+
+function mapAiJobRecord(row: {
+  id: string;
+  project_id: string;
+  thread_id: string | null;
+  status: CarverAiJobRecord["status"];
+  job_type: CarverAiJobRecord["jobType"];
+  prompt: string | null;
+  input_snapshot_id: string | null;
+  output_snapshot_id: string | null;
+  output_asset_ids: string[] | null;
+  provider: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  job_result: unknown;
+}, requestUrl?: string): CarverAiJobRecord {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    threadId: row.thread_id,
+    status: row.status,
+    jobType: row.job_type,
+    prompt: row.prompt,
+    inputSnapshotId: row.input_snapshot_id,
+    outputSnapshotId: row.output_snapshot_id,
+    outputAssetIds: row.output_asset_ids ?? [],
+    provider: row.provider,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    jobResult: requestUrl
+      ? resolveAiJobResultAssetUrls(
+          requestUrl,
+          isCarverAiJobResult(row.job_result) ? row.job_result : null,
+          row.status,
+        )
+      : isCarverAiJobResult(row.job_result) ? row.job_result : null,
+  };
+}
+
+function isCarverAiJobResult(value: unknown): value is CarverAiJobResult {
+  const candidate = value as Record<string, unknown> | null;
+  return candidate !== null && typeof candidate === "object" && !Array.isArray(candidate) && "stage" in candidate;
+}

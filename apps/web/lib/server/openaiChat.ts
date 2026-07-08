@@ -1,7 +1,8 @@
 import "server-only";
 
+import { DEFAULT_OPENAI_CHAT_MODEL } from "../openaiChatModels";
+
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const OPENAI_MODEL = "gpt-5-mini";
 
 const SYSTEM_PROMPT = [
   "You are Carver AI, an AI landscape architect co-pilot.",
@@ -88,7 +89,7 @@ export async function createOpenAITextResponse(params: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: params.model ?? OPENAI_MODEL,
+      model: params.model ?? DEFAULT_OPENAI_CHAT_MODEL,
       input: params.input,
     }),
   });
@@ -112,6 +113,7 @@ export async function createChatCompletion(params: {
   message: string;
   history: ChatHistoryEntry[];
   images?: ChatInputImage[];
+  model?: string;
 }) {
   const conversation: Array<{
     role: "system" | "user" | "assistant";
@@ -166,7 +168,7 @@ export async function createChatCompletion(params: {
   ];
 
   return createOpenAITextResponse({
-    model: OPENAI_MODEL,
+    model: params.model ?? DEFAULT_OPENAI_CHAT_MODEL,
     input: conversation,
   });
 }

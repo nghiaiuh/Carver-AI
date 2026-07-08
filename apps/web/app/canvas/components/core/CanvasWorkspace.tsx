@@ -23,6 +23,7 @@ import QuickEditModal from "../panels/QuickEditModal";
 import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
+import { buildCanvasSnapshotWithGraph } from "../../utils/canvasGenerationContext";
 
 export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const canvas = useCanvasWorkspace({ projectId });
@@ -306,7 +307,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                     actions.upsertPresetGroup(params, replaceAllChildren);
                   }}
                   onUploadAssets={actions.uploadAssetsToFolder}
-                  onSyncLibraryFromBucket={actions.syncLibraryFromBucket}
                   onToast={actions.showToast}
                   onClose={actions.closeLeftSidebar}
                 />
@@ -363,6 +363,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             isSnapshotSaving={state.isSnapshotSaving}
             currentSnapshotMeta={state.currentSnapshotMeta}
             hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
+            creditsAmount={state.creditsAmount}
             canvasThemeColor={state.canvasThemeColor}
             onCanvasThemeChange={actions.setCanvasThemeColor}
             activeLeftSidebarPanel={state.leftSidebar.open ? state.leftSidebar.panel : null}
@@ -409,16 +410,34 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                 <AiChatSidebar
                   canvasId="canvas-main"
                   projectId={projectId}
+                  targetNodeId={state.activeGenerationTarget?.id ?? null}
                   targetTitle={state.activeGenerationTarget?.title ?? null}
                   targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
                   targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}
                   targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
+                  generationContext={state.activeGenerationContext}
+                  generationSnapshot={buildCanvasSnapshotWithGraph({
+                    nodes: state.nodes,
+                    edges: state.edges,
+                    activeGenerationTargetId: state.activeGenerationTargetId,
+                  })}
                   connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
                   connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
                   generationAssistantMessages={state.generationAssistantMessages}
                   draft={state.promptText}
                   onDraftChange={actions.setPromptText}
+                  onCreditsChange={(creditsRemaining) => {
+                    if (typeof creditsRemaining === "number") {
+                      void actions.refreshProfileCredits().catch(() => undefined);
+                    }
+                  }}
                   onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}
+                  onGenerationComplete={({ job, targetNodeId: completedTargetNodeId }) =>
+                    actions.applyCompletedGenerationJob({
+                      job,
+                      targetNodeId: completedTargetNodeId,
+                      syncAssistantMessage: false,
+                    })}
                   onClose={actions.closeRightPanel}
                   onToast={actions.showToast}
                 />
