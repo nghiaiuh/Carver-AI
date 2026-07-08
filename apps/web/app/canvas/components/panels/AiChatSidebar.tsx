@@ -129,6 +129,8 @@ type EnhancePromptResult = {
 const DEFAULT_CANVAS_ID = "canvas-main";
 const CHAT_MODEL_STORAGE_KEY = "carver-chat-model";
 const PROJECT_REQUIRED_MESSAGE = "Create or open a project before using AI chat.";
+const GENERATION_QUEUE_TIMEOUT_MS = 30_000;
+const GENERATION_RUNNING_TIMEOUT_MS = 300_000;
 
 function formatPresetReferenceLabel(reference: CanvasGenerationPresetReference) {
   if (reference.slot?.trim()) {
@@ -666,10 +668,20 @@ export default function AiChatSidebar({
         }
 
         const job = payload.data.job;
-        if (job.status === "queued" || job.status === "running") {
-          if (Date.now() - startedAt >= 30_000) {
+        if (job.status === "queued") {
+          if (Date.now() - startedAt >= GENERATION_QUEUE_TIMEOUT_MS) {
             throw new Error(
-              "The image job is still waiting in the queue. Make sure Redis and apps/worker are running, then try again.",
+              "The image job is still queued. Make sure Redis and apps/worker are running, then try again.",
+            );
+          }
+          await wait(2000);
+          continue;
+        }
+
+        if (job.status === "running") {
+          if (Date.now() - startedAt >= GENERATION_RUNNING_TIMEOUT_MS) {
+            throw new Error(
+              "The image job is still processing in the worker. Check the worker log for an OpenAI, R2, or network timeout.",
             );
           }
           await wait(2000);
