@@ -18,6 +18,9 @@ import { generateImageFromPrompt } from "../providers/openai/generate-image";
 import { persistGeneratedImageAsset } from "./asset-persistence-service";
 import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGenerationTargetImage } from "./job-image-sources";
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
+import { createSafeLogger } from "@carver/shared";
+
+const logger = createSafeLogger("worker.generation-service");
 
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
@@ -103,6 +106,15 @@ export const executeGeneratedImageJob = async (
     resolveGenerationMaskImage(job),
   ]);
 
+  logger.info("generation sources resolved", {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    executionMode: job.executionMode,
+    hasTargetImage: Boolean(targetImage),
+    referenceImageCount: referenceImages.length,
+    hasMaskImage: Boolean(maskImage),
+  });
+
   if ((job.executionMode === "image_edit" || job.executionMode === "region_edit") && !targetImage) {
     throw new Error("Image edit jobs require a resolved target image.");
   }
@@ -118,6 +130,17 @@ export const executeGeneratedImageJob = async (
     referenceImages,
     maskImage,
   });
+
+  logger.info("generation provider image received", {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    executionMode: job.executionMode,
+    mimeType: providerImage.mimeType,
+    width: providerImage.width,
+    height: providerImage.height,
+    provider: providerImage.provider,
+  });
+
   const persisted = await persistGeneratedImageAsset({
     jobId: job.jobId,
     projectId: job.projectId,
@@ -129,6 +152,12 @@ export const executeGeneratedImageJob = async (
     width: providerImage.width,
     height: providerImage.height,
     provider: providerImage.provider,
+  });
+
+  logger.info("generated asset persisted", {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    assetId: persisted.assetId,
   });
 
   if (!persisted.assetId) {
@@ -147,6 +176,13 @@ export const executeGeneratedImageJob = async (
     threadId: job.threadId,
     content: assistantContent,
     generatedImages: [persisted.generatedImage],
+  });
+
+  logger.info("generated assistant message persisted", {
+    jobId: job.jobId,
+    projectId: job.projectId,
+    threadId: job.threadId ?? null,
+    assistantMessageId: assistantMessage.id,
   });
 
   return {

@@ -6,17 +6,36 @@
  */
 
 import type { Job } from "bullmq";
-import type { QueuedCarverAiJobPayload } from "@carver/shared";
+import { createSafeLogger, type QueuedCarverAiJobPayload } from "@carver/shared";
 import { handleGenerateConceptJob } from "./handlers/generate-concept";
 import { handleRefineConceptJob } from "./handlers/refine-concept";
 import { failJob } from "../services/job-status-service";
 import { buildJobError } from "../mappers/build-job-error";
 import { aiJobRepository } from "../repositories/ai-job-repository";
 
+const logger = createSafeLogger("worker.process-ai-job");
+
 export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
-  const dbJob = await aiJobRepository.loadForProcessing(job.data.jobId);
+  let dbJob;
+
+  try {
+    dbJob = await aiJobRepository.loadForProcessing(job.data.jobId);
+  } catch (error) {
+    const mappedError = buildJobError(error);
+    logger.error("job load for processing failed", {
+      bullJobId: job.id,
+      jobId: job.data.jobId,
+      error: mappedError.errorMessage,
+    });
+    await failJob(job.data.jobId, mappedError).catch(() => undefined);
+    throw error;
+  }
 
   if (!dbJob) {
+    logger.info("job skipped before processing", {
+      bullJobId: job.id,
+      jobId: job.data.jobId,
+    });
     return;
   }
 

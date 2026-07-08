@@ -15,6 +15,10 @@ import {
   OPENAI_IMAGES_URL,
 } from "@carver/shared";
 import { hasAllowedMagicBytes } from "@carver/storage";
+import { createSafeLogger } from "@carver/shared";
+
+const logger = createSafeLogger("worker.openai-image");
+const OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
 
 type OpenAIImageGenerationResponse = {
   data?: Array<{
@@ -54,7 +58,9 @@ function parseImageSize(size: string): { width: number; height: number } {
 }
 
 async function imageUrlToBuffer(imageUrl: string) {
-  const response = await fetch(imageUrl);
+  const response = await fetchWithTimeout(imageUrl, {
+    timeoutMs: OPENAI_IMAGE_REQUEST_TIMEOUT_MS,
+  });
   if (!response.ok) {
     throw new Error("OpenAI returned an image URL that could not be downloaded.");
   }
@@ -98,6 +104,29 @@ async function parseGeneratedImage(payload: OpenAIImageGenerationResponse) {
     buffer,
     revisedPrompt: firstImage.revised_prompt ?? null,
   };
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit & { timeoutMs: number },
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), init.timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`OpenAI image request timed out after ${init.timeoutMs / 1000} seconds.`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function createImagesEditRequest(params: {
@@ -177,7 +206,16 @@ export async function generateImageFromPrompt(params: {
           maskImage: params.maskImage,
         });
 
-  const response = await fetch(endpoint, {
+  logger.info("calling openai images api", {
+    model: OPENAI_IMAGE_MODEL,
+    endpoint,
+    mode: params.mode,
+    referenceImageCount: params.referenceImages?.length ?? 0,
+    hasTargetImage: Boolean(params.targetImage),
+    hasMaskImage: Boolean(params.maskImage),
+  });
+
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers:
       requestBody instanceof FormData
@@ -189,6 +227,7 @@ export async function generateImageFromPrompt(params: {
             Authorization: `Bearer ${apiKey}`,
           },
     body: requestBody,
+    timeoutMs: OPENAI_IMAGE_REQUEST_TIMEOUT_MS,
   });
 
   const payload = (await response.json().catch(() => ({}))) as OpenAIImageGenerationResponse;
@@ -198,6 +237,11 @@ export async function generateImageFromPrompt(params: {
 
   const { buffer, revisedPrompt } = await parseGeneratedImage(payload);
   const mimeType = inferOutputMimeType(buffer);
+  logger.info("openai images api succeeded", {
+    model: OPENAI_IMAGE_MODEL,
+    mode: params.mode,
+    mimeType,
+  });
 
   const { width, height } = parseImageSize(OPENAI_IMAGE_SIZE);
   return {
