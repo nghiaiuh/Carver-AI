@@ -100,7 +100,7 @@ function sanitizeEdgeRole(value: unknown): ImageConnectionRole | undefined {
     : undefined;
 }
 
-export function sanitizeSnapshotImageUrl(url: unknown): string {
+export function sanitizePersistedSnapshotImageUrl(url: unknown): string {
   const normalizedUrl = stringValue(url);
   if (
     !normalizedUrl ||
@@ -125,9 +125,23 @@ export function sanitizeSnapshotImageUrl(url: unknown): string {
   return normalizedUrl;
 }
 
+export function sanitizeRuntimeSnapshotImageUrl(url: unknown): string {
+  const normalizedUrl = stringValue(url);
+  if (
+    !normalizedUrl ||
+    normalizedUrl.startsWith("data:") ||
+    normalizedUrl.startsWith("blob:") ||
+    normalizedUrl.startsWith("file:")
+  ) {
+    return "";
+  }
+
+  return normalizedUrl;
+}
+
 function sanitizeSourceImage(sourceImage: unknown): CanvasSourceImage | undefined {
   const source = objectValue(sourceImage);
-  const url = sanitizeSnapshotImageUrl(source?.url);
+  const url = sanitizeRuntimeSnapshotImageUrl(source?.url);
   const assetId = stringValue(source?.assetId) ?? undefined;
   if (!url && !assetId) {
     return undefined;
@@ -158,7 +172,7 @@ function sanitizePresetChild(child: unknown, index: number): CanvasPresetChild |
     id,
     slot,
     label,
-    imageSrc: sanitizeSnapshotImageUrl(source?.imageSrc),
+    imageSrc: sanitizeRuntimeSnapshotImageUrl(source?.imageSrc),
     prompt: nullableStringValue(source?.prompt),
     order: typeof source?.order === "number" && Number.isFinite(source.order) ? source.order : index,
     assetId: stringValue(source?.assetId) ?? undefined,
@@ -178,8 +192,8 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
   const kind = source?.kind === "presetGroup" ? "presetGroup" : "image";
   const title = stringValue(source?.title) ?? (kind === "presetGroup" ? "Preset group" : "Untitled image");
   const imageUrl =
-    sanitizeSnapshotImageUrl(source?.imageUrl) ||
-    sanitizeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
+    sanitizeRuntimeSnapshotImageUrl(source?.imageUrl) ||
+    sanitizeRuntimeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
   const sourceImage = sanitizeSourceImage(source?.sourceImage);
 
   if (kind === "presetGroup") {
@@ -332,7 +346,7 @@ export function hydrateCanvasStateFromSnapshot(
 export function sanitizeSourceImageForSnapshot(
   sourceImage?: CanvasSourceImage,
 ): CanvasGraphSourceImage | undefined {
-  const sanitizedUrl = sanitizeSnapshotImageUrl(sourceImage?.url);
+  const sanitizedUrl = sanitizePersistedSnapshotImageUrl(sourceImage?.url);
   if (!sanitizedUrl && !sourceImage?.assetId) {
     return undefined;
   }

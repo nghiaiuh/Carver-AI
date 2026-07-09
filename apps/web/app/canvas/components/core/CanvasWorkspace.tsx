@@ -241,6 +241,12 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
 
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void actions.saveVersion();
+        return;
+      }
+
       if (event.key.toLowerCase() === "r" && state.selectedNode) {
         event.preventDefault();
         actions.handleTool("region");
@@ -273,6 +279,31 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       />
       {/* ── Desktop layout ──────────────────────────────────────────────────── */}
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
+        {state.draftWarning ? (
+          <div className="border-b border-[var(--canvas-theme-border)] bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
+              <p>{state.draftWarning}</p>
+              {state.draftConflict ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void actions.restoreLocalDraft()}
+                    className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    Restore local draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void actions.useSavedVersion()}
+                    className="rounded-full border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    Use saved version
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div data-enter className="relative flex min-h-0 flex-1">
           {/* Left sidebar */}
           {isLeftSidebarRendered ? (
@@ -352,7 +383,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onAddObject={() => actions.setShowAddObjectMenu(true)}
             onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
             onGenerate={actions.generateConcept}
-            onSaveSnapshot={actions.saveSnapshot}
             onToast={actions.showToast}
             onNodesChange={actions.setNodes}
             onEdgesChange={actions.setEdges}
@@ -361,6 +391,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onSetActiveNode={actions.setActiveNodeId}
             isSnapshotLoading={state.isSnapshotLoading}
             isSnapshotSaving={state.isSnapshotSaving}
+            isDraftSaving={state.isDraftSaving}
             currentSnapshotMeta={state.currentSnapshotMeta}
             hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
             creditsAmount={state.creditsAmount}
@@ -391,6 +422,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onBrushSizeChange={actions.setBrushSize}
             onBrushSoftnessChange={actions.setBrushSoftness}
             onCloseRegionEditor={actions.exitRegionMode}
+            onSaveVersion={() => void actions.saveVersion()}
+            onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
           />
 
           {/* Right panel */}

@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import {
@@ -43,7 +43,13 @@ import {
   buildCanvasGenerationContext,
   buildCanvasSnapshotWithGraph,
 } from "../utils/canvasGenerationContext";
-import { hydrateCanvasStateFromSnapshot } from "../utils/canvasSnapshotHydration";
+import {
+  applyResolvedAssetUrlsToSnapshot,
+  collectSnapshotAssetIds,
+} from "../utils/snapshotAssetRefs";
+import {
+  hydrateCanvasStateFromSnapshot,
+} from "../utils/canvasSnapshotHydration";
 import {
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
@@ -71,6 +77,14 @@ import {
   syncPresetGroupPreview,
   upsertPresetChild,
 } from "../utils/presetGroupHelpers";
+import {
+  clearCanvasDraft,
+  loadCanvasDraft,
+  markCanvasDraftClean,
+  pruneExpiredCanvasDrafts,
+  saveCanvasDraft,
+  type LocalCanvasDraftRecord,
+} from "../utils/localCanvasDraft";
 
 // Lấy node đang được chọn từ trạng thái selection hiện tại của canvas.
 function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
@@ -110,6 +124,9 @@ type SnapshotMeta = {
   snapshotId: string;
   version: number;
   createdAt: string;
+  snapshotKind?: "initial" | "manual" | "close" | "job_checkpoint";
+  isUserVisible?: boolean;
+  documentHash?: string | null;
 };
 
 type SnapshotRouteResponse = {
@@ -117,6 +134,35 @@ type SnapshotRouteResponse = {
   data?: {
     document?: CanvasSnapshotDocument;
     snapshot?: SnapshotMeta | null;
+  };
+  error?: string;
+};
+
+type AssetResolveResponse = {
+  success?: boolean;
+  data?: {
+    assets?: Record<string, {
+      assetId: string;
+      expiresAt: string;
+      thumbUrl: string;
+      previewUrl: string;
+      originalUrl: string;
+    }>;
+  };
+  error?: string;
+};
+
+type SnapshotAssetPersistResponse = {
+  success?: boolean;
+  data?: {
+    images?: Array<{
+      nodeId: string;
+      assetId: string;
+      imageUrl: string;
+      expiresAt: string;
+      mimeType: string;
+      sizeBytes: number;
+    }>;
   };
   error?: string;
 };
@@ -167,17 +213,121 @@ async function authedFetch(
   });
 }
 
+async function authedKeepaliveFetch(
+  client: BrowserSupabaseClient,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+) {
+  const accessToken = await getAccessToken(client);
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+
+  return fetch(input, {
+    ...init,
+    headers,
+    keepalive: true,
+  });
+}
+
+async function getSessionUserId(client: BrowserSupabaseClient) {
+  const { data, error } = await client.auth.getSession();
+  if (error) {
+    throw new Error(error.message || "Unable to read the current session.");
+  }
+
+  return data.session?.user.id ?? null;
+}
+
 function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
-  return JSON.stringify(document);
+  const serialized = JSON.stringify(document);
+  let hash = 2166136261;
+
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `fnv1a-${(hash >>> 0).toString(16)}`;
+}
+
+const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 1000;
+const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
+
+function hasTransientSnapshotContent(document: CanvasSnapshotDocument) {
+  const hasUnsafeUrl = (value: string | undefined) =>
+    Boolean(
+      value &&
+        (value.startsWith("blob:") ||
+          value.startsWith("data:") ||
+          value.startsWith("file:") ||
+          value.includes("base64,")),
+    );
+
+  return document.graph.nodes.some((node) => {
+    if (hasUnsafeUrl(node.imageUrl) || hasUnsafeUrl(node.sourceImage?.url)) {
+      return true;
+    }
+
+    return (
+      node.presetGroup?.children.some(
+        (child) => hasUnsafeUrl(child.imageSrc) || hasUnsafeUrl(child.sourceImage?.url),
+      ) ?? false
+    );
+  });
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Unable to read image blob."));
+    };
+    reader.onerror = () => reject(new Error("Unable to read image blob."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function resolveSnapshotRuntimeAssetUrls(
+  client: BrowserSupabaseClient,
+  document: CanvasSnapshotDocument,
+) {
+  const assetIds = collectSnapshotAssetIds(document);
+  if (assetIds.length === 0) {
+    return document;
+  }
+
+  const response = await authedFetch(client, "/api/assets/resolve", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      assetIds,
+    }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as AssetResolveResponse;
+
+  if (!response.ok || !payload.data?.assets) {
+    throw new Error(payload.error || "Unable to resolve canvas assets.");
+  }
+
+  return applyResolvedAssetUrlsToSnapshot(document, payload.data.assets);
 }
 
 function getTerminalGenerationStatusMessage(job: CarverAiJobRecord) {
-  if (job.status === "failed") {
-    return job.errorMessage || "AI generation failed.";
-  }
-
-  if (job.status === "cancelled") {
-    return "AI generation was cancelled.";
+  switch (job.status as string) {
+    case "failed":
+    case "enqueue_failed":
+      return job.errorMessage || "AI generation failed.";
+    case "cancelled":
+      return "AI generation was cancelled.";
+    default:
+      break;
   }
 
   switch (job.jobResult?.stage) {
@@ -268,13 +418,47 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     useState<PendingPresetGroupInsert | null>(null);
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(false);
   const [isSnapshotSaving, setIsSnapshotSaving] = useState(false);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
   const [currentSnapshotMeta, setCurrentSnapshotMeta] = useState<SnapshotMeta | null>(null);
   const [hasUnsavedSnapshotChanges, setHasUnsavedSnapshotChanges] = useState(false);
   const [creditsAmount, setCreditsAmount] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [draftConflict, setDraftConflict] = useState<LocalCanvasDraftRecord | null>(null);
+  const [draftWarning, setDraftWarning] = useState<string | null>(null);
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
   const savedSnapshotFingerprintRef = useRef<string | null>(null);
   const snapshotLoadRequestRef = useRef(0);
   const snapshotSaveInFlightRef = useRef(false);
+  const draftSaveTimeoutRef = useRef<number | null>(null);
+  const latestSnapshotDocumentRef = useRef<CanvasSnapshotDocument>(coerceCanvasSnapshotDocument(undefined));
+  const latestSnapshotFingerprintRef = useRef<string>("");
+  const latestNodesRef = useRef<CanvasNode[]>([]);
+  const latestEdgesRef = useRef<CanvasEdge[]>([]);
+  const latestActiveGenerationTargetIdRef = useRef<string | null>(null);
+  const snapshotBaselineRef = useRef<{
+    snapshotId: string | null;
+    version: number | null;
+    documentHash: string | null;
+  }>({
+    snapshotId: null,
+    version: null,
+    documentHash: null,
+  });
+  const tabIdRef = useRef(
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `tab-${Date.now()}`,
+  );
+  const draftChannelRef = useRef<BroadcastChannel | null>(null);
+  const saveSnapshotDocumentRef = useRef<
+    ((params: {
+      projectId?: string;
+      reason: "manual" | "close";
+      quiet?: boolean;
+      keepalive?: boolean;
+    }) => Promise<boolean>) | null
+  >(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const leftSidebarResize = useResizablePanel({
@@ -326,6 +510,25 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     activeGenerationTarget
       ? buildCanvasGenerationContext(activeGenerationTarget.id, nodes, edges, promptText)
       : null;
+  const currentSnapshotDocument = useMemo(
+    () =>
+      buildCanvasSnapshotWithGraph({
+        nodes,
+        edges,
+        activeGenerationTargetId,
+      }),
+    [activeGenerationTargetId, edges, nodes],
+  );
+  const currentSnapshotFingerprint = useMemo(
+    () => createSnapshotFingerprint(currentSnapshotDocument),
+    [currentSnapshotDocument],
+  );
+
+  latestSnapshotDocumentRef.current = currentSnapshotDocument;
+  latestSnapshotFingerprintRef.current = currentSnapshotFingerprint;
+  latestNodesRef.current = nodes;
+  latestEdgesRef.current = edges;
+  latestActiveGenerationTargetIdRef.current = activeGenerationTargetId;
 
   useEffect(() => {
     let cancelled = false;
@@ -346,6 +549,45 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       cancelled = true;
     };
   }, [refreshProfileCredits]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setCurrentUserId(null);
+      setIsAuthReady(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSession = async () => {
+      try {
+        const userId = await getSessionUserId(supabase);
+        if (!cancelled) {
+          setCurrentUserId(userId);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAuthReady(true);
+        }
+      }
+    };
+
+    void syncSession();
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user.id ?? null);
+      setIsAuthReady(true);
+
+      if (!session?.user?.id) {
+        void pruneExpiredCanvasDrafts().catch(() => undefined);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      data.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const applyHydratedSnapshotState = (document: CanvasSnapshotDocument) => {
     const hydrated = hydrateCanvasStateFromSnapshot(document);
@@ -370,6 +612,90 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setSelectedSketchLineIds([]);
     handledGenerationJobIdsRef.current.clear();
   };
+
+  const applySnapshotBaseline = useCallback((document: CanvasSnapshotDocument, snapshot: SnapshotMeta | null) => {
+    const documentHash = snapshot?.documentHash?.trim() || createSnapshotFingerprint(document);
+    snapshotBaselineRef.current = {
+      snapshotId: snapshot?.snapshotId ?? null,
+      version: snapshot?.version ?? null,
+      documentHash,
+    };
+    savedSnapshotFingerprintRef.current = documentHash;
+    setCurrentSnapshotMeta(
+      snapshot
+        ? {
+            ...snapshot,
+            documentHash,
+          }
+        : null,
+    );
+    setHasUnsavedSnapshotChanges(false);
+  }, []);
+
+  const persistCanvasNodeImageAsset = useCallback(async (assetParams: {
+    blob: Blob;
+    title: string;
+    mimeType?: string;
+    name?: string;
+    role?: CanvasNode["role"];
+    preserveTitle?: boolean;
+  }) => {
+    if (!params.projectId) {
+      throw new Error("Open this canvas with a projectId before adding images.");
+    }
+
+    const client = requireCanvasSupabaseClient(supabase);
+    const dataUrl = await blobToDataUrl(assetParams.blob);
+    const response = await authedFetch(client, `/api/projects/${params.projectId}/snapshot/assets`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        images: [
+          {
+            nodeId: `pending-${Date.now()}`,
+            title: assetParams.title,
+            dataUrl,
+          },
+        ],
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as SnapshotAssetPersistResponse;
+    const persisted = payload.data?.images?.[0];
+
+    if (!response.ok || !persisted) {
+      throw new Error(payload.error || "Unable to persist the canvas image.");
+    }
+
+    return {
+      imageUrl: persisted.imageUrl,
+      assetId: persisted.assetId,
+      mimeType: persisted.mimeType,
+      sizeBytes: persisted.sizeBytes,
+      name: assetParams.name ?? assetParams.title,
+      role: assetParams.role,
+      preserveTitle: assetParams.preserveTitle,
+    };
+  }, [params.projectId, supabase]);
+
+  const restoreLocalDraftRecord = useCallback(async (record: LocalCanvasDraftRecord) => {
+    const client = requireCanvasSupabaseClient(supabase);
+    const resolvedDocument = await resolveSnapshotRuntimeAssetUrls(client, record.document);
+
+    applyHydratedSnapshotState(resolvedDocument);
+    snapshotBaselineRef.current = {
+      snapshotId: record.meta.basedOnSnapshotId ?? currentSnapshotMeta?.snapshotId ?? null,
+      version: record.meta.basedOnVersion ?? currentSnapshotMeta?.version ?? null,
+      documentHash: record.meta.basedOnHash ?? currentSnapshotMeta?.documentHash ?? null,
+    };
+    savedSnapshotFingerprintRef.current = record.meta.basedOnHash ?? currentSnapshotMeta?.documentHash ?? null;
+    setHasUnsavedSnapshotChanges(
+      Boolean(record.meta.documentHash && record.meta.documentHash !== record.meta.basedOnHash),
+    );
+    setDraftConflict(null);
+    setDraftWarning(null);
+  }, [applyHydratedSnapshotState, currentSnapshotMeta, supabase]);
 
   const applyCompletedGenerationJob = useCallback((params: {
     job: CarverAiJobRecord;
@@ -409,57 +735,97 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     showToast(getTerminalGenerationStatusMessage(params.job));
   }, [activeGenerationTarget, nodes]);
 
-  const saveSnapshot = async () => {
-    if (!params.projectId) {
-      showToast("Open this canvas with a projectId before saving snapshots.");
-      return;
+  const saveSnapshotDocument = useCallback(async (saveParams: {
+    projectId?: string;
+    reason: "manual" | "close";
+    quiet?: boolean;
+    keepalive?: boolean;
+  }) => {
+    const projectId = saveParams.projectId ?? params.projectId;
+    if (!projectId) {
+      if (!saveParams.quiet) {
+        showToast("Open this canvas with a projectId before saving snapshots.");
+      }
+      return false;
+    }
+
+    const snapshotDocument = latestSnapshotDocumentRef.current;
+    const snapshotFingerprint = latestSnapshotFingerprintRef.current;
+    const baselineHash = snapshotBaselineRef.current.documentHash;
+    const isDirty = Boolean(snapshotFingerprint && baselineHash && snapshotFingerprint !== baselineHash);
+
+    if (!isDirty) {
+      setHasUnsavedSnapshotChanges(false);
+      return false;
+    }
+
+    if (saveParams.reason === "close" && hasTransientSnapshotContent(snapshotDocument)) {
+      return false;
     }
 
     if (snapshotSaveInFlightRef.current) {
-      return;
+      return false;
     }
 
     snapshotSaveInFlightRef.current = true;
     setIsSnapshotSaving(true);
 
-    const snapshotDocument = buildCanvasSnapshotWithGraph({
-      nodes,
-      edges,
-      activeGenerationTargetId,
-    });
-    const snapshotFingerprint = createSnapshotFingerprint(snapshotDocument);
-
     try {
-      const response = await authedFetch(
-        requireCanvasSupabaseClient(supabase),
-        `/api/projects/${params.projectId}/snapshot`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            snapshot: snapshotDocument,
-          }),
+      const client = requireCanvasSupabaseClient(supabase);
+      const fetcher = saveParams.keepalive ? authedKeepaliveFetch : authedFetch;
+      const response = await fetcher(client, `/api/projects/${projectId}/snapshot`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          snapshot: snapshotDocument,
+          reason: saveParams.reason,
+          documentHash: snapshotFingerprint,
+        }),
+      });
       const payload = (await response.json().catch(() => ({}))) as SnapshotRouteResponse;
 
       if (!response.ok || !payload.data?.snapshot) {
         throw new Error(payload.error || "Unable to save the current snapshot.");
       }
 
-      savedSnapshotFingerprintRef.current = snapshotFingerprint;
-      setCurrentSnapshotMeta(payload.data.snapshot);
-      setHasUnsavedSnapshotChanges(false);
-      showToast(`Snapshot saved as v${payload.data.snapshot.version}`);
+      applySnapshotBaseline(snapshotDocument, payload.data.snapshot);
+      if (currentUserId) {
+        await markCanvasDraftClean(currentUserId, projectId, {
+          tabId: tabIdRef.current,
+          basedOnSnapshotId: payload.data.snapshot.snapshotId,
+          basedOnVersion: payload.data.snapshot.version,
+          basedOnHash: snapshotFingerprint,
+          documentHash: snapshotFingerprint,
+        });
+      }
+      setDraftConflict(null);
+      setDraftWarning(null);
+
+      if (!saveParams.quiet) {
+        showToast(
+          saveParams.reason === "manual"
+            ? `Version saved as v${payload.data.snapshot.version}`
+            : `Close version saved as v${payload.data.snapshot.version}`,
+        );
+      }
+
+      return true;
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Unable to save the current snapshot.");
+      if (!saveParams.quiet) {
+        showToast(
+          error instanceof Error
+            ? error.message
+            : "Unable to save the current snapshot.",
+        );
+      }
+      return false;
     } finally {
       snapshotSaveInFlightRef.current = false;
       setIsSnapshotSaving(false);
     }
-  };
+  }, [applySnapshotBaseline, currentUserId, params.projectId, supabase]);
 
   useEffect(() => {
     if (!activeGenerationTargetId) return;
@@ -483,13 +849,72 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [activeNodeId, nodes]);
 
   useEffect(() => {
-    if (!params.projectId) {
+    saveSnapshotDocumentRef.current = saveSnapshotDocument;
+  }, [saveSnapshotDocument]);
+
+  useEffect(() => {
+    if (!currentUserId || !params.projectId) {
+      draftChannelRef.current?.close();
+      draftChannelRef.current = null;
+      return;
+    }
+
+    const channel = new BroadcastChannel(DRAFT_BROADCAST_CHANNEL);
+    draftChannelRef.current = channel;
+    channel.onmessage = (event) => {
+      const message = event.data as
+        | {
+            type?: "draft-updated";
+            userId?: string;
+            projectId?: string;
+            tabId?: string;
+          }
+        | undefined;
+
+      if (
+        message?.type !== "draft-updated" ||
+        message.userId !== currentUserId ||
+        message.projectId !== params.projectId ||
+        message.tabId === tabIdRef.current
+      ) {
+        return;
+      }
+
+      setDraftWarning("Another tab updated this local draft. Your next save will use last-write-wins.");
+    };
+
+    return () => {
+      channel.close();
+      if (draftChannelRef.current === channel) {
+        draftChannelRef.current = null;
+      }
+    };
+  }, [currentUserId, params.projectId]);
+
+  useEffect(() => {
+    const projectId = params.projectId;
+    if (!projectId) {
       savedSnapshotFingerprintRef.current = null;
+      snapshotBaselineRef.current = {
+        snapshotId: null,
+        version: null,
+        documentHash: null,
+      };
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
       queueMicrotask(() => {
         setIsSnapshotLoading(false);
         setCurrentSnapshotMeta(null);
         setHasUnsavedSnapshotChanges(false);
+        setDraftConflict(null);
+        setDraftWarning(null);
       });
+      return;
+    }
+
+    if (!isAuthReady) {
       return;
     }
 
@@ -506,9 +931,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       setIsSnapshotLoading(true);
 
       try {
+        const client = requireCanvasSupabaseClient(supabase);
         const response = await authedFetch(
-          requireCanvasSupabaseClient(supabase),
-          `/api/projects/${params.projectId}/snapshot`,
+          client,
+          `/api/projects/${projectId}/snapshot`,
           {
             cache: "no-store",
           },
@@ -524,20 +950,61 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           return;
         }
 
-        applyHydratedSnapshotState(document);
-        savedSnapshotFingerprintRef.current = createSnapshotFingerprint(document);
-        setCurrentSnapshotMeta(payload.data.snapshot ?? null);
-        setHasUnsavedSnapshotChanges(false);
+        applySnapshotBaseline(document, payload.data.snapshot ?? null);
+        setDraftConflict(null);
+        setDraftWarning(null);
+
+        const draftRecord =
+          currentUserId ? await loadCanvasDraft(currentUserId, projectId) : null;
+        if (cancelled || requestId !== snapshotLoadRequestRef.current) {
+          return;
+        }
+
+        if (!draftRecord || draftRecord.meta.documentHash === draftRecord.meta.basedOnHash) {
+          applyHydratedSnapshotState(document);
+          return;
+        }
+
+        const dbVersion = payload.data.snapshot?.version ?? 0;
+        const hasConflict =
+          (typeof draftRecord.meta.basedOnVersion === "number" && draftRecord.meta.basedOnVersion < dbVersion) ||
+          Boolean(
+            draftRecord.meta.basedOnSnapshotId &&
+              payload.data.snapshot?.snapshotId &&
+              draftRecord.meta.basedOnSnapshotId !== payload.data.snapshot.snapshotId,
+          );
+
+        if (hasConflict) {
+          applyHydratedSnapshotState(document);
+          setDraftConflict(draftRecord);
+          setDraftWarning("A newer saved version exists. Restore the local draft only if you want to continue from that older base.");
+          return;
+        }
+
+        const resolvedDraft = await resolveSnapshotRuntimeAssetUrls(client, draftRecord.document);
+        if (cancelled || requestId !== snapshotLoadRequestRef.current) {
+          return;
+        }
+
+        applyHydratedSnapshotState(resolvedDraft);
+        snapshotBaselineRef.current = {
+          snapshotId: draftRecord.meta.basedOnSnapshotId ?? payload.data.snapshot?.snapshotId ?? null,
+          version: draftRecord.meta.basedOnVersion ?? payload.data.snapshot?.version ?? null,
+          documentHash: draftRecord.meta.basedOnHash ?? payload.data.snapshot?.documentHash ?? null,
+        };
+        savedSnapshotFingerprintRef.current =
+          draftRecord.meta.basedOnHash ?? payload.data.snapshot?.documentHash ?? null;
+        setHasUnsavedSnapshotChanges(
+          Boolean(draftRecord.meta.documentHash && draftRecord.meta.documentHash !== draftRecord.meta.basedOnHash),
+        );
       } catch (error) {
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }
 
         const emptyDocument = coerceCanvasSnapshotDocument(undefined);
+        applySnapshotBaseline(emptyDocument, null);
         applyHydratedSnapshotState(emptyDocument);
-        savedSnapshotFingerprintRef.current = createSnapshotFingerprint(emptyDocument);
-        setCurrentSnapshotMeta(null);
-        setHasUnsavedSnapshotChanges(false);
         showToast(
           error instanceof Error
             ? error.message
@@ -555,23 +1022,134 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [params.projectId, supabase]);
+  }, [applySnapshotBaseline, currentUserId, isAuthReady, params.projectId, supabase]);
 
   useEffect(() => {
-    if (!params.projectId || savedSnapshotFingerprintRef.current === null) {
+    const baselineHash = snapshotBaselineRef.current.documentHash;
+    if (!params.projectId || !baselineHash) {
       setHasUnsavedSnapshotChanges(false);
       return;
     }
 
-    const currentFingerprint = createSnapshotFingerprint(
-      buildCanvasSnapshotWithGraph({
-        nodes,
-        edges,
-        activeGenerationTargetId,
-      }),
-    );
-    setHasUnsavedSnapshotChanges(savedSnapshotFingerprintRef.current !== currentFingerprint);
-  }, [activeGenerationTargetId, edges, nodes, params.projectId]);
+    setHasUnsavedSnapshotChanges(baselineHash !== currentSnapshotFingerprint);
+  }, [currentSnapshotFingerprint, params.projectId]);
+
+  useEffect(() => {
+    const projectId = params.projectId;
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
+
+    if (
+      !currentUserId ||
+      !projectId ||
+      isSnapshotLoading ||
+      !snapshotBaselineRef.current.documentHash
+    ) {
+      return;
+    }
+
+    draftSaveTimeoutRef.current = window.setTimeout(() => {
+      draftSaveTimeoutRef.current = null;
+      setIsDraftSaving(true);
+      const updatedAt = new Date().toISOString();
+      void saveCanvasDraft(currentUserId, projectId, latestSnapshotDocumentRef.current, {
+        tabId: tabIdRef.current,
+        updatedAt,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        basedOnSnapshotId: snapshotBaselineRef.current.snapshotId ?? null,
+        basedOnVersion: snapshotBaselineRef.current.version ?? null,
+        basedOnHash: snapshotBaselineRef.current.documentHash ?? null,
+        documentHash: latestSnapshotFingerprintRef.current,
+      })
+        .then(() => {
+          draftChannelRef.current?.postMessage({
+            type: "draft-updated",
+            userId: currentUserId,
+            projectId,
+            tabId: tabIdRef.current,
+          });
+          void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          setIsDraftSaving(false);
+        });
+    }, LOCAL_DRAFT_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    currentSnapshotFingerprint,
+    currentUserId,
+    isSnapshotLoading,
+    params.projectId,
+  ]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void saveSnapshotDocumentRef.current?.({
+          reason: "close",
+          quiet: true,
+          keepalive: true,
+        });
+      }
+    };
+
+    const handlePageHide = () => {
+      void saveSnapshotDocumentRef.current?.({
+        reason: "close",
+        quiet: true,
+        keepalive: true,
+      });
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, []);
+
+  useEffect(() => {
+    const closingProjectId = params.projectId;
+    return () => {
+      if (!closingProjectId) {
+        return;
+      }
+
+      void saveSnapshotDocumentRef.current?.({
+        projectId: closingProjectId,
+        reason: "close",
+        quiet: true,
+      });
+    };
+  }, [params.projectId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+    void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
+  }, [currentUserId, params.projectId]);
+
+  useEffect(() => {
+    if (currentUserId || !params.projectId) {
+      return;
+    }
+
+    setDraftConflict(null);
+    setDraftWarning(null);
+  }, [currentUserId, params.projectId]);
 
   useEffect(() => {
     if (!pendingGenerationJob) return;
@@ -615,14 +1193,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         handledGenerationJobIdsRef.current.add(job.id);
         setPendingGenerationJob((current) => (current?.jobId === job.id ? null : current));
 
-        if (job.status === "failed") {
-          showToast(getTerminalGenerationStatusMessage(job));
-          return;
-        }
-
-        if (job.status === "cancelled") {
-          showToast(getTerminalGenerationStatusMessage(job));
-          return;
+        switch (job.status as string) {
+          case "failed":
+          case "cancelled":
+          case "enqueue_failed":
+            showToast(getTerminalGenerationStatusMessage(job));
+            return;
+          default:
+            break;
         }
 
         applyCompletedGenerationJob({
@@ -1095,6 +1673,43 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     }
   };
 
+  const saveVersion = useCallback(async () => {
+    if (hasTransientSnapshotContent(latestSnapshotDocumentRef.current)) {
+      showToast("Persist local images before saving a version.");
+      return;
+    }
+
+    await saveSnapshotDocument({
+      reason: "manual",
+    });
+  }, [saveSnapshotDocument]);
+
+  const restoreLocalDraft = useCallback(async () => {
+    if (!draftConflict) {
+      return;
+    }
+
+    try {
+      await restoreLocalDraftRecord(draftConflict);
+      showToast("Local draft restored");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to restore the local draft.");
+    }
+  }, [draftConflict, restoreLocalDraftRecord]);
+
+  const useSavedVersion = useCallback(async () => {
+    if (!currentUserId || !params.projectId) {
+      setDraftConflict(null);
+      setDraftWarning(null);
+      return;
+    }
+
+    await clearCanvasDraft(currentUserId, params.projectId).catch(() => undefined);
+    setDraftConflict(null);
+    setDraftWarning(null);
+    showToast("Using the saved version");
+  }, [currentUserId, params.projectId]);
+
   // Đóng modal nhiều góc nhìn; phần generate riêng chưa được cài đặt.
   const generateAngles = () => {
     setShowMultiAngleModal(false);
@@ -1230,9 +1845,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       pendingPresetGroupInsert,
       isSnapshotLoading,
       isSnapshotSaving,
+      isDraftSaving,
       currentSnapshotMeta,
       hasUnsavedSnapshotChanges,
       creditsAmount,
+      currentUserId,
+      draftConflict,
+      draftWarning,
       brushMode,
       regionSelectionTool,
       brushSize,
@@ -1320,8 +1939,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       generateAngles,
       applyQuickEdit,
       applyCompletedGenerationJob,
-      saveSnapshot,
       refreshProfileCredits,
+      persistCanvasNodeImageAsset,
+      saveVersion,
+      restoreLocalDraft,
+      useSavedVersion,
 
       // Library insert
       setSelectedLibraryAssetId,

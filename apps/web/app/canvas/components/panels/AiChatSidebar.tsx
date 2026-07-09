@@ -688,7 +688,7 @@ export default function AiChatSidebar({
           continue;
         }
 
-        if (job.status === "failed" || job.status === "cancelled") {
+        if (job.status !== "succeeded") {
           const terminalMessage =
             job.errorMessage ||
             (job.status === "cancelled"

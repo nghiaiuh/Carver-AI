@@ -15,7 +15,7 @@ import type {
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { isPresetGroupNode } from "./presetGroupHelpers";
 import {
-  sanitizeSnapshotImageUrl,
+  sanitizePersistedSnapshotImageUrl,
   sanitizeSourceImageForSnapshot,
 } from "./canvasSnapshotHydration";
 
@@ -29,8 +29,8 @@ function sanitizePersistedNodeImageUrl(node: CanvasNode) {
   }
 
   return (
-    sanitizeSnapshotImageUrl(node.imageUrl) ||
-    sanitizeSnapshotImageUrl(node.sourceImage?.url)
+    sanitizePersistedSnapshotImageUrl(node.imageUrl) ||
+    sanitizePersistedSnapshotImageUrl(node.sourceImage?.url)
   );
 }
 
@@ -40,8 +40,8 @@ function sanitizePersistedPresetImageUrl(child: CanvasPresetGroupNode["presetGro
   }
 
   return (
-    sanitizeSnapshotImageUrl(child.imageSrc) ||
-    sanitizeSnapshotImageUrl(child.sourceImage?.url)
+    sanitizePersistedSnapshotImageUrl(child.imageSrc) ||
+    sanitizePersistedSnapshotImageUrl(child.sourceImage?.url)
   );
 }
 

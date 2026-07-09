@@ -14,8 +14,6 @@ import {
   Download,
   Group,
   History,
-  Layers3,
-  LoaderCircle,
   Menu,
   Sparkles,
   Ungroup,
@@ -94,7 +92,6 @@ type CanvasBoardProps = {
   onAddObject: () => void;
   onRealityCheck: () => void;
   onGenerate: () => void;
-  onSaveSnapshot: () => void;
   onToast: (message: string) => void;
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
@@ -103,10 +100,12 @@ type CanvasBoardProps = {
   onSetActiveNode: (id: string) => void;
   isSnapshotLoading: boolean;
   isSnapshotSaving: boolean;
+  isDraftSaving: boolean;
   currentSnapshotMeta: {
     snapshotId: string;
     version: number;
     createdAt: string;
+    documentHash?: string | null;
   } | null;
   hasUnsavedSnapshotChanges: boolean;
   creditsAmount: number | null;
@@ -142,6 +141,23 @@ type CanvasBoardProps = {
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
+  onSaveVersion: () => void;
+  onPersistCanvasNodeImageAsset: (params: {
+    blob: Blob;
+    title: string;
+    mimeType?: string;
+    name?: string;
+    role?: CanvasNode["role"];
+    preserveTitle?: boolean;
+  }) => Promise<{
+    imageUrl: string;
+    assetId: string;
+    mimeType: string;
+    sizeBytes: number;
+    name: string;
+    role?: CanvasNode["role"];
+    preserveTitle?: boolean;
+  }>;
 };
 
 type DeletedNodeSnapshot = {
@@ -377,7 +393,6 @@ export default function CanvasBoard({
   onAddObject,
   onRealityCheck,
   onGenerate,
-  onSaveSnapshot,
   onToast,
   onNodesChange,
   onEdgesChange,
@@ -386,6 +401,7 @@ export default function CanvasBoard({
   onSetActiveNode,
   isSnapshotLoading,
   isSnapshotSaving,
+  isDraftSaving,
   currentSnapshotMeta,
   hasUnsavedSnapshotChanges,
   creditsAmount,
@@ -416,6 +432,8 @@ export default function CanvasBoard({
   onBrushSizeChange,
   onBrushSoftnessChange,
   onCloseRegionEditor,
+  onSaveVersion,
+  onPersistCanvasNodeImageAsset,
 }: CanvasBoardProps) {
   const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
@@ -691,6 +709,29 @@ export default function CanvasBoard({
     [onNodesChange, onToast, pan, zoom],
   );
 
+  const addLocalImageNode = useCallback(
+    async (blob: Blob, title: string, sourceMetadata: ImageSourceMetadata = {}) => {
+      const persisted = await onPersistCanvasNodeImageAsset({
+        blob,
+        title,
+        mimeType: sourceMetadata.mimeType,
+        name: sourceMetadata.name,
+        role: sourceMetadata.role,
+        preserveTitle: sourceMetadata.preserveTitle,
+      });
+
+      await addImageNode(persisted.imageUrl, title, {
+        ...sourceMetadata,
+        assetId: persisted.assetId,
+        mimeType: persisted.mimeType,
+        sizeBytes: persisted.sizeBytes,
+        name: persisted.name,
+        preserveTitle: persisted.preserveTitle,
+      });
+    },
+    [addImageNode, onPersistCanvasNodeImageAsset],
+  );
+
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -704,9 +745,11 @@ export default function CanvasBoard({
           const blob = items[i].getAsFile();
           if (blob) {
             e.preventDefault();
-            addImageNode(URL.createObjectURL(blob), "Pasted Image", {
+            void addLocalImageNode(blob, "Pasted Image", {
               mimeType: blob.type,
               sizeBytes: blob.size,
+            }).catch((error) => {
+              onToast(error instanceof Error ? error.message : "Unable to add pasted image.");
             });
           }
           break;
@@ -716,7 +759,7 @@ export default function CanvasBoard({
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [addImageNode]);
+  }, [addLocalImageNode, onToast]);
 
   useEffect(() => {
     if (!pendingLibraryInsertAsset) return;
@@ -1443,13 +1486,15 @@ export default function CanvasBoard({
     if (!files?.length) return;
     Array.from(files)
       .filter((file) => file.type.startsWith("image/"))
-      .forEach((file) =>
-        addImageNode(URL.createObjectURL(file), file.name, {
+      .forEach((file) => {
+        void addLocalImageNode(file, file.name, {
           mimeType: file.type,
           name: file.name,
           sizeBytes: file.size,
-        }),
-      );
+        }).catch((error) => {
+          onToast(error instanceof Error ? error.message : "Unable to import image.");
+        });
+      });
     if (importImagesInputRef.current) importImagesInputRef.current.value = "";
   };
 
@@ -1630,7 +1675,11 @@ export default function CanvasBoard({
     }
 
     if (isSnapshotSaving) {
-      return "Saving snapshot";
+      return "Saving version";
+    }
+
+    if (isDraftSaving) {
+      return "Saving local draft";
     }
 
     if (!currentSnapshotMeta) {
@@ -1642,12 +1691,12 @@ export default function CanvasBoard({
       : `Saved · v${currentSnapshotMeta.version}`;
   }, [
     currentSnapshotMeta,
+    isDraftSaving,
     hasUnsavedSnapshotChanges,
     isSnapshotLoading,
     isSnapshotSaving,
     projectId,
   ]);
-  const canSaveSnapshot = Boolean(projectId) && !isSnapshotLoading && !isSnapshotSaving;
   const creditsDisplayText = typeof creditsAmount === "number" ? String(creditsAmount) : "--";
 
   const miniMapModel = useMemo(() => {
@@ -1862,6 +1911,12 @@ export default function CanvasBoard({
               <MenuSection
                 items={[
                   {
+                    label: "Save Version",
+                    shortcut: "Ctrl+S",
+                    disabled: !projectId || isSnapshotSaving,
+                    onSelect: onSaveVersion,
+                  },
+                  {
                     label: "New Project",
                     onSelect: () => {
                       setProjectName("Untitled");
@@ -1949,19 +2004,6 @@ export default function CanvasBoard({
             >
               <History className="h-4 w-4" aria-hidden="true" />
               <span>Undo</span>
-            </button>
-            <button
-              type="button"
-              onClick={onSaveSnapshot}
-              disabled={!canSaveSnapshot}
-              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSnapshotSaving ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Layers3 className="h-4 w-4" aria-hidden="true" />
-              )}
-              <span>{isSnapshotSaving ? "Saving" : "Save Snapshot"}</span>
             </button>
             <button
               type="button"
@@ -2111,26 +2153,6 @@ export default function CanvasBoard({
         <span className="rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
           {snapshotStatusText}
         </span>
-        <button
-          type="button"
-          onClick={onSaveSnapshot}
-          disabled={!canSaveSnapshot}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--canvas-theme-text)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:border-[var(--canvas-theme-border-strong)] hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-          title={
-            projectId
-              ? isSnapshotSaving
-                ? "Saving snapshot"
-                : "Save snapshot"
-              : "Open a project to save snapshots"
-          }
-        >
-          {isSnapshotSaving ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
-          <span>{isSnapshotSaving ? "Saving" : "Save"}</span>
-        </button>
         <div className="flex items-center gap-1">
           <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
           <span>{creditsDisplayText}</span>
