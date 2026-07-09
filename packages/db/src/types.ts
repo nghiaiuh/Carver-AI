@@ -422,6 +422,10 @@ export interface Database {
           output_asset_ids: string[] | null;
           idempotency_key: string | null;
           target_node_id: string | null;
+          bull_job_id: string | null;
+          last_error_code: string | null;
+          last_error_message: string | null;
+          last_attempt_at: string | null;
           job_payload: Json;
           job_result: Json;
           provider: string | null;
@@ -445,6 +449,10 @@ export interface Database {
           output_asset_ids?: string[] | null;
           idempotency_key?: string | null;
           target_node_id?: string | null;
+          bull_job_id?: string | null;
+          last_error_code?: string | null;
+          last_error_message?: string | null;
+          last_attempt_at?: string | null;
           job_payload?: Json;
           job_result?: Json;
           provider?: string | null;
@@ -468,6 +476,10 @@ export interface Database {
           output_asset_ids?: string[] | null;
           idempotency_key?: string | null;
           target_node_id?: string | null;
+          bull_job_id?: string | null;
+          last_error_code?: string | null;
+          last_error_message?: string | null;
+          last_attempt_at?: string | null;
           job_payload?: Json;
           job_result?: Json;
           provider?: string | null;
