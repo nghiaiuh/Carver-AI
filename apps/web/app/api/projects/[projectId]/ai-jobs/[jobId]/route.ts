@@ -51,7 +51,7 @@ export async function GET(
         id: job.id,
         projectId: job.project_id,
         threadId: job.thread_id,
-        status: job.status,
+        status: job.status as CarverAiJobRecord["status"],
         jobType: job.job_type,
         prompt: job.prompt,
         inputSnapshotId: job.input_snapshot_id,
@@ -65,7 +65,7 @@ export async function GET(
         jobResult: resolveAiJobResultAssetUrls(
           request.url,
           isCarverAiJobResult(job.job_result) ? job.job_result : null,
-          job.status,
+          job.status as CarverAiJobRecord["status"],
         ),
       } satisfies CarverAiJobRecord,
     },

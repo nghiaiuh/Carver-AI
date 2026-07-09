@@ -11,6 +11,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type CanvasSnapshotRow = Database["public"]["Tables"]["canvas_snapshots"]["Row"];
 type SaveProjectCanvasSnapshotRpcRow = {
   created_at: string;
+  document_hash: string | null;
+  is_user_visible: boolean;
+  snapshot_kind: string;
   snapshot_id: string;
   version: number;
 };
@@ -28,6 +31,9 @@ export type ProjectCanvasSnapshotMeta = {
   snapshotId: string;
   version: number;
   createdAt: string;
+  snapshotKind: string;
+  isUserVisible: boolean;
+  documentHash: string | null;
 };
 
 export async function loadCurrentProjectSnapshot(
@@ -57,7 +63,7 @@ export async function loadCurrentProjectSnapshot(
 
   const { data: snapshot, error: snapshotError } = await supabase
     .from("canvas_snapshots")
-    .select("id, project_id, version, canvas_json, created_at")
+    .select("id, project_id, version, canvas_json, created_at, snapshot_kind, is_user_visible, document_hash")
     .eq("id", currentSnapshotId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -84,12 +90,16 @@ export async function saveProjectSnapshot(
   params: {
     projectId: string;
     snapshot: CanvasSnapshotDocument;
+    reason?: "initial" | "manual" | "close" | "job_checkpoint";
+    documentHash?: string | null;
   },
 ): Promise<ProjectCanvasSnapshotMeta> {
   const rpcClient = supabase as unknown as ProjectSnapshotRpcClient;
   const { data, error } = await rpcClient.rpc("save_project_canvas_snapshot", {
     target_project_id: params.projectId,
     snapshot_canvas_json: params.snapshot,
+    snapshot_reason: params.reason ?? "manual",
+    snapshot_document_hash: params.documentHash ?? null,
   });
 
   if (error) {
@@ -105,15 +115,21 @@ export async function saveProjectSnapshot(
     snapshotId: savedSnapshot.snapshot_id,
     version: savedSnapshot.version,
     createdAt: savedSnapshot.created_at,
+    snapshotKind: savedSnapshot.snapshot_kind,
+    isUserVisible: savedSnapshot.is_user_visible,
+    documentHash: savedSnapshot.document_hash,
   };
 }
 
 function mapSnapshotMeta(
-  snapshot: Pick<CanvasSnapshotRow, "id" | "version" | "created_at">,
+  snapshot: Pick<CanvasSnapshotRow, "id" | "version" | "created_at" | "snapshot_kind" | "is_user_visible" | "document_hash">,
 ): ProjectCanvasSnapshotMeta {
   return {
     snapshotId: snapshot.id,
     version: snapshot.version,
     createdAt: snapshot.created_at,
+    snapshotKind: snapshot.snapshot_kind,
+    isUserVisible: snapshot.is_user_visible,
+    documentHash: snapshot.document_hash,
   };
 }

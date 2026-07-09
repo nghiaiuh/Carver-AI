@@ -15,6 +15,10 @@ import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "./credi
 import { apiFailure, badRequest, stringArrayValue, stringValue } from "./http";
 import { checkRateLimit } from "./rateLimit";
 import { resolveAiJobResultAssetUrls } from "../../../lib/server/aiJobResultAssets";
+import {
+  validateCanvasSnapshotDocument,
+  validateSnapshotAssetOwnership,
+} from "../../../lib/server/canvasSnapshotValidation";
 import { persistTemporaryProjectImageAsset } from "../../../lib/server/projectInputAssets";
 
 const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
@@ -32,6 +36,34 @@ const PROMPT_MODES = ["auto", "review", "expert"] as const;
 const EXECUTION_MODES = ["text_to_image", "image_edit", "region_edit"] as const;
 const INLINE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
 const logger = createSafeLogger("web.ai-jobs");
+
+type CreateAiJobWithCheckpointRpcRow = {
+  id: string;
+  project_id: string;
+  thread_id: string | null;
+  status: CarverAiJobRecord["status"];
+  job_type: CarverAiJobRecord["jobType"];
+  prompt: string | null;
+  input_snapshot_id: string | null;
+  output_snapshot_id: string | null;
+  output_asset_ids: string[] | null;
+  provider: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  job_result?: unknown;
+};
+
+type AiJobCheckpointRpcClient = {
+  rpc: (
+    fn: "create_ai_job_with_checkpoint",
+    args: Record<string, unknown>,
+  ) => Promise<{
+    data: CreateAiJobWithCheckpointRpcRow[] | null;
+    error: { message: string } | null;
+  }>;
+};
 
 const objectValue = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -61,7 +93,7 @@ const buildIdempotencyKey = (params: {
   projectId: string;
   jobType: string;
   prompt: string;
-  inputSnapshotId: string | null;
+  snapshotIdentity: string | null;
   targetNodeId: string | undefined;
   executionMode: CarverImageExecutionMode;
 }) =>
@@ -72,7 +104,7 @@ const buildIdempotencyKey = (params: {
         projectId: params.projectId,
         jobType: params.jobType,
         prompt: params.prompt,
-        inputSnapshotId: params.inputSnapshotId,
+        snapshotIdentity: params.snapshotIdentity,
         targetNodeId: params.targetNodeId ?? null,
         executionMode: params.executionMode,
       }),
@@ -244,6 +276,24 @@ export async function createProjectAiJob(params: {
       activeAssetIds: selection.activeAssetIds ?? snapshot.selection.activeAssetIds,
     },
   };
+  const mergedSnapshotHash = createHash("sha256")
+    .update(JSON.stringify(mergedSnapshot))
+    .digest("hex");
+
+  const snapshotValidationError = validateCanvasSnapshotDocument(mergedSnapshot);
+  if (snapshotValidationError) {
+    return { ok: false, response: badRequest(snapshotValidationError) };
+  }
+
+  const snapshotOwnershipError = await validateSnapshotAssetOwnership({
+    supabase,
+    projectId,
+    userId: user.id,
+    document: mergedSnapshot,
+  });
+  if (snapshotOwnershipError) {
+    return { ok: false, response: badRequest(snapshotOwnershipError) };
+  }
 
   const normalizedTarget = canvasGraphContext
     ? imageSourceValue(canvasGraphContext.target, "imageUrl")
@@ -445,7 +495,7 @@ export async function createProjectAiJob(params: {
       projectId,
       jobType,
       prompt,
-      inputSnapshotId: loadedSnapshot?.id ?? resolvedSnapshotId ?? null,
+      snapshotIdentity: loadedSnapshot?.id ?? resolvedSnapshotId ?? mergedSnapshotHash,
       targetNodeId,
       executionMode,
     });
@@ -518,39 +568,38 @@ export async function createProjectAiJob(params: {
     return { ok: false, response: creditReservation.error };
   }
 
-  const { data: aiJob, error: aiJobError } = await supabase
-    .from("ai_jobs")
-    .insert({
-      project_id: projectId,
-      thread_id: threadId ?? null,
-      created_by: user.id,
-      status: "queued",
-      job_type: jobType,
-      prompt,
-      input_snapshot_id: loadedSnapshot?.id ?? null,
-      input_asset_ids: [...inputAssetIds],
-      idempotency_key: idempotencyKey,
-      target_node_id: targetNodeId ?? null,
-      job_payload: {
-        executionMode,
-        promptMode,
-        referenceAssetIds: resolvedReferenceAssetIds,
-        inputAssetIds: [...inputAssetIds],
-        selection: mergedSnapshot.selection,
-        snapshot: mergedSnapshot,
-        snapshotVersion: mergedSnapshot.snapshotVersion,
-        snapshotSummary: {
-          objectCount: mergedSnapshot.objects.length,
-          regionCount: mergedSnapshot.regions.length,
-          lockCount: mergedSnapshot.locks.length,
-        },
-        targetNodeId,
-        maskAssetId: resolvedMaskAssetId ?? null,
-        canvasGraphContext: sanitizedCanvasGraphContext,
-      } as never,
-    })
-    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
-    .single();
+  const jobPayload = {
+    executionMode,
+    promptMode,
+    referenceAssetIds: resolvedReferenceAssetIds,
+    inputAssetIds: [...inputAssetIds],
+    selection: mergedSnapshot.selection,
+    snapshot: mergedSnapshot,
+    snapshotVersion: mergedSnapshot.snapshotVersion,
+    snapshotSummary: {
+      objectCount: mergedSnapshot.objects.length,
+      regionCount: mergedSnapshot.regions.length,
+      lockCount: mergedSnapshot.locks.length,
+    },
+    targetNodeId,
+    maskAssetId: resolvedMaskAssetId ?? null,
+    canvasGraphContext: sanitizedCanvasGraphContext,
+  } as const;
+
+  const rpcClient = supabase as unknown as AiJobCheckpointRpcClient;
+  const { data: createdRows, error: aiJobError } = await rpcClient.rpc("create_ai_job_with_checkpoint", {
+    target_project_id: projectId,
+    target_thread_id: threadId ?? null,
+    target_job_type: jobType,
+    target_prompt: prompt,
+    target_input_asset_ids: [...inputAssetIds],
+    target_idempotency_key: idempotencyKey,
+    target_target_node_id: targetNodeId ?? null,
+    target_job_payload: jobPayload,
+    checkpoint_snapshot_json: clientSnapshot ? mergedSnapshot : null,
+    checkpoint_document_hash: clientSnapshot ? mergedSnapshotHash : null,
+  });
+  const aiJob = createdRows?.[0] ?? null;
 
   if (aiJobError || !aiJob) {
     logger.error("ai job create failed", {
@@ -611,7 +660,7 @@ export async function createProjectAiJob(params: {
     await supabase
       .from("ai_jobs")
       .update({
-        status: "failed",
+        status: "enqueue_failed",
         error_code: "queue_enqueue_failed",
         error_message: "Unable to enqueue the AI job",
       })
@@ -640,8 +689,8 @@ function mapAiJobRecord(row: {
   id: string;
   project_id: string;
   thread_id: string | null;
-  status: CarverAiJobRecord["status"];
-  job_type: CarverAiJobRecord["jobType"];
+  status: string;
+  job_type: string;
   prompt: string | null;
   input_snapshot_id: string | null;
   output_snapshot_id: string | null;
@@ -651,14 +700,14 @@ function mapAiJobRecord(row: {
   error_message: string | null;
   created_at: string;
   updated_at: string;
-  job_result: unknown;
+  job_result?: unknown;
 }, requestUrl?: string): CarverAiJobRecord {
   return {
     id: row.id,
     projectId: row.project_id,
     threadId: row.thread_id,
-    status: row.status,
-    jobType: row.job_type,
+    status: row.status as CarverAiJobRecord["status"],
+    jobType: row.job_type as CarverAiJobRecord["jobType"],
     prompt: row.prompt,
     inputSnapshotId: row.input_snapshot_id,
     outputSnapshotId: row.output_snapshot_id,
@@ -668,11 +717,11 @@ function mapAiJobRecord(row: {
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    jobResult: requestUrl
+        jobResult: requestUrl
       ? resolveAiJobResultAssetUrls(
           requestUrl,
           isCarverAiJobResult(row.job_result) ? row.job_result : null,
-          row.status,
+          row.status as CarverAiJobRecord["status"],
         )
       : isCarverAiJobResult(row.job_result) ? row.job_result : null,
   };

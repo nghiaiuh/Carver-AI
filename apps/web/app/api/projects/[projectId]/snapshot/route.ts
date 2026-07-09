@@ -9,6 +9,10 @@ import {
   loadCurrentProjectSnapshot,
   saveProjectSnapshot,
 } from "../../../../../lib/server/projectCanvasSnapshots";
+import {
+  validateCanvasSnapshotDocument,
+  validateSnapshotAssetOwnership,
+} from "../../../../../lib/server/canvasSnapshotValidation";
 import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/snapshotAssetUrls";
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
@@ -17,6 +21,36 @@ function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   }
 
   return coerceCanvasSnapshotDocument(value);
+}
+
+function snapshotReasonValue(value: unknown): "manual" | "close" | "job_checkpoint" | null {
+  if (value === "manual" || value === "close" || value === "job_checkpoint") {
+    return value;
+  }
+
+  return null;
+}
+
+function hasTransientCloseRefs(document: CanvasSnapshotDocument) {
+  return document.graph.nodes.some((node) => {
+    if (node.kind !== "presetGroup") {
+      const hasStableImageSource = Boolean(
+        node.sourceImage?.assetId ||
+          node.sourceImage?.url ||
+          node.imageUrl,
+      );
+
+      if (!hasStableImageSource) {
+        return true;
+      }
+    }
+
+    return (
+      node.presetGroup?.children.some((child) =>
+        !child.assetId && !child.sourceImage?.assetId && !child.sourceImage?.url && !child.imageSrc,
+      ) ?? false
+    );
+  });
 }
 
 export async function GET(
@@ -79,10 +113,33 @@ export async function POST(
     return badRequest("snapshot is required");
   }
 
+  const reason = snapshotReasonValue(body.reason) ?? "manual";
+  const documentHash = typeof body.documentHash === "string" ? body.documentHash.trim() : "";
+  const validationError = validateCanvasSnapshotDocument(snapshot);
+  if (validationError) {
+    return badRequest(validationError);
+  }
+
+  if (reason === "close" && hasTransientCloseRefs(snapshot)) {
+    return badRequest("Close save requires all canvas images to use stable persisted asset references.");
+  }
+
+  const ownershipError = await validateSnapshotAssetOwnership({
+    supabase: context.supabase,
+    projectId: projectResult.project.id,
+    userId: context.user.id,
+    document: snapshot,
+  });
+  if (ownershipError) {
+    return badRequest(ownershipError);
+  }
+
   try {
     const savedSnapshot = await saveProjectSnapshot(context.supabase, {
       projectId: projectResult.project.id,
       snapshot,
+      reason,
+      documentHash: documentHash || null,
     });
 
     return NextResponse.json(

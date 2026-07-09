@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
 import { readJsonObject, serverError, stringValue } from "../_lib/http";
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
   const landscapeGoal = stringValue(body, "landscape_goal") ?? null;
 
   const { supabase, user } = context;
+  const initialSnapshot = createEmptyCanvasSnapshotDocument();
+  const initialSnapshotHash = createHash("sha256")
+    .update(JSON.stringify(initialSnapshot))
+    .digest("hex");
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -66,8 +71,11 @@ export async function POST(request: Request) {
     .insert({
       project_id: project.id,
       version: 1,
-      canvas_json: createEmptyCanvasSnapshotDocument(),
+      canvas_json: initialSnapshot,
       created_by: user.id,
+      snapshot_kind: "initial",
+      is_user_visible: false,
+      document_hash: initialSnapshotHash,
     })
     .select()
     .single();
