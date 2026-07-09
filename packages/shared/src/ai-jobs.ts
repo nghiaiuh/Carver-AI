@@ -132,7 +132,7 @@ export type CarverAiJobRecord = {
   id: string;
   projectId: string;
   threadId: string | null;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "enqueue_failed";
   jobType: CarverJobKind;
   prompt: string | null;
   inputSnapshotId: string | null;

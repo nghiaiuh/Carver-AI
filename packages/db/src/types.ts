@@ -15,7 +15,13 @@ export type AiJobStatus =
   | "running"
   | "succeeded"
   | "failed"
+  | "enqueue_failed"
   | "cancelled";
+export type SnapshotKind =
+  | "initial"
+  | "manual"
+  | "close"
+  | "job_checkpoint";
 export type AiJobType =
   | "generate_concept"
   | "refine_concept"
@@ -263,6 +269,9 @@ export interface Database {
           canvas_json: Json;
           thumbnail_asset_id: string | null;
           created_by: string;
+          snapshot_kind: SnapshotKind;
+          is_user_visible: boolean;
+          document_hash: string | null;
           created_at: string;
         },
         {
@@ -272,6 +281,9 @@ export interface Database {
           canvas_json?: Json;
           thumbnail_asset_id?: string | null;
           created_by: string;
+          snapshot_kind?: SnapshotKind;
+          is_user_visible?: boolean;
+          document_hash?: string | null;
           created_at?: string;
         },
         {
@@ -281,6 +293,9 @@ export interface Database {
           canvas_json?: Json;
           thumbnail_asset_id?: string | null;
           created_by?: string;
+          snapshot_kind?: SnapshotKind;
+          is_user_visible?: boolean;
+          document_hash?: string | null;
           created_at?: string;
         }
       >;
@@ -538,12 +553,47 @@ export interface Database {
       save_project_canvas_snapshot: {
         Args: {
           snapshot_canvas_json: Json;
+          snapshot_document_hash?: string | null;
+          snapshot_reason?: string | null;
           target_project_id: string;
         };
         Returns: {
           created_at: string;
+          document_hash: string | null;
+          is_user_visible: boolean;
+          snapshot_kind: string;
           snapshot_id: string;
           version: number;
+        }[];
+      };
+      create_ai_job_with_checkpoint: {
+        Args: {
+          checkpoint_document_hash?: string | null;
+          checkpoint_snapshot_json?: Json | null;
+          target_idempotency_key: string;
+          target_input_asset_ids: string[] | null;
+          target_job_payload: Json;
+          target_job_type: AiJobType;
+          target_project_id: string;
+          target_prompt: string;
+          target_target_node_id?: string | null;
+          target_thread_id?: string | null;
+        };
+        Returns: {
+          created_at: string;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          input_snapshot_id: string | null;
+          job_type: AiJobType;
+          output_asset_ids: string[] | null;
+          output_snapshot_id: string | null;
+          project_id: string;
+          prompt: string | null;
+          provider: string | null;
+          status: AiJobStatus;
+          thread_id: string | null;
+          updated_at: string;
         }[];
       };
     };
@@ -554,6 +604,7 @@ export interface Database {
       chat_role: ChatRole;
       ai_job_status: AiJobStatus;
       ai_job_type: AiJobType;
+      snapshot_kind: SnapshotKind;
       export_format: ExportFormat;
       export_status: ExportStatus;
     };
