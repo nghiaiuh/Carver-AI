@@ -49,6 +49,7 @@ type LibrarySidebarProps = {
 type ReferenceTabId = "presets" | "custom";
 type ReferenceTemplate = {
   id: string;
+  assetId: string;
   label: string;
   previewSrc: string;
   originalSrc: string;
@@ -355,6 +356,7 @@ function getTemplatesForSlot(slotId: string, label: string, folders: LibraryFold
 
   return sourceAssets.slice(0, 12).map(({ asset }) => ({
     id: asset.id,
+    assetId: asset.id,
     label: asset.title ?? "Library image",
     previewSrc: asset.previewSrc ?? asset.thumbnailSrc ?? asset.src,
     originalSrc: asset.originalSrc ?? asset.src,
@@ -408,7 +410,9 @@ export default function LibrarySidebar({
     imageSrc: template.originalSrc,
     prompt: null,
     order: 0,
+    assetId: template.assetId,
     sourceImage: {
+      assetId: template.assetId,
       url: template.originalSrc,
       width: null,
       height: null,

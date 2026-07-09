@@ -67,6 +67,60 @@ function getContainedRect({
   };
 }
 
+function getNodeFrameClassName({
+  selected,
+  isGenerationTarget,
+  isConnectionTarget,
+}: {
+  selected: boolean;
+  isGenerationTarget: boolean;
+  isConnectionTarget: boolean;
+}) {
+  if (selected) {
+    return "border-[#202833] ring-2 ring-[#202833]/10";
+  }
+
+  if (isGenerationTarget) {
+    return "border-[#111827] ring-2 ring-[#111827]/10";
+  }
+
+  if (isConnectionTarget) {
+    return "border-[#202833] ring-2 ring-[#202833]/8";
+  }
+
+  return "border-white/55";
+}
+
+function getPortTopOffset({
+  displayHeight,
+  visibleIndex,
+  totalVisible,
+}: {
+  displayHeight: number;
+  visibleIndex: number;
+  totalVisible: number;
+}) {
+  if (totalVisible <= 1) {
+    return displayHeight / 2;
+  }
+
+  const clusterHeight = (totalVisible - 1) * INPUT_PORT_GAP;
+  const startY = displayHeight / 2 - clusterHeight / 2;
+  return startY + visibleIndex * INPUT_PORT_GAP;
+}
+
+function getNodeKindLabel(role: CanvasNode["role"]) {
+  if (role === "output") {
+    return "Image";
+  }
+
+  if (role === "reference") {
+    return "Reference";
+  }
+
+  return "Object";
+}
+
 type CanvasNodeCardProps = {
   node: CanvasNode;
   edges: CanvasEdge[];
@@ -137,9 +191,17 @@ export default function CanvasNodeCard({
   const objectScale = node.scale ?? 1;
   const displayWidth = node.width * objectScale;
   const displayHeight = node.height * objectScale;
+  // Asset-backed nodes may restore their runtime URL into sourceImage.url first,
+  // so rendering should not depend on imageUrl alone.
+  const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
   const nodePorts = node.inputPorts || getDefaultInputPorts();
   const visiblePorts = getVisibleInputPorts(nodePorts, edges, node.id);
   const connectedPortIds = new Set(edges.filter((edge) => edge.targetId === node.id).map((edge) => edge.targetPortId));
+  const nodeFrameClassName = getNodeFrameClassName({
+    selected,
+    isGenerationTarget,
+    isConnectionTarget,
+  });
 
   return (
     <div
@@ -175,13 +237,7 @@ export default function CanvasNodeCard({
           <div
             className={[
               "relative overflow-hidden rounded-[16px] border bg-[var(--canvas-theme-surface-muted)] shadow-[0_12px_30px_rgba(15,23,42,0.07)] transition-colors",
-              selected
-                ? "border-[#202833] ring-2 ring-[#202833]/10"
-                : isGenerationTarget
-                  ? "border-[#111827] ring-2 ring-[#111827]/10"
-                  : isConnectionTarget
-                    ? "border-[#202833] ring-2 ring-[#202833]/8"
-                    : "border-white/55",
+              nodeFrameClassName,
             ].join(" ")}
             style={{ height: displayHeight }}
             onClick={(event) => {
@@ -195,9 +251,9 @@ export default function CanvasNodeCard({
               }
             }}
           >
-            {node.imageUrl ? (
+            {runtimeImageUrl ? (
               <AdaptiveImageRenderer
-                imageUrl={node.sourceImage?.url ?? node.imageUrl}
+                imageUrl={runtimeImageUrl}
                 title={node.title}
                 displayWidth={displayWidth}
                 displayHeight={displayHeight}
@@ -217,13 +273,13 @@ export default function CanvasNodeCard({
             const isPendingReplace = pendingReplacePortId === port.id;
             const isMaxReached = visiblePorts.length === nodePorts.length && !isConnected;
             const totalVisible = visiblePorts.length;
-
-            let topPx = displayHeight / 2;
-            if (totalVisible > 1) {
-              const clusterHeight = (totalVisible - 1) * INPUT_PORT_GAP;
-              const startY = displayHeight / 2 - clusterHeight / 2;
-              topPx = startY + visibleIndex * INPUT_PORT_GAP;
-            }
+            // Keep all visible input ports centered as a vertical cluster so the
+            // node edge does not visually "drift" as ports are added or removed.
+            const topPx = getPortTopOffset({
+              displayHeight,
+              visibleIndex,
+              totalVisible,
+            });
 
             return (
               <div
@@ -290,7 +346,7 @@ export default function CanvasNodeCard({
         >
           <div className="pointer-events-auto">
             <ContextualToolbar
-              itemLabel={node.role === "output" ? "Image" : node.role === "reference" ? "Reference" : "Object"}
+              itemLabel={getNodeKindLabel(node.role)}
               viewportZoom={viewportZoom}
               onQuickEdit={onQuickEdit}
               onMultiAngle={onMultiAngle}
@@ -523,6 +579,8 @@ function AdaptiveImageRenderer({
     const image = imageRef.current;
     if (!canvas || !image || !ready || displayWidth <= 0 || displayHeight <= 0) return;
 
+    // We rasterize into a canvas sized to the current viewport zoom so nodes
+    // stay crisp while users pan and zoom around the workspace.
     const rasterScale = Math.max(viewportZoom * getDevicePixelRatio(), DEFAULT_DEVICE_PIXEL_RATIO);
     const rasterWidth = Math.max(1, Math.ceil(displayWidth * rasterScale));
     const rasterHeight = Math.max(1, Math.ceil(displayHeight * rasterScale));
