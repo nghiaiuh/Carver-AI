@@ -6,23 +6,13 @@
  */
 
 import type { CarverAiJobPayload } from "@carver/shared";
-import { buildJobError } from "../../mappers/build-job-error";
-import { failJob, startJob, succeedJob } from "../../services/job-status-service";
+import type { PreparedGenerationJobResult } from "../../services/generation-service";
 import { executeGeneratedImageJob, prepareGenerationState } from "../../services/generation-service";
 
-export const handleRefineConceptJob = async (job: CarverAiJobPayload) => {
-  try {
-    const started = await startJob(job.jobId);
-    if (!started) {
-      return;
-    }
+export const handleRefineConceptJob = async (
+  job: CarverAiJobPayload,
+): Promise<PreparedGenerationJobResult> => {
+  const preparedState = prepareGenerationState(job);
 
-    const preparedState = prepareGenerationState(job);
-    const completedResult = await executeGeneratedImageJob(job, preparedState);
-
-    await succeedJob(job.jobId, completedResult);
-  } catch (error) {
-    await failJob(job.jobId, buildJobError(error));
-    throw error;
-  }
+  return executeGeneratedImageJob(job, preparedState);
 };

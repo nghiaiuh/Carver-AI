@@ -26,7 +26,7 @@ logger.info("worker redis connection", describeRedisConnection());
 const aiJobWorker = createAiJobWorker();
 const stopLibrarySyncScheduler = startLibrarySyncScheduler();
 
-registerAiJobWorkerEvents(aiJobWorker);
+const stopWorkerEvents = registerAiJobWorkerEvents(aiJobWorker);
 
 logger.info("worker listening for jobs", {
   concurrency: process.env.AI_WORKER_CONCURRENCY ?? 2,
@@ -37,6 +37,7 @@ void aiJobWorker;
 async function shutdown(signal: string) {
   logger.info("worker shutdown requested", { signal });
   stopLibrarySyncScheduler();
+  await stopWorkerEvents?.().catch(() => undefined);
   await aiJobWorker.close();
   logger.info("worker shutdown complete", { signal });
   process.exit(0);

@@ -5,14 +5,41 @@
  * 3. Keep UI-facing failure handling predictable.
  */
 
-export const buildJobError = (error: unknown) => {
-  const message = error instanceof Error ? error.message : "Unknown worker failure";
+export type WorkerJobError = {
+  errorCode: string;
+  errorMessage: string;
+  permanent: boolean;
+};
+
+export const toWorkerError = (error: unknown) =>
+  error instanceof Error ? error : new Error(typeof error === "string" ? error : "Unknown worker failure");
+
+export const buildJobError = (error: unknown): WorkerJobError => {
+  const normalizedError = toWorkerError(error);
+  const message = normalizedError.message;
   const normalized = message.toLowerCase();
 
   if (normalized.includes("rate limit")) {
     return {
       errorCode: "provider_rate_limited",
       errorMessage: message,
+      permanent: false,
+    };
+  }
+
+  if (
+    normalized.includes("timed out") ||
+    normalized.includes("timeout") ||
+    normalized.includes("network") ||
+    normalized.includes("econn") ||
+    normalized.includes("socket") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("temporary")
+  ) {
+    return {
+      errorCode: "provider_temporary_failure",
+      errorMessage: message,
+      permanent: false,
     };
   }
 
@@ -20,6 +47,7 @@ export const buildJobError = (error: unknown) => {
     return {
       errorCode: "provider_invalid_request",
       errorMessage: message,
+      permanent: true,
     };
   }
 
@@ -27,18 +55,28 @@ export const buildJobError = (error: unknown) => {
     return {
       errorCode: "storage_upload_failed",
       errorMessage: message,
+      permanent: false,
     };
   }
 
-  if (normalized.includes("unsupported ai job type") || normalized.includes("not supported yet")) {
+  if (
+    normalized.includes("unsupported ai job type") ||
+    normalized.includes("not supported yet") ||
+    normalized.includes("missing") ||
+    normalized.includes("invalid") ||
+    normalized.includes("require") ||
+    normalized.includes("conflict")
+  ) {
     return {
       errorCode: "unsupported_job_type",
       errorMessage: message,
+      permanent: true,
     };
   }
 
   return {
     errorCode: "worker_processing_failed",
     errorMessage: message,
+    permanent: false,
   };
 };
