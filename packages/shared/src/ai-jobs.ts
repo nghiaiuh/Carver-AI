@@ -76,11 +76,10 @@ export type CanvasGenerationContext = {
   connectionSummary: string;
 };
 
-export type GeneratedCanvasImage = {
+export type PersistedGeneratedImage = {
   id: string;
   title: string;
-  imageUrl: string;
-  expiresAt?: string;
+  imageUrl: "";
   width: number | null;
   height: number | null;
   prompt: string;
@@ -88,6 +87,15 @@ export type GeneratedCanvasImage = {
   mimeType?: string;
   provider?: string;
 };
+
+export type RuntimeGeneratedImage = Omit<PersistedGeneratedImage, "imageUrl"> & {
+  imageUrl: string;
+  expiresAt?: string;
+};
+
+// Compatibility alias: DB/job_result should persist `PersistedGeneratedImage`,
+// while API responses may hydrate the same image with runtime delivery URLs.
+export type GeneratedCanvasImage = PersistedGeneratedImage | RuntimeGeneratedImage;
 
 export type CreateAiJobMaskInput = {
   assetId?: string;
