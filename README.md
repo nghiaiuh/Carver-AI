@@ -85,67 +85,107 @@ The intended user experience is closer to a lightweight design tool than a chatb
 
 ## System Architecture
 
+Carver AI targets a `Local-first AI canvas editor with a Next.js BFF, shared domain contracts, private asset gateway, and queue-driven AI worker processing.`
+
 ```mermaid
-flowchart TD
-  User(("User"))
+flowchart LR
+  User((User))
 
-  subgraph "Next.js Web App (apps/web)"
-    CanvasUI["Canvas workspace UI"]
-    ApiRoutes["API routes\n/api/chat\n/api/prompt/enhance\n/api/library/sync\n/api/projects/:projectId/ai-jobs"]
-    WebHelpers["Server helpers\nprojectChatHistory.ts\nopenaiChat.ts"]
-    ChatDB["Supabase chat_threads + chat_messages"]
+  subgraph Browser["Browser / Local-first"]
+    CanvasUI["Canvas Workspace UI"]
+    LocalState["Working Canvas State<br/>nodes / edges / selection / prompt"]
+    UndoRedo["Undo / Redo<br/>memory only"]
+    LocalDraft["IndexedDB Local Draft<br/>TTL 7 days"]
+    RuntimeUrls["Runtime Asset URL Cache<br/>imageUrl expires / refresh"]
+    JobPolling["AI Job Polling"]
   end
 
-  subgraph "Shared Packages"
-    Shared["@carver/shared\nsnapshot + job contracts"]
-    DB["@carver/db\nSupabase helpers + types"]
-    AI["@carver/ai\nprompt engine + generation brief"]
-    Queue["@carver/queue\nBullMQ contracts"]
-    Storage["@carver/storage\nR2 + library sync"]
+  subgraph Web["Next.js Web App - BFF / API Layer"]
+    ApiRoutes["API Routes<br/>HTTP boundary only"]
+    Authz["Auth + Ownership Guards"]
+    AppServices["Application Services<br/>snapshotService<br/>aiJobService<br/>assetService<br/>chatService"]
+    AssetGateway["Private Asset Gateway<br/>assetId -> runtime URL/content"]
   end
 
-  subgraph "Worker Process"
-    Worker["apps/worker"]
+  subgraph Packages["Shared Packages / Adapters"]
+    Shared["@carver/shared<br/>snapshot / job / asset contracts"]
+    AI["@carver/ai<br/>prompt engine / generation brief"]
+    DB["@carver/db<br/>Supabase repositories / helpers / types"]
+    Queue["@carver/queue<br/>BullMQ queue client / contracts"]
+    Storage["@carver/storage<br/>R2 helpers / path builders"]
   end
 
-  subgraph "Infrastructure"
-    Supabase[(Supabase Postgres / Auth / RLS)]
-    Redis[(Redis / BullMQ)]
-    R2[(Cloudflare R2)]
-    OpenAI[(OpenAI Responses API)]
+  subgraph Worker["Worker Process"]
+    WorkerApp["apps/worker"]
+    JobProcessor["AI Job Processor<br/>load job by jobId"]
+    ImageResolver["Image Source Resolver<br/>assetId -> DB metadata -> R2 bytes"]
+    Provider["Provider Adapter<br/>OpenAI image-aware generation"]
+    OutputPersist["Persist Output<br/>asset metadata + job result"]
+  end
+
+  subgraph Infra["Infrastructure"]
+    Supabase[("Supabase Postgres / Auth / RLS<br/>projects, snapshots, assets, jobs, chat")]
+    Redis[("Redis / BullMQ<br/>durable job queue")]
+    R2[("Cloudflare R2<br/>private binary object storage")]
+    OpenAI[("OpenAI Providers<br/>chat / prompt / image")]
   end
 
   User --> CanvasUI
+  CanvasUI --> LocalState
+  CanvasUI --> UndoRedo
+  CanvasUI --> LocalDraft
+  CanvasUI --> RuntimeUrls
+  CanvasUI --> JobPolling
+
   CanvasUI --> ApiRoutes
-  ApiRoutes --> WebHelpers
-  WebHelpers -->|Responses API| OpenAI
-  WebHelpers --> ChatDB
-  ApiRoutes -->|auth + data access| DB
-  ApiRoutes -->|prompt enhancement| AI
-  ApiRoutes -->|enqueue jobs| Queue
-  ApiRoutes -->|library sync / asset sync| Storage
+  JobPolling --> ApiRoutes
+
+  ApiRoutes --> Authz
+  Authz --> AppServices
+
+  AppServices --> Shared
+  AppServices --> AI
+  AppServices --> DB
+  AppServices --> Queue
+  AppServices --> Storage
+  AppServices --> AssetGateway
+
+  AssetGateway --> DB
+  AssetGateway --> Storage
+
+  WorkerApp --> JobProcessor
+  Redis --> WorkerApp
+
+  JobProcessor --> Shared
+  JobProcessor --> AI
+  JobProcessor --> DB
+  JobProcessor --> Queue
+  JobProcessor --> Storage
+  JobProcessor --> ImageResolver
+
+  ImageResolver --> DB
+  ImageResolver --> Storage
+  ImageResolver --> Provider
+  Provider --> OpenAI
+  Provider --> OutputPersist
+
+  OutputPersist --> DB
+  OutputPersist --> Storage
+
   DB --> Supabase
   Queue --> Redis
   Storage --> R2
-  Storage --> Supabase
-  Worker --> Queue
-  Worker --> AI
-  Worker --> DB
-  Worker --> Storage
-  AI --> OpenAI
-  Shared -. imported by .-> CanvasUI
-  Shared -. imported by .-> ApiRoutes
-  Shared -. imported by .-> Worker
 ```
 
 ### Current runtime notes
 
-- The web app is the active product surface.
-- Chat history is persisted in Supabase `chat_threads` and `chat_messages`, scoped per project.
-- `packages/ai` owns the prompt engine and graph-aware generation brief helpers.
-- `packages/queue` exposes BullMQ queue/worker helpers and Redis connection defaults.
-- `apps/worker` executes queued AI jobs and persists job state/results through shared DB helpers.
-- `packages/storage` owns Cloudflare R2 asset sync and library import/export helpers.
+- The browser is the local-first editing surface: working canvas state, undo/redo, and local draft recovery stay in the browser rather than in live DB rows.
+- IndexedDB local draft is the primary recovery layer for in-progress work. Database snapshots are reserved for manual save versions, close best-effort versions, and AI job checkpoints.
+- The Next.js web app acts as the BFF and API boundary. Route handlers should stay thin and defer business logic to application services rather than embedding orchestration directly in route files.
+- AI image generation is queue-driven. Production generation should flow through project-scoped `ai_jobs` and `apps/worker`, not through a direct `/api/generate` request path.
+- Redis/BullMQ is only the job queue. The worker accepts a minimal payload, loads trusted job context by `jobId`, and then resolves project, user, snapshot, and asset metadata from Supabase.
+- Supabase stores metadata, ownership, snapshots, jobs, and chat records. Cloudflare R2 stores private asset binaries.
+- Canvas and chat persist stable `assetId` references. Runtime delivery URLs are resolved through the private asset gateway and should not be treated as the source of truth.
 
 ## Project Structure
 
