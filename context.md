@@ -167,9 +167,9 @@ Chat API route:
   - persists project-scoped chat history in Supabase `chat_threads` + `chat_messages`
   - auto-routes image-generation prompts into project `ai_jobs` so chat can return generated images, not just text
 
-Project chat persistence helper:
-- `apps/web/lib/server/projectChatHistory.ts`
-  Resolves the default thread for a project and stores chat exchanges in Supabase.
+Chat application service:
+- `apps/web/lib/server/chatService.ts`
+  Resolves the default project thread, stores chat exchanges in Supabase, sends normal chat messages, and routes image-generation prompts into project `ai_jobs`.
 
 OpenAI server helper:
 - `apps/web/lib/server/openaiChat.ts`
@@ -196,6 +196,10 @@ API side:
 - `apps/web/app/api/projects/[projectId]/ai-jobs/[jobId]/route.ts`
 - `apps/web/lib/server/aiJobService.ts`
   Owns project AI job creation orchestration for the Next.js BFF: validation, credit reservation, idempotency, snapshot checkpoint, and queue enqueue. API routes should stay as HTTP boundaries and call this service instead of keeping business flow in route-local `_lib` files.
+- `apps/web/lib/server/assetService.ts`
+  Owns signed runtime asset delivery URL helpers and hydration of snapshot/chat/job result asset refs.
+- `apps/web/lib/server/chatService.ts`
+  Owns project chat service orchestration. `/api/chat` should stay an HTTP boundary.
 
 Worker side:
 - `apps/worker`
@@ -237,7 +241,7 @@ Look at:
 Current save/load path:
 - `apps/web/app/api/projects/[projectId]/snapshot/route.ts`
   Loads the verified `projects.current_canvas_snapshot_id` snapshot and saves a new current snapshot.
-- `apps/web/lib/server/projectCanvasSnapshots.ts`
+- `apps/web/lib/server/snapshotService.ts`
   Owns project-scoped snapshot persistence helpers.
 - `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
   Bootstraps the current project snapshot into canvas state and exposes manual save.

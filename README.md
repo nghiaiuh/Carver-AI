@@ -1,12 +1,12 @@
 # CarverAI
 
-CarverAI is an AI-powered landscape design platform for landscape engineers, garden studios, designers, and homeowners. It combines project-based canvas work, reference images, AI chat, prompt engineering, and a planned asynchronous AI job pipeline to help users create controlled garden and landscape concepts without losing real-world layout constraints.
+CarverAI is an AI-powered landscape design platform for landscape engineers, garden studios, designers, and homeowners. It combines project-based canvas work, reference images, AI chat, prompt engineering, and an asynchronous AI job pipeline to help users create controlled garden and landscape concepts without losing real-world layout constraints.
 
 ## Overview
 
 CarverAI is being built as an **AI Landscape Architect Co-Pilot** rather than a generic image generator. The core workflow is canvas-first: users create projects, add or paste site images, sketch or select regions, preserve important spatial elements, chat with an AI assistant, generate or refine landscape concepts, and save versioned canvas snapshots.
 
-The current repository is a TypeScript monorepo with a Next.js web app, shared database utilities, early AI orchestration packages, and a worker scaffold for future long-running image jobs.
+The current repository is a TypeScript monorepo with a Next.js web app, shared database utilities, AI orchestration packages, Cloudflare R2 asset storage, Redis/BullMQ queueing, and a worker process for long-running image jobs.
 
 ## Fast Agent Start
 
@@ -35,8 +35,8 @@ The repo has moved beyond a simple demo canvas in several important areas:
   The chat route now supports sending image inputs to OpenAI for image description and analysis.
 - Snapshot schema includes graph data.
   Shared snapshot types now support graph nodes, graph edges, and active generation target state.
-- Generation pipeline is MVP-level, not finished.
-  Graph-aware generation contracts exist, but the full production image pipeline is still incomplete.
+- Generation pipeline is queue-first.
+  Chat/canvas generation creates project-scoped `ai_jobs`; the worker loads trusted data by `jobId`, calls the provider, persists output assets, and exposes runtime image URLs through the asset gateway.
 
 ## Key Features
 
@@ -44,12 +44,12 @@ The repo has moved beyond a simple demo canvas in several important areas:
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Project workspace      | Project creation route and database model for landscape projects, briefs, chat threads, assets, snapshots, AI jobs, design versions, and exports.                                               |
 | Infinite canvas        | Desktop canvas with pan, zoom, cursor-centered zoom, image nodes, marquee selection, drag, pen strokes, markers, editable/locked regions, and contextual tooling.                               |
-| Reference workflow     | Users can paste or import images, build graph connections, and use preset-group reference nodes on the canvas. Full remote asset persistence is still evolving.                                 |
+| Reference workflow     | Users can paste or import images, build graph connections, and use preset-group reference nodes on the canvas. Runtime image URLs are gateway-resolved from stable `assetId` references.          |
 | AI chat assistant      | Canvas chat panel connected to `/api/chat`, using OpenAI Responses API for landscape design guidance and image-aware chat input.                                                                 |
 | Prompt engine          | Deterministic landscape prompt compiler that detects task type, edit scope, target area/object, risk level, preservation rules, negative constraints, and edit brief metadata.                  |
 | Spatial lock system    | Canvas supports editable and locked regions as a product concept; database schema includes tables for future spatial constraints, but a dedicated `spatial_locks` table is not yet implemented. |
-| Versioned canvas state | Database schema stores `canvas_snapshots` as versioned JSON rows. Shared snapshot schema already includes graph state; full end-to-end persistence wiring is still in progress.                  |
-| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` now include graph-aware generation contracts and brief-building helpers. The full production image pipeline is still not fully implemented.    |
+| Versioned canvas state | `canvas_snapshots` store manual save versions, close best-effort versions, and AI job checkpoints. IndexedDB local draft is separate from DB snapshots.                                           |
+| AI generation pipeline | `packages/ai`, `packages/queue`, and `apps/worker` implement queue-first image generation/refinement with stable asset outputs and runtime gateway URLs.                                          |
 | Gallery / review pages | Static marketing and project review pages exist under `apps/web/app`, including gallery, reviews, submit, engineers, styles, and project detail routes.                                         |
 
 ## Product Vision
@@ -185,7 +185,7 @@ flowchart LR
 - AI image generation is queue-driven. Production generation should flow through project-scoped `ai_jobs` and `apps/worker`, not through a direct `/api/generate` request path.
 - Redis/BullMQ is only the job queue. The worker accepts a minimal payload, loads trusted job context by `jobId`, and then resolves project, user, snapshot, and asset metadata from Supabase.
 - Supabase stores metadata, ownership, snapshots, jobs, and chat records. Cloudflare R2 stores private asset binaries.
-- Canvas and chat persist stable `assetId` references. Runtime delivery URLs are resolved through the private asset gateway and should not be treated as the source of truth.
+- Canvas and chat persist stable `assetId` references. Runtime delivery URLs are minted only after API ownership checks. The `/api/assets/[assetId]/content` route then validates the short-lived signed token before streaming R2 content, which keeps `<img>`/canvas usage browser-friendly without treating URLs as durable state.
 
 ## Project Structure
 
@@ -205,22 +205,22 @@ flowchart LR
 │  │  │  ├─ styles/           # Styles page
 │  │  │  ├─ page.tsx          # Home page
 │  │  │  └─ layout.tsx        # Root layout
-│  │  ├─ data/               # Static feature data and local chat history
+│  │  ├─ data/               # Static feature data and non-runtime demo/reference data
 │  │  ├─ lib/
 │  │  │  ├─ prompt-engine/   # Deterministic landscape prompt enhancement and final prompt compilation
-│  │  │  └─ server/          # Server-only chat history and OpenAI chat helpers
+│  │  │  └─ server/          # Server-only application services: chat, snapshots, assets, AI jobs, OpenAI helpers
 │  │  ├─ public/assets/      # Static canvas/gallery assets
 │  │  ├─ package.json
 │  │  ├─ next.config.mjs
 │  │  ├─ tailwind.config.ts
 │  │  └─ tsconfig.json
 │  └─ worker/
-│     ├─ src/index.ts        # BullMQ worker scaffold
+│     ├─ src/index.ts        # BullMQ worker bootstrap
 │     ├─ package.json
 │     └─ tsconfig.json
 ├─ packages/
 │  ├─ ai/
-│  │  ├─ src/graph.ts        # LangGraph state graph scaffold
+│  │  ├─ src/graph.ts        # LangGraph state graph
 │  │  ├─ src/state.ts        # Carver intent/prompt state
 │  │  └─ src/nodes/router.ts # Intent router for chat, generate, refine, and reference analysis
 │  ├─ db/
@@ -387,17 +387,16 @@ RLS is enabled for all user-owned tables in `002_rls_policies.sql`. Policies are
 
 ### Canvas Chat
 
-`apps/web/app/api/chat/route.ts` handles chat history and OpenAI completion requests.
+`apps/web/app/api/chat/route.ts` is the HTTP boundary for chat. Business logic lives in `apps/web/lib/server/chatService.ts`.
 
 Current behavior:
 
 - `GET /api/chat` loads chat history from Supabase `chat_messages`.
-- `POST /api/chat` calls `apps/web/lib/server/openaiChat.ts`.
+- `POST /api/chat` either calls `apps/web/lib/server/openaiChat.ts` for normal chat or enqueues an AI job when the prompt is image-generation intent.
 - `DELETE /api/chat` clears history for the current project thread.
+- Chat history is project-scoped and persisted in Supabase `chat_threads` and `chat_messages`.
 - The OpenAI chat helper uses the Responses API endpoint `https://api.openai.com/v1/responses`.
 - The current model is configured as `gpt-5-mini`.
-
-Known limitation: chat history is local-file based and is not yet connected to Supabase chat tables.
 
 ### Prompt Engine
 
@@ -427,9 +426,7 @@ Current routes:
 | Route                      | Purpose                                              |
 | -------------------------- | ---------------------------------------------------- |
 | `POST /api/prompt/enhance` | Enhances a raw prompt and returns draft metadata.    |
-| `POST /api/generate`       | Compiles a final prompt and returns prompt metadata. |
-
-Known limitation: `/api/generate` currently returns `result: null`; no server-side image/design model is wired yet.
+| `POST /api/generate`       | Deprecated compatibility route; production generation uses queued project `ai_jobs`. |
 
 ### LangGraph and AI Orchestration
 
@@ -443,9 +440,14 @@ Future graph nodes may include intent classification, context collection, spatia
 
 ### Queue and Worker
 
-`packages/queue` provides BullMQ exports and Redis connection defaults. `apps/worker` starts an `image-processing` worker.
+`packages/queue` provides BullMQ exports and Redis connection defaults. `apps/worker` starts the AI job worker.
 
-Known limitation: worker job handlers are not implemented yet. The worker currently logs job lifecycle events but does not generate, refine, analyze, or persist assets.
+Current behavior:
+
+- Web enqueues minimal BullMQ payloads containing `jobId` plus non-sensitive tracing/idempotency metadata.
+- Worker loads trusted job, project, snapshot, and asset metadata from Supabase before calling providers.
+- Worker persists generated image binaries to Cloudflare R2 and writes stable asset metadata/job results back to Supabase.
+- Queue retry is controlled by BullMQ; DB status records lifecycle and final result.
 
 ## Canvas System
 
@@ -470,21 +472,22 @@ The canvas is desktop-first and shows a mobile warning below `xl` breakpoint.
 
 Known limitations:
 
-- Canvas state is currently local React state.
-- Project creation exists in the API, but full canvas snapshot save/load is not wired end-to-end.
-- Image upload/paste currently uses object URLs in the browser.
-- AI concept generation currently creates mock concept placeholders in the UI.
+- Close-save is best-effort because browsers do not guarantee large requests during tab close.
+- Local draft recovery is browser-local IndexedDB state, not cross-device collaboration.
 - Spatial locks are represented as canvas regions but are not yet persisted as first-class records.
 
 ## API Structure
 
 | Route                 | Methods                 | Purpose                                                                      | Auth                                             |
 | --------------------- | ----------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------ |
-| `/api/chat`           | `GET`, `POST`, `DELETE` | Load, send, and clear canvas chat history.                                   | Not currently enforced.                          |
-| `/api/prompt/enhance` | `POST`                  | Enhance raw landscape prompt into a structured draft.                        | Not currently enforced.                          |
-| `/api/generate`       | `POST`                  | Compile final generation prompt and return prompt metadata.                  | Requires bearer token via `getRequestContext()`. |
+| `/api/chat`           | `GET`, `POST`, `DELETE` | Load, send, clear chat, and route generation-intent prompts into AI jobs.     | Requires bearer token via `getRequestContext()`. |
+| `/api/prompt/enhance` | `POST`                  | Enhance raw landscape prompt into a structured draft.                        | Requires bearer token via `getRequestContext()`. |
+| `/api/generate`       | `POST`                  | Deprecated direct generation route; disabled/locked down for production.     | Requires bearer token via `getRequestContext()`. |
 | `/api/projects`       | `POST`                  | Create a project, initial canvas snapshot, landscape brief, and chat thread. | Requires bearer token via `getRequestContext()`. |
 | `/api/profiles`       | `GET`                   | Load the current authenticated user's profile.                               | Requires bearer token via `getRequestContext()`. |
+| `/api/projects/[projectId]/ai-jobs` | `POST`      | Create project-scoped queued generation/refinement jobs.                     | Requires bearer token and project ownership.     |
+| `/api/projects/[projectId]/snapshot` | `GET`, `POST` | Load/save current canvas snapshots for manual/close/job checkpoint flows.    | Requires bearer token and project ownership.     |
+| `/api/assets/[assetId]/content` | `GET`           | Stream private R2 content after validating a short-lived runtime URL token.  | Signed token minted after ownership check.       |
 
 API helper modules:
 
@@ -565,11 +568,10 @@ CarverAI follows these security rules:
 
 Production hardening items still needed:
 
-- Add authentication to chat and prompt enhancement routes.
-- Move chat history from local JSON to Supabase.
-- Wire canvas snapshot persistence to `canvas_snapshots`.
-- Implement worker handlers without logging sensitive prompts or signed URLs.
+- Expand User A/User B smoke tests across all user-owned tables and asset delivery flows.
+- Continue tightening upload validation, cleanup/lifecycle jobs, and production observability.
 - Confirm all storage policies match the intended private asset workflow.
+- Keep provider prompts, signed URLs, snapshot JSON, and chat content out of logs.
 
 ## Roadmap
 
@@ -580,20 +582,18 @@ Production hardening items still needed:
 | Prompt engine    | Keep deterministic prompt safety while adding clearer review/expert modes and richer reference handling.                              |
 | AI job pipeline  | Create AI jobs from canvas/chat actions, queue long-running work, execute worker handlers, store outputs, and create design versions. |
 | Spatial lock MVP | Persist locked regions/objects, include them in prompt generation, and prevent accidental edits.                                      |
-| Asset workflow   | Cloudflare R2 upload/sync, signed URL generation, generated asset persistence, export records.                                        |
+| Asset workflow   | Cloudflare R2 upload/sync, signed runtime URL generation, generated asset persistence, export records.                                |
 | Product polish   | Project dashboard, version comparison, proposal preview, budget/reality-check scoring, engineer handoff flows.                        |
 
 ## Known Limitations
 
 - No root README existed before this file; some documentation is inferred from code.
-- No `.env.example` is present in the repository.
-- Chat history is stored in a local JSON file.
-- `/api/generate` does not call an image/design generation provider yet.
-- Worker image-processing jobs are scaffolded but not implemented.
-- Canvas state is currently local state and not fully persisted to Supabase snapshots.
+- Some `.env.example` coverage still needs to be kept in sync with web/worker production requirements.
+- Direct `/api/generate` is deprecated; image generation should use queued project `ai_jobs`.
+- Canvas close-save is best-effort; local draft is the main recovery layer for unsaved in-progress edits.
 - Some marketing/gallery pages use static sample data.
-- Queue/worker deployment is not configured.
-- Auth is enforced only on selected API routes.
+- Queue/worker deployment requires Redis, Supabase service role, R2, and OpenAI env configuration.
+- Advanced audit logs, billing/quota, multi-device draft conflict UX, and full spatial-lock persistence are still future work.
 
 ## Contributing
 
