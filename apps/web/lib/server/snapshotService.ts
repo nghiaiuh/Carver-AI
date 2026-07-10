@@ -1,5 +1,6 @@
 import "server-only";
 
+// Application service for project-scoped canvas snapshot persistence.
 import type { Database } from "@carver/db";
 import {
   coerceCanvasSnapshotDocument,

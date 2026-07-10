@@ -8,12 +8,12 @@ import { requireProjectOwner, requireRequestContext } from "../../../_lib/authz"
 import {
   loadCurrentProjectSnapshot,
   saveProjectSnapshot,
-} from "../../../../../lib/server/projectCanvasSnapshots";
+} from "../../../../../lib/server/snapshotService";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,
 } from "../../../../../lib/server/canvasSnapshotValidation";
-import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/snapshotAssetUrls";
+import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/assetService";
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
