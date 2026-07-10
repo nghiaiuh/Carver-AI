@@ -28,7 +28,6 @@ import type {
   CanvasPresetChild,
   CanvasPresetGroupNode,
   EditorTool,
-  LeftSidebarPanelId,
   Marker,
   PenSettings,
   PresetGroupCategory,
@@ -41,7 +40,6 @@ import type {
 } from "../../types/canvas";
 import { getDefaultInputPorts } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
-import BottomToolDock from "./BottomToolDock";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
 import CanvasEdges from "./CanvasEdges";
@@ -58,8 +56,6 @@ import {
   getPresetChildRightAnchor,
   getPresetGroupNodeSize,
   isPresetGroupNode,
-  resolvePresetGroupDropTarget,
-  syncPresetGroupPreview,
 } from "../../utils/presetGroupHelpers";
 
 type CanvasBoardProps = {
@@ -83,7 +79,6 @@ type CanvasBoardProps = {
   onAddPenStroke: (stroke: PenStrokeObject) => void;
   onDeletePenStroke: (strokeId: string) => void;
   onReplacePenStrokes: (strokes: PenStrokeObject[]) => void;
-  onPenSettingsChange: (settings: PenSettings) => void;
   onSelectSketchLine: (id: string, additive: boolean) => void;
   onSelectSketchGroup: (id: string) => void;
   onTool: (tool: EditorTool) => void;
@@ -91,7 +86,6 @@ type CanvasBoardProps = {
   onMultiAngle: () => void;
   onAddObject: () => void;
   onRealityCheck: () => void;
-  onGenerate: () => void;
   onToast: (message: string) => void;
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
@@ -109,12 +103,7 @@ type CanvasBoardProps = {
   } | null;
   hasUnsavedSnapshotChanges: boolean;
   creditsAmount: number | null;
-  canvasThemeColor: string;
-  onCanvasThemeChange: (color: string) => void;
-  activeLeftSidebarPanel: LeftSidebarPanelId | null;
-  onToggleLeftSidebarPanel: (panel: LeftSidebarPanelId) => void;
   miniMapOpen: boolean;
-  onToggleMiniMap: () => void;
   pendingLibraryInsertAsset: LibraryAsset | null;
   onConsumePendingLibraryInsert: () => void;
   pendingPresetGroupInsert: {
@@ -142,6 +131,7 @@ type CanvasBoardProps = {
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
   onSaveVersion: () => void;
+  studioChrome?: boolean;
   onPersistCanvasNodeImageAsset: (params: {
     blob: Blob;
     title: string;
@@ -384,7 +374,6 @@ export default function CanvasBoard({
   onAddPenStroke,
   onDeletePenStroke,
   onReplacePenStrokes,
-  onPenSettingsChange,
   onSelectSketchLine,
   onSelectSketchGroup,
   onTool,
@@ -392,7 +381,6 @@ export default function CanvasBoard({
   onMultiAngle,
   onAddObject,
   onRealityCheck,
-  onGenerate,
   onToast,
   onNodesChange,
   onEdgesChange,
@@ -405,12 +393,7 @@ export default function CanvasBoard({
   currentSnapshotMeta,
   hasUnsavedSnapshotChanges,
   creditsAmount,
-  canvasThemeColor,
-  onCanvasThemeChange,
-  activeLeftSidebarPanel,
-  onToggleLeftSidebarPanel,
   miniMapOpen,
-  onToggleMiniMap,
   pendingLibraryInsertAsset,
   onConsumePendingLibraryInsert,
   pendingPresetGroupInsert,
@@ -433,6 +416,7 @@ export default function CanvasBoard({
   onBrushSoftnessChange,
   onCloseRegionEditor,
   onSaveVersion,
+  studioChrome = false,
   onPersistCanvasNodeImageAsset,
 }: CanvasBoardProps) {
   const text = getCanvasText(language);
@@ -1499,7 +1483,7 @@ export default function CanvasBoard({
   };
 
   const deleteNode = useCallback(
-    (nodeId: string, skipConfirm = false) => {
+    (nodeId: string) => {
       const nodeToDelete = nodes.find((node) => node.id === nodeId);
       if (!nodeToDelete) return;
 
@@ -2028,6 +2012,7 @@ export default function CanvasBoard({
           </div>
         </div>
       </div>
+      {!studioChrome ? (
       <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
         <div className="flex h-10 items-center gap-1.5 rounded-[22px] border border-transparent bg-transparent px-1.5 text-[var(--canvas-theme-text-soft)] shadow-none backdrop-blur-0" data-canvas-ui="true">
           <button
@@ -2148,7 +2133,9 @@ export default function CanvasBoard({
           </div>
         ) : null}
       </div>
+      ) : null}
 
+      {!studioChrome ? (
       <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-transparent bg-transparent px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-none backdrop-blur-0" data-canvas-ui="true">
         <span className="rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
           {snapshotStatusText}
@@ -2158,6 +2145,7 @@ export default function CanvasBoard({
           <span>{creditsDisplayText}</span>
         </div>
       </div>
+      ) : null}
 
       {/* Zoomable + pannable canvas layer */}
       <div
@@ -2392,25 +2380,6 @@ export default function CanvasBoard({
           </div>
         </div>
       ) : null}
-      <BottomToolDock
-        language={language}
-        activeTool={activeTool}
-        zoom={zoom}
-        activeLeftSidebarPanel={activeLeftSidebarPanel}
-        miniMapOpen={miniMapOpen}
-        onTool={onTool}
-        onToggleLeftSidebarPanel={onToggleLeftSidebarPanel}
-        onToggleMiniMap={onToggleMiniMap}
-        onAddObject={onAddObject}
-        onGenerate={onGenerate}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        onResetZoom={resetZoom}
-        canvasThemeColor={canvasThemeColor}
-        onCanvasThemeChange={onCanvasThemeChange}
-        penSettings={penSettings}
-        onPenSettingsChange={onPenSettingsChange}
-      />
     </section>
   );
 }

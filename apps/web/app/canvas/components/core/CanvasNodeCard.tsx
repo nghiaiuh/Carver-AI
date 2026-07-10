@@ -77,18 +77,18 @@ function getNodeFrameClassName({
   isConnectionTarget: boolean;
 }) {
   if (selected) {
-    return "border-[#202833] ring-2 ring-[#202833]/10";
+    return "border-[#4D735B] ring-2 ring-[#4D735B]/12";
   }
 
   if (isGenerationTarget) {
-    return "border-[#111827] ring-2 ring-[#111827]/10";
+    return "border-[#7B6534] ring-2 ring-[#B99B52]/20";
   }
 
   if (isConnectionTarget) {
-    return "border-[#202833] ring-2 ring-[#202833]/8";
+    return "border-[#6F8B74] ring-2 ring-[#6F8B74]/12";
   }
 
-  return "border-white/55";
+  return "border-white/65";
 }
 
 function getPortTopOffset({
@@ -187,7 +187,6 @@ export default function CanvasNodeCard({
   onRequestPortReplace,
   onCancelPortReplace,
 }: CanvasNodeCardProps) {
-  const isOutput = node.role === "output";
   const objectScale = node.scale ?? 1;
   const displayWidth = node.width * objectScale;
   const displayHeight = node.height * objectScale;
@@ -236,7 +235,7 @@ export default function CanvasNodeCard({
         <div className="relative">
           <div
             className={[
-              "relative overflow-hidden rounded-[16px] border bg-[var(--canvas-theme-surface-muted)] shadow-[0_12px_30px_rgba(15,23,42,0.07)] transition-colors",
+              "relative overflow-hidden rounded-[18px] border bg-[#F8F4EA] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
               nodeFrameClassName,
             ].join(" ")}
             style={{ height: displayHeight }}
@@ -318,24 +317,18 @@ export default function CanvasNodeCard({
           />
         </div>
 
-        <div className="px-1 pb-1 text-center" style={{ marginTop: "12px" }}>
-          <h3 className="text-sm font-black text-[var(--canvas-theme-text)]">{node.title}</h3>
-          {isOutput ? (
-            <div className="mt-1">
-              <p
-                className="line-clamp-2 text-center text-xs leading-snug text-[var(--canvas-theme-text-muted)]"
-                title={node.prompt || ""}
-              >
-                {node.prompt || "No prompt provided."}
-              </p>
-            </div>
-          ) : (
-            <div className="mt-1">
-              <p className="text-center text-xs italic text-[var(--canvas-theme-text-muted)]">
-                {node.prompt ? node.prompt : "No prompt yet"}
-              </p>
-            </div>
-          )}
+        <div className="px-1 pb-1 text-left" style={{ marginTop: "10px" }}>
+          <h3 className="truncate font-[var(--font-botanical-display)] text-[17px] leading-tight text-[#102A1F]">
+            {node.title}
+          </h3>
+          {node.prompt ? (
+            <p
+              className="mt-1 line-clamp-1 text-xs leading-snug text-[#6F7B6F]"
+              title={node.prompt}
+            >
+              {node.prompt}
+            </p>
+          ) : null}
         </div>
       </div>
 

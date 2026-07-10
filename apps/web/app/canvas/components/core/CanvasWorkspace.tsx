@@ -1,22 +1,28 @@
 /*
- * CanvasWorkspace – UI shell only.
+ * CanvasWorkspace - UI shell only.
  *
  * All state, derived values, and action callbacks live in useCanvasWorkspace.
  * This component owns only:
  *   - The GSAP entry animation (needs a DOM ref in component scope).
- *   - The JSX layout: left sidebar, canvas board, right panel, modals, toast.
+ *   - The JSX layout: studio chrome, canvas board, right panel, modals, toast.
  */
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
+import type { PresetGroupCategory } from "../../types/canvas";
+import type { LibraryAsset } from "../../types/library";
 import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
-import CanvasLeftSidebar from "../panels/CanvasLeftSidebar";
 import AiChatSidebar from "../panels/AiChatSidebar";
+import CanvasAssetLibraryModal from "./CanvasAssetLibraryModal";
+import ContextualAIComposer from "./ContextualAIComposer";
+import SceneRecipeBar, { type SceneRecipeItemId } from "./SceneRecipeBar";
+import StudioHeader from "./StudioHeader";
+import StudioToolRail from "./StudioToolRail";
 import GroupNameTagModal from "../panels/GroupNameTagModal";
 import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
@@ -24,32 +30,24 @@ import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import ResizeHandle from "../widgets/ResizeHandle";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
 import { buildCanvasSnapshotWithGraph } from "../../utils/canvasGenerationContext";
+import { isPresetGroupNode } from "../../utils/presetGroupHelpers";
 
 export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const canvas = useCanvasWorkspace({ projectId });
-  const { rootRef, leftSidebarPanelRef, rightPanelRef, leftSidebarResize, rightPanelResize } =
-    canvas;
+  const { rootRef, rightPanelRef, rightPanelResize } = canvas;
   const { state, modals, toast, actions, library } = canvas;
-  const [isLeftSidebarRendered, setIsLeftSidebarRendered] = useState(state.leftSidebar.open);
   const [isRightPanelRendered, setIsRightPanelRendered] = useState(state.rightPanelOpen);
-  const leftSidebarContentRef = useRef<HTMLDivElement | null>(null);
+  const [activeRecipeModal, setActiveRecipeModal] = useState<SceneRecipeItemId | null>(null);
   const rightPanelContentRef = useRef<HTMLDivElement | null>(null);
-  const leftSidebarTweenRef = useRef<gsap.core.Timeline | null>(null);
   const rightPanelTweenRef = useRef<gsap.core.Timeline | null>(null);
-  const isLeftSidebarAnimatingRef = useRef(false);
   const isRightPanelAnimatingRef = useRef(false);
-  const leftSidebarWidthRef = useRef(leftSidebarResize.width);
   const rightPanelWidthRef = useRef(rightPanelResize.width);
-
-  useEffect(() => {
-    leftSidebarWidthRef.current = leftSidebarResize.width;
-  }, [leftSidebarResize.width]);
 
   useEffect(() => {
     rightPanelWidthRef.current = rightPanelResize.width;
   }, [rightPanelResize.width]);
 
-  // GSAP entry animation – needs rootRef attached to DOM, so it lives here.
+  // GSAP entry animation needs rootRef attached to DOM, so it lives here.
   useGSAP(
     () => {
       if (!rootRef.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -66,42 +64,95 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   );
 
   useEffect(() => {
-    if (state.leftSidebar.open) {
-      setIsLeftSidebarRendered(true);
-    }
-  }, [state.leftSidebar.open]);
-
-  useEffect(() => {
     if (state.rightPanelOpen) {
-      setIsRightPanelRendered(true);
+      queueMicrotask(() => setIsRightPanelRendered(true));
     }
   }, [state.rightPanelOpen]);
 
-  useEffect(() => {
-    const wrapper = leftSidebarPanelRef.current;
-    if (!wrapper || !isLeftSidebarRendered || !state.leftSidebar.open || isLeftSidebarAnimatingRef.current) return;
-    gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "willChange" });
-  }, [isLeftSidebarRendered, leftSidebarPanelRef, leftSidebarResize.width, state.leftSidebar.open]);
+  const snapshotStatusText = useMemo(() => {
+    if (!projectId) return "Local canvas";
+    if (state.isSnapshotLoading) return "Loading snapshot";
+    if (state.isSnapshotSaving) return "Saving version";
+    if (state.isDraftSaving) return "Saving local draft";
+    if (!state.currentSnapshotMeta) {
+      return state.hasUnsavedSnapshotChanges ? "Unsaved changes" : "Not saved yet";
+    }
+    return state.hasUnsavedSnapshotChanges
+      ? `Unsaved changes - v${state.currentSnapshotMeta.version}`
+      : `Saved - v${state.currentSnapshotMeta.version}`;
+  }, [
+    projectId,
+    state.currentSnapshotMeta,
+    state.hasUnsavedSnapshotChanges,
+    state.isDraftSaving,
+    state.isSnapshotLoading,
+    state.isSnapshotSaving,
+  ]);
+
+  const projectName = state.nodes[0]?.title || "Living Landscape Studio";
+  const siteLabel = state.activeGenerationTarget?.title || state.nodes[0]?.title || "Select site";
+  const recipeCounts = useMemo(() => {
+    const groups = state.nodes.filter(isPresetGroupNode);
+    return {
+      style: groups.filter((node) => node.presetGroup.category === "garden-styles" || node.presetGroup.category === "environment").length,
+      plants: groups.filter((node) => node.presetGroup.category === "plants" || node.presetGroup.category === "planting-zones").length,
+      materials: groups.filter((node) => node.presetGroup.category === "material" || node.presetGroup.category === "rocks-terrain").length,
+      objects: groups.filter((node) => node.presetGroup.category === "decor" || node.presetGroup.category === "hardscape").length,
+    };
+  }, [state.nodes]);
+
+  const addLibraryAssetsFromRecipe = (assets: LibraryAsset[]) => {
+    if (assets.length === 0) return;
+
+    if (activeRecipeModal === "site") {
+      const asset = assets[0];
+      actions.setSelectedLibraryAssetId(asset.id);
+      actions.setPendingLibraryInsertAsset(asset);
+      actions.showToast("Site image added to board");
+      return;
+    }
+
+    const categoryByRecipe: Partial<Record<SceneRecipeItemId, PresetGroupCategory>> = {
+      style: "garden-styles",
+      plants: "plants",
+      materials: "material",
+      objects: "decor",
+      light: "lighting",
+      season: "environment",
+    };
+    const category = activeRecipeModal ? categoryByRecipe[activeRecipeModal] : undefined;
+    if (!category) return;
+    const recipeLabel = activeRecipeModal ?? "reference";
+
+    actions.upsertPresetGroup(
+      {
+        category,
+        title: recipeLabel === "style" ? "Style" : recipeLabel,
+        children: assets.map((asset, index) => ({
+          id: `${asset.id}-${Date.now()}-${index}`,
+          slot: asset.metadata?.categoryHint ?? recipeLabel,
+          label: asset.title ?? `Reference ${index + 1}`,
+          imageSrc: asset.previewSrc ?? asset.originalSrc ?? asset.thumbnailSrc ?? asset.src,
+          prompt: asset.prompt ?? null,
+          order: index,
+          assetId: asset.id,
+          sourceFolderId: asset.folderId,
+          metadata: {
+            notes: asset.metadata?.speciesName ?? asset.metadata?.categoryHint ?? undefined,
+          },
+        })),
+        sourceFolderId: assets[0]?.folderId,
+      },
+      false,
+    );
+    actions.showToast(`${assets.length} asset${assets.length === 1 ? "" : "s"} added to scene recipe`);
+  };
 
   useEffect(() => {
     const wrapper = rightPanelRef.current;
     if (!wrapper || !isRightPanelRendered || !state.rightPanelOpen || isRightPanelAnimatingRef.current) return;
     gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "willChange" });
   }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
-
-  useEffect(() => {
-    if (!leftSidebarResize.isResizing) return;
-
-    const wrapper = leftSidebarPanelRef.current;
-    const element = leftSidebarContentRef.current;
-    leftSidebarTweenRef.current?.kill();
-    isLeftSidebarAnimatingRef.current = false;
-
-    if (!wrapper || !element || !state.leftSidebar.open) return;
-
-    gsap.set(wrapper, { width: leftSidebarResize.width, overflow: "hidden", clearProps: "willChange" });
-    gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-  }, [leftSidebarPanelRef, leftSidebarResize.isResizing, leftSidebarResize.width, state.leftSidebar.open]);
 
   useEffect(() => {
     if (!rightPanelResize.isResizing) return;
@@ -118,66 +169,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   }, [rightPanelRef, rightPanelResize.isResizing, rightPanelResize.width, state.rightPanelOpen]);
 
   useEffect(() => {
-    const wrapper = leftSidebarPanelRef.current;
-    const element = leftSidebarContentRef.current;
-    leftSidebarTweenRef.current?.kill();
-
-    if (!isLeftSidebarRendered || !wrapper || !element) return;
-
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReducedMotion) {
-      if (state.leftSidebar.open) {
-        gsap.set(wrapper, { width: leftSidebarResize.width, clearProps: "width,willChange" });
-        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-      } else {
-        gsap.set(wrapper, { width: 0, clearProps: "width,willChange" });
-        setIsLeftSidebarRendered(false);
-      }
-      return;
-    }
-
-    isLeftSidebarAnimatingRef.current = true;
-    gsap.set(wrapper, { overflow: "hidden", willChange: "width" });
-    gsap.set(element, { willChange: "transform" });
-
-    if (state.leftSidebar.open) {
-      gsap.set(wrapper, { width: 0 });
-      gsap.set(element, { xPercent: -100 });
-      leftSidebarTweenRef.current = gsap.timeline({
-        onComplete: () => {
-          isLeftSidebarAnimatingRef.current = false;
-          gsap.set(wrapper, { width: leftSidebarWidthRef.current, clearProps: "willChange" });
-          gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-        },
-      });
-      leftSidebarTweenRef.current
-        .to(wrapper, { width: leftSidebarWidthRef.current, duration: 0.34, ease: "power2.out" }, 0)
-        .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
-      return;
-    }
-
-    gsap.set(wrapper, { width: leftSidebarWidthRef.current });
-    gsap.set(element, { xPercent: 0 });
-    leftSidebarTweenRef.current = gsap.timeline({
-      onComplete: () => {
-        isLeftSidebarAnimatingRef.current = false;
-        setIsLeftSidebarRendered(false);
-        gsap.set(wrapper, { width: 0, clearProps: "willChange" });
-        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-      },
-    });
-    leftSidebarTweenRef.current
-      .to(element, { xPercent: -100, duration: 0.34, ease: "power3.inOut" }, 0)
-      .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
-  }, [isLeftSidebarRendered, leftSidebarPanelRef, state.leftSidebar.open]);
-
-  useEffect(() => {
-    return () => {
-      leftSidebarTweenRef.current?.kill();
-    };
-  }, []);
-
-  useEffect(() => {
     const wrapper = rightPanelRef.current;
     const element = rightPanelContentRef.current;
     rightPanelTweenRef.current?.kill();
@@ -191,7 +182,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
         gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
       } else {
         gsap.set(wrapper, { width: 0, clearProps: "width,willChange" });
-        setIsRightPanelRendered(false);
+        queueMicrotask(() => setIsRightPanelRendered(false));
       }
       return;
     }
@@ -229,7 +220,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     rightPanelTweenRef.current
       .to(element, { xPercent: 100, duration: 0.34, ease: "power3.inOut" }, 0)
       .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
-  }, [isRightPanelRendered, rightPanelRef, state.rightPanelOpen]);
+  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
 
   useEffect(() => {
     return () => {
@@ -263,21 +254,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       className="relative min-h-screen overflow-hidden bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       style={state.canvasThemeStyle}
     >
-      <div
-        aria-hidden="true"
-        className="hidden"
-        style={{
-          background: [
-            // Top-left warm bloom — ivory light refraction
-            "radial-gradient(ellipse 58% 36% at 0% 0%, rgba(255,255,255,0.72), transparent 62%)",
-            // Top-right cool atmospheric depth
-            "radial-gradient(ellipse 42% 28% at 100% 0%, rgba(148,163,184,0.08), transparent 58%)",
-            // Subtle bottom vignette for depth
-            "linear-gradient(180deg, rgba(255,255,255,0.24), transparent 22%, transparent 78%, rgba(15,23,42,0.035))",
-          ].join(", "),
-        }}
-      />
-      {/* ── Desktop layout ──────────────────────────────────────────────────── */}
+      {/* Desktop layout */}
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         {state.draftWarning ? (
           <div className="border-b border-[var(--canvas-theme-border)] bg-amber-50 px-4 py-2 text-sm text-amber-900">
@@ -304,55 +281,28 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             </div>
           </div>
         ) : null}
-        <div data-enter className="relative flex min-h-0 flex-1">
-          {/* Left sidebar */}
-          {isLeftSidebarRendered ? (
-            <div
-              ref={leftSidebarPanelRef}
-              className="relative h-full shrink-0 overflow-hidden"
-              data-canvas-ui="true"
-              data-shell-panel="left"
-            >
-              <div
-                ref={leftSidebarContentRef}
-                className="h-full shrink-0"
-                style={{ width: leftSidebarResize.width }}
-              >
-                <CanvasLeftSidebar
-                  language={state.language}
-                  panel={state.leftSidebar.panel}
-                  folders={library.folders}
-                  activeFolderId={library.activeFolderId}
-                  selectedAssetId={state.selectedLibraryAssetId}
-                  onSelectFolder={library.setActiveFolderId}
-                  onSelectAsset={actions.setSelectedLibraryAssetId}
-                  onCreateFolder={library.createFolder}
-                  onRenameFolder={library.renameFolder}
-                  onDeleteFolder={actions.deleteLibraryFolder}
-                  onDeleteAsset={actions.removeLibraryAsset}
-                  onAddAssetToCanvas={(asset) => {
-                    actions.setSelectedLibraryAssetId(asset.id);
-                    actions.setPendingLibraryInsertAsset(asset);
-                  }}
-                  onUpsertPresetGroup={({ replaceAllChildren = false, ...params }) => {
-                    actions.upsertPresetGroup(params, replaceAllChildren);
-                  }}
-                  onUploadAssets={actions.uploadAssetsToFolder}
-                  onToast={actions.showToast}
-                  onClose={actions.closeLeftSidebar}
-                />
-              </div>
-              <ResizeHandle
-                side="right"
-                ariaLabel="Resize left sidebar"
-                isResizing={leftSidebarResize.isResizing}
-                onPointerDown={leftSidebarResize.startResize}
-                onDoubleClick={leftSidebarResize.resetWidth}
-              />
-            </div>
-          ) : null}
+        <StudioHeader
+          projectName={projectName}
+          snapshotStatus={snapshotStatusText}
+          creditsAmount={state.creditsAmount}
+          isSaving={state.isSnapshotSaving}
+          hasUnsavedChanges={state.hasUnsavedSnapshotChanges}
+          onSave={() => void actions.saveVersion()}
+          onOpenHistory={actions.openRightPanel}
+          onExport={() => actions.showToast("Export flow coming next")}
+          onUndo={() => actions.showToast("Use Ctrl+Z to undo the latest board edit")}
+          onRedo={() => actions.showToast("Use Ctrl+Shift+Z to redo the latest board edit")}
+        />
+        <div data-enter className="relative flex min-h-0 flex-1 bg-[#F4F0E7]">
+          <StudioToolRail
+            activeTool={state.activeTool}
+            onTool={actions.handleTool}
+            onAddObject={() => actions.setShowAddObjectMenu(true)}
+            onUpload={() => setActiveRecipeModal("site")}
+          />
 
           {/* Canvas board */}
+          <div className="relative min-w-0 flex-1 overflow-hidden">
           <CanvasBoard
             projectId={projectId}
             language={state.language}
@@ -374,7 +324,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onAddPenStroke={actions.addPenStroke}
             onDeletePenStroke={actions.deletePenStroke}
             onReplacePenStrokes={actions.replacePenStrokes}
-            onPenSettingsChange={actions.setPenSettings}
             onSelectSketchLine={actions.selectSketchLine}
             onSelectSketchGroup={(id) => actions.handleSelectItem({ type: "sketchGroup", id })}
             onTool={actions.handleTool}
@@ -382,7 +331,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onMultiAngle={() => actions.setShowMultiAngleModal(true)}
             onAddObject={() => actions.setShowAddObjectMenu(true)}
             onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
-            onGenerate={actions.generateConcept}
             onToast={actions.showToast}
             onNodesChange={actions.setNodes}
             onEdgesChange={actions.setEdges}
@@ -395,12 +343,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             currentSnapshotMeta={state.currentSnapshotMeta}
             hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
             creditsAmount={state.creditsAmount}
-            canvasThemeColor={state.canvasThemeColor}
-            onCanvasThemeChange={actions.setCanvasThemeColor}
-            activeLeftSidebarPanel={state.leftSidebar.open ? state.leftSidebar.panel : null}
-            onToggleLeftSidebarPanel={actions.toggleLeftSidebarPanel}
             miniMapOpen={state.miniMapOpen}
-            onToggleMiniMap={actions.toggleMiniMap}
             pendingLibraryInsertAsset={state.pendingLibraryInsertAsset}
             onConsumePendingLibraryInsert={actions.consumePendingLibraryInsert}
             pendingPresetGroupInsert={state.pendingPresetGroupInsert}
@@ -423,22 +366,49 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onBrushSoftnessChange={actions.setBrushSoftness}
             onCloseRegionEditor={actions.exitRegionMode}
             onSaveVersion={() => void actions.saveVersion()}
+            studioChrome
             onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
           />
 
+          <ContextualAIComposer
+            targetTitle={state.activeGenerationTarget?.title ?? null}
+            promptText={state.promptText}
+            isGenerating={Boolean(state.pendingGenerationJob)}
+            onPromptChange={actions.setPromptText}
+            onGenerate={actions.generateConcept}
+            onOpenHistory={actions.openRightPanel}
+            onEnhance={() => actions.showToast("Open History to use the full prompt enhancer")}
+          />
+
+          <SceneRecipeBar
+            siteLabel={siteLabel}
+            styleCount={recipeCounts.style}
+            plantCount={recipeCounts.plants}
+            materialCount={recipeCounts.materials}
+            objectCount={recipeCounts.objects}
+            onOpen={setActiveRecipeModal}
+            onGenerate={actions.generateConcept}
+          />
+
+          <CanvasAssetLibraryModal
+            open={Boolean(activeRecipeModal)}
+            activeItem={activeRecipeModal}
+            folders={library.folders}
+            onClose={() => setActiveRecipeModal(null)}
+            onAddAssets={addLibraryAssetsFromRecipe}
+          />
+
           {/* Right panel */}
-          {isRightPanelRendered ? (
+          {isRightPanelRendered && state.rightPanelOpen ? (
             <div
               ref={rightPanelRef}
-              className="relative h-full shrink-0"
-              style={{ width: state.rightPanelOpen ? rightPanelResize.width : 0 }}
+              className="absolute inset-y-0 right-0 z-[110] w-[420px] border-l border-[#D8D2C3] bg-[#FFFDF8] shadow-[-24px_0_70px_rgba(23,50,37,0.16)]"
               data-canvas-ui="true"
               data-shell-panel="right"
             >
               <div
                 ref={rightPanelContentRef}
-                className="h-full shrink-0"
-                style={{ width: rightPanelResize.width }}
+                className="h-full"
               >
                 <AiChatSidebar
                   canvasId="canvas-main"
@@ -487,7 +457,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             <button
               type="button"
               onClick={actions.openRightPanel}
-              className="absolute right-6 top-20 z-[70] grid h-10 w-10 place-items-center rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_12px_28px_var(--canvas-theme-shadow)] transition hover:-translate-y-0.5 hover:border-[var(--canvas-theme-border-strong)]"
+              className="hidden"
               title={state.language === "vi" ? "Mở chat" : "Open chat"}
             >
               <MessageSquare className="h-5 w-5" aria-hidden="true" />
@@ -554,6 +524,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       </div>
 
       {/* ── Mobile / small screen fallback ──────────────────────────────────── */}
+      </div>
+
       <div className="grid min-h-screen place-items-center bg-[#F7F8FA] p-8 xl:hidden">
         <div className="max-w-md rounded-3xl border border-[#E5E7EB] bg-white p-8 text-center shadow-xl shadow-black/8">
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#111827] text-lg font-black text-white">
