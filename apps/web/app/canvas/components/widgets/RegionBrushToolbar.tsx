@@ -9,7 +9,7 @@ type RegionBrushToolbarProps = {
 };
 
 export default function RegionBrushToolbar({ workspace }: RegionBrushToolbarProps) {
-  const { brushMode, regionSelectionTool, leftSidebar, rightPanelOpen, selectedNode } = workspace.state;
+  const { brushMode, regionSelectionTool, rightPanelOpen, selectedNode } = workspace.state;
   const {
     setBrushMode,
     setRegionSelectionTool,
@@ -21,7 +21,7 @@ export default function RegionBrushToolbar({ workspace }: RegionBrushToolbarProp
 
   const isNodeSelected = !!selectedNode;
   const hasMask = Boolean(selectedNode?.regionMask?.selectionRatio && selectedNode.regionMask.selectionRatio > 0);
-  const leftOffset = leftSidebar.open ? workspace.leftSidebarResize.width : 0;
+  const leftOffset = 0;
   const rightOffset = rightPanelOpen ? workspace.rightPanelResize.width : 0;
 
   useEffect(() => {

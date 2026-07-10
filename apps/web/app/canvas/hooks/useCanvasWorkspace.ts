@@ -26,14 +26,10 @@ import {
   type CanvasPresetChild,
   type CanvasPresetGroupNode,
   DEFAULT_CANVAS_THEME,
-  DEFAULT_LEFT_SIDEBAR_WIDTH,
   DEFAULT_PEN_SETTINGS,
   DEFAULT_RIGHT_PANEL_WIDTH,
   type PresetGroupCategory,
-  LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
-  MAX_LEFT_SIDEBAR_WIDTH,
   MAX_RIGHT_PANEL_WIDTH,
-  MIN_LEFT_SIDEBAR_WIDTH,
   MIN_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_WIDTH_STORAGE_KEY,
   inferObjectTypeFromTag,
@@ -60,7 +56,6 @@ import type {
   MaskData,
   CanvasNode,
   EditorTool,
-  LeftSidebarPanelId,
   Marker,
   PenSettings,
   PenStrokeObject,
@@ -368,7 +363,6 @@ function animateIn(selector: string) {
 export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── DOM Refs ────────────────────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement>(null);
-  const leftSidebarPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
   // ── Canvas entities ─────────────────────────────────────────────────────────
@@ -403,13 +397,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [showAddObjectMenu, setShowAddObjectMenu] = useState(false);
   const [showFeasibilityReviewPanel, setShowFeasibilityReviewPanel] = useState(false);
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
-  const [leftSidebar, setLeftSidebar] = useState<{ open: boolean; panel: LeftSidebarPanelId }>({
-    open: true,
-    panel: "library",
-  });
-  const [miniMapOpen, setMiniMapOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [canvasThemeColor, setCanvasThemeColor] = useState(DEFAULT_CANVAS_THEME);
+  const miniMapOpen = true;
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [language, setLanguage] = useState(DEFAULT_CANVAS_LANGUAGE);
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
   const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] =
@@ -461,15 +450,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   >(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
-  const leftSidebarResize = useResizablePanel({
-    panelRef: leftSidebarPanelRef,
-    side: "left",
-    defaultWidth: DEFAULT_LEFT_SIDEBAR_WIDTH,
-    minWidth: MIN_LEFT_SIDEBAR_WIDTH,
-    maxWidth: MAX_LEFT_SIDEBAR_WIDTH,
-    storageKey: LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
-  });
-
   const rightPanelResize = useResizablePanel({
     panelRef: rightPanelRef,
     side: "right",
@@ -499,8 +479,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [supabase]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
-  const canvasThemeStyle = buildCanvasThemeStyle(canvasThemeColor);
-  const isResizingPanel = leftSidebarResize.isResizing || rightPanelResize.isResizing;
+  const canvasThemeStyle = buildCanvasThemeStyle(DEFAULT_CANVAS_THEME);
+  const isResizingPanel = rightPanelResize.isResizing;
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
   const activeGenerationTarget =
     activeGenerationTargetId
@@ -1240,20 +1220,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     window.setTimeout(() => setToast(null), 1800);
   }
 
-  // Bật hoặc tắt panel trái theo tab người dùng chọn.
-  const toggleLeftSidebarPanel = (panel: LeftSidebarPanelId) => {
-    setLeftSidebar((current) =>
-      current.open && current.panel === panel
-        ? { ...current, open: false }
-        : { open: true, panel },
-    );
-  };
-
-  // Mở lại panel trái mà không đổi tab hiện tại.
-  const openLeftSidebar = () => {
-    setLeftSidebar((current) => ({ ...current, open: true }));
-  };
-
   // Đổi tool đang hoạt động và chặn các tool cần chọn ảnh trước.
   const handleTool = (tool: EditorTool) => {
     if (tool === "region" && !selectedNode) {
@@ -1807,14 +1773,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   return {
     // DOM refs (needed by CanvasWorkspace for GSAP / panel resizing)
     rootRef,
-    leftSidebarPanelRef,
     rightPanelRef,
 
     // Panel resizing hooks (expose full object so Workspace can wire ResizeHandle)
-    leftSidebarResize,
     rightPanelResize,
 
-    // Library sub-hook (folders, create, rename, etc. passed to CanvasLeftSidebar)
+    // Library sub-hook used by the studio asset modal.
     library,
 
     // ── Canvas state ──────────────────────────────────────────────────────────
@@ -1835,10 +1799,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       generationAssistantMessages,
       activeNodeId,
       pendingGenerationJob,
-      leftSidebar,
       miniMapOpen,
       rightPanelOpen,
-      canvasThemeColor,
       language,
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
@@ -1882,11 +1844,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Toast
       showToast,
 
-      // Sidebar
-      toggleLeftSidebarPanel,
-      openLeftSidebar,
-      closeLeftSidebar: () => setLeftSidebar((c) => ({ ...c, open: false })),
-      toggleMiniMap: () => setMiniMapOpen((v) => !v),
+      // Panels
       openRightPanel: () => setRightPanelOpen(true),
       closeRightPanel: () => setRightPanelOpen(false),
 
@@ -1957,7 +1915,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       movePresetChild,
 
       // Theme
-      setCanvasThemeColor,
       setLanguage,
 
       // Modal toggles
