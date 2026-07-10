@@ -13,6 +13,26 @@
     --accent: #0f172a;
     --accent-hover: #1e293b;
     --focus-ring: rgba(15, 23, 42, 0.1);
+    --font-botanical-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    --font-botanical-sans: "Avenir Next", Avenir, "Trebuchet MS", sans-serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+.botanical-landing {
+  font-family: var(--font-botanical-sans);
+}
+
+.botanical-display {
+  font-family: var(--font-botanical-display);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }
 

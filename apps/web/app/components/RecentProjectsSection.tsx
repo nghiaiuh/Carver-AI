@@ -82,13 +82,18 @@ export default function RecentProjectsSection() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status !== "authenticated") {
-      setProjects([]);
-      setLoadingProjects(false);
-      return;
-    }
-
     let cancelled = false;
+
+    if (status !== "authenticated") {
+      queueMicrotask(() => {
+        if (cancelled) return;
+        setProjects([]);
+        setLoadingProjects(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const loadProjects = async () => {
       setLoadingProjects(true);
@@ -173,21 +178,21 @@ export default function RecentProjectsSection() {
   };
 
   return (
-    <div className="mt-24">
-      <div className="mb-6 flex items-center justify-between gap-4">
+    <div className="mt-14">
+      <div className="mb-7 flex items-end justify-between gap-4 border-b border-[#17372A]/15 pb-5">
         <div>
-          <h2 className="text-2xl font-black tracking-[-0.04em]">Recent Projects</h2>
-          <p className="mt-1 text-sm font-bold text-black/42">
+          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-[#17372A]">Recent projects</h3>
+          <p className="mt-2 text-sm font-medium text-[#17372A]/48">
             {status === "authenticated"
-              ? "Continue the real work in your own canvas workspace."
-              : "Sign in to see your saved landscape projects."}
+              ? "Tiếp tục phát triển những phương án gần đây của bạn."
+              : "Đăng nhập để xem các dự án cảnh quan đã lưu."}
           </p>
         </div>
         <Link
           href={status === "authenticated" ? "/canvas" : buildAuthPageHref("/login", pathname, "recent-projects")}
-          className="inline-flex items-center gap-2 text-sm font-black text-black/42 transition hover:text-black"
+          className="inline-flex items-center gap-2 text-sm font-bold text-[#62755B] transition hover:text-[#17372A]"
         >
-          {status === "authenticated" ? "Open Canvas" : "Sign In"}
+          {status === "authenticated" ? "Mở canvas" : "Đăng nhập"}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
       </div>
@@ -203,15 +208,15 @@ export default function RecentProjectsSection() {
           type="button"
           onClick={() => void createProject()}
           disabled={creatingProject}
-          className="flex min-h-[216px] flex-col justify-between rounded-[1.75rem] border border-dashed border-black/12 bg-white/35 p-6 text-left transition hover:border-[#2f7a4f]/40 hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-70"
+          className="group flex min-h-[232px] flex-col justify-between rounded-[1.5rem] border border-dashed border-[#17372A]/22 bg-[#F5F2E9]/55 p-6 text-left transition hover:border-[#62755B] hover:bg-[#F5F2E9] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          <span className="grid flex-1 place-items-center text-black/35">
+          <span className="grid h-12 w-12 place-items-center rounded-full border border-[#17372A]/18 text-[#17372A] transition group-hover:rotate-[-8deg] group-hover:bg-[#C7F36B]">
             {creatingProject ? <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" /> : <Plus className="h-8 w-8" aria-hidden="true" />}
           </span>
           <div>
-            <span className="text-lg font-black">New Project</span>
-            <p className="mt-2 text-sm font-bold text-black/40">
-              {status === "authenticated" ? "Create a fresh landscape workspace" : "Sign in first to create a project"}
+            <span className="font-[family-name:var(--font-botanical-display)] text-2xl font-semibold tracking-[-0.03em]">Dự án mới</span>
+            <p className="mt-2 text-sm font-medium leading-6 text-[#17372A]/48">
+              {status === "authenticated" ? "Mở một canvas cảnh quan mới" : "Đăng nhập để tạo project đầu tiên"}
             </p>
           </div>
         </button>
@@ -220,7 +225,7 @@ export default function RecentProjectsSection() {
           Array.from({ length: 4 }).map((_, index) => (
             <div
               key={`project-skeleton-${index}`}
-              className="min-h-[216px] rounded-[1.5rem] border border-black/8 bg-white/45 p-5 shadow-lg shadow-black/[0.03]"
+              className="min-h-[232px] rounded-[1.5rem] border border-[#17372A]/8 bg-[#F5F2E9]/60 p-5"
             >
               <div className="h-28 animate-pulse rounded-[1.2rem] bg-black/[0.05]" />
               <div className="mt-4 h-5 w-2/3 animate-pulse rounded-full bg-black/[0.06]" />
@@ -228,36 +233,36 @@ export default function RecentProjectsSection() {
             </div>
           ))
         ) : status !== "authenticated" ? (
-          <div className="md:col-span-1 xl:col-span-4 flex min-h-[216px] flex-col justify-center rounded-[1.75rem] border border-black/10 bg-white/55 p-8 shadow-lg shadow-black/[0.04]">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#101412] text-[#f8f5ee]">
+          <div className="md:col-span-1 xl:col-span-4 flex min-h-[232px] flex-col justify-center rounded-[1.5rem] border border-[#17372A]/12 bg-[#E4E7D8] p-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#17372A] text-[#F5F2E9]">
               <Leaf className="h-5 w-5" aria-hidden="true" />
             </div>
-            <h3 className="mt-5 text-2xl font-black tracking-[-0.03em] text-[#101412]">
-              Your private project shelf starts after sign-in
+            <h3 className="mt-5 font-[family-name:var(--font-botanical-display)] text-3xl font-semibold tracking-[-0.04em] text-[#17372A]">
+              Không gian thiết kế riêng bắt đầu sau khi đăng nhập
             </h3>
-            <p className="mt-3 max-w-[38rem] text-sm leading-7 text-black/55">
-              Save canvas versions, continue AI chat history, and keep each garden concept tied to your own account instead of demo data.
+            <p className="mt-3 max-w-[38rem] text-sm leading-7 text-[#17372A]/58">
+              Lưu phiên bản canvas, tiếp tục lịch sử AI chat và giữ từng concept sân vườn trong tài khoản của bạn.
             </p>
             <div className="mt-6">
               <Link
                 href={buildAuthPageHref("/login", pathname, "recent-projects")}
-                className="inline-flex items-center gap-2 rounded-full bg-[#101412] px-5 py-3 text-sm font-black text-[#f8f5ee] shadow-xl shadow-black/15"
+                className="inline-flex items-center gap-2 rounded-full bg-[#17372A] px-5 py-3 text-sm font-bold text-[#F5F2E9]"
               >
-                Sign in to continue
+                Đăng nhập để tiếp tục
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </div>
           </div>
         ) : recentProjects.length === 0 ? (
-          <div className="md:col-span-1 xl:col-span-4 flex min-h-[216px] flex-col justify-center rounded-[1.75rem] border border-black/10 bg-white/55 p-8 shadow-lg shadow-black/[0.04]">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#eff6ea] text-[#27683f]">
+          <div className="md:col-span-1 xl:col-span-4 flex min-h-[232px] flex-col justify-center rounded-[1.5rem] border border-[#17372A]/12 bg-[#E4E7D8] p-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#C7F36B] text-[#17372A]">
               <FolderOpen className="h-5 w-5" aria-hidden="true" />
             </div>
-            <h3 className="mt-5 text-2xl font-black tracking-[-0.03em] text-[#101412]">
-              No projects yet
+            <h3 className="mt-5 font-[family-name:var(--font-botanical-display)] text-3xl font-semibold tracking-[-0.04em] text-[#17372A]">
+              Chưa có dự án nào
             </h3>
-            <p className="mt-3 max-w-[34rem] text-sm leading-7 text-black/55">
-              Start your first landscape workspace and Carver AI will create a clean project shell with snapshot, chat thread, and canvas state ready to use.
+            <p className="mt-3 max-w-[34rem] text-sm leading-7 text-[#17372A]/58">
+              Tạo workspace cảnh quan đầu tiên. Carver AI sẽ chuẩn bị sẵn snapshot, chat và canvas để bạn bắt đầu.
             </p>
           </div>
         ) : (
@@ -265,13 +270,13 @@ export default function RecentProjectsSection() {
             <Link
               key={project.id}
               href={`/canvas?projectId=${project.id}`}
-              className="group flex min-h-[216px] flex-col overflow-hidden rounded-[1.5rem] border border-black/10 bg-white shadow-lg shadow-black/[0.04] transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/[0.06]"
+              className="group flex min-h-[232px] flex-col overflow-hidden rounded-[1.5rem] border border-[#17372A]/12 bg-[#F5F2E9] transition hover:-translate-y-1 hover:border-[#62755B]/45 hover:shadow-[0_20px_50px_rgba(23,55,42,0.10)]"
             >
               <div
                 className="flex h-[124px] items-end justify-between px-5 py-4 text-white"
                 style={{
                   background: [
-                    "linear-gradient(135deg, rgba(16,20,18,0.94), rgba(65,116,82,0.86))",
+                    "linear-gradient(135deg, rgba(23,55,42,0.98), rgba(98,117,91,0.86))",
                     "radial-gradient(circle at top right, rgba(255,255,255,0.12), transparent 34%)",
                   ].join(", "),
                 }}
@@ -284,16 +289,16 @@ export default function RecentProjectsSection() {
                 </span>
               </div>
               <div className="flex flex-1 flex-col p-5">
-                <h3 className="text-lg font-black leading-tight text-[#101412] transition group-hover:text-[#27683f]">
+                <h3 className="font-[family-name:var(--font-botanical-display)] text-xl font-semibold leading-tight tracking-[-0.025em] text-[#17372A] transition group-hover:text-[#62755B]">
                   {project.name}
                 </h3>
-                <p className="mt-2 line-clamp-3 text-sm leading-6 text-black/52">
+                <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#17372A]/52">
                   {buildProjectSubtitle(project)}
                 </p>
-                <div className="mt-auto flex items-center justify-between pt-5 text-xs font-bold uppercase tracking-[0.14em] text-black/35">
+                <div className="mt-auto flex items-center justify-between pt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#17372A]/38">
                   <span>Updated {formatProjectDate(project.updated_at)}</span>
-                  <span className="inline-flex items-center gap-1.5 text-[#27683f]">
-                    Open
+                  <span className="inline-flex items-center gap-1.5 text-[#62755B]">
+                    Mở
                     <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
                   </span>
                 </div>
