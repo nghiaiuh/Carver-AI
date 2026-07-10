@@ -131,6 +131,10 @@ const CHAT_MODEL_STORAGE_KEY = "carver-chat-model";
 const PROJECT_REQUIRED_MESSAGE = "Create or open a project before using AI chat.";
 const GENERATION_QUEUE_TIMEOUT_MS = 30_000;
 const GENERATION_RUNNING_TIMEOUT_MS = 300_000;
+const GENERATION_POLL_RETRY_LIMIT = 4;
+const GENERATION_POLL_RETRY_DELAY_MS = 3_000;
+
+class NonRetryablePollError extends Error {}
 
 function formatPresetReferenceLabel(reference: CanvasGenerationPresetReference) {
   if (reference.slot?.trim()) {
@@ -653,21 +657,49 @@ export default function AiChatSidebar({
 
     try {
       const startedAt = Date.now();
-      while (!isUnmountedRef.current) {
-        const response = await fetch(
-          `/api/projects/${params.projectId}/ai-jobs/${params.jobId}`,
-          {
-            cache: "no-store",
-            headers: await getAuthorizedHeaders(),
-          },
-        );
-        const payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+      let consecutivePollFailures = 0;
 
-        if (!response.ok || !payload.data?.job) {
-          throw new Error(payload.error || "Unable to load AI job status.");
+      while (!isUnmountedRef.current) {
+        let payload: GetAiJobResponse;
+        try {
+          const response = await fetch(
+            `/api/projects/${params.projectId}/ai-jobs/${params.jobId}`,
+            {
+              cache: "no-store",
+              headers: await getAuthorizedHeaders(),
+            },
+          );
+          payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+
+          if (!response.ok || !payload.data?.job) {
+            const message = payload.error || "Unable to load AI job status.";
+            if ([400, 403, 404].includes(response.status)) {
+              throw new NonRetryablePollError(message);
+            }
+            throw new Error(message);
+          }
+        } catch (error) {
+          if (error instanceof NonRetryablePollError) {
+            throw error;
+          }
+
+          consecutivePollFailures += 1;
+
+          if (consecutivePollFailures <= GENERATION_POLL_RETRY_LIMIT) {
+            await wait(GENERATION_POLL_RETRY_DELAY_MS * consecutivePollFailures);
+            continue;
+          }
+
+          throw new Error(
+            error instanceof Error
+              ? `Lost connection while checking image generation status: ${error.message}`
+              : "Lost connection while checking image generation status.",
+          );
         }
 
         const job = payload.data.job;
+        consecutivePollFailures = 0;
+
         if (job.status === "queued") {
           if (Date.now() - startedAt >= GENERATION_QUEUE_TIMEOUT_MS) {
             throw new Error(

@@ -6,7 +6,7 @@ import { buildAssetContentUrl } from "./assetDelivery";
 export function resolveAiJobResultAssetUrls(
   requestUrl: string,
   result: CarverAiJobResult | null,
-  jobStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled",
+  jobStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "enqueue_failed",
 ): CarverAiJobResult | null {
   if (!result) {
     return null;
