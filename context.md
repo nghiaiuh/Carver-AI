@@ -194,6 +194,8 @@ Graph-aware AI brief logic lives in:
 API side:
 - `apps/web/app/api/projects/[projectId]/ai-jobs/route.ts`
 - `apps/web/app/api/projects/[projectId]/ai-jobs/[jobId]/route.ts`
+- `apps/web/lib/server/aiJobService.ts`
+  Owns project AI job creation orchestration for the Next.js BFF: validation, credit reservation, idempotency, snapshot checkpoint, and queue enqueue. API routes should stay as HTTP boundaries and call this service instead of keeping business flow in route-local `_lib` files.
 
 Worker side:
 - `apps/worker`

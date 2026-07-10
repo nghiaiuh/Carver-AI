@@ -9,17 +9,17 @@ import type {
   CreateAiJobRequest,
   QueuedCarverAiJobPayload,
 } from "@carver/shared";
-import type { RequestContext } from "./authz";
-import { isUuidLike, requireProjectOwner } from "./authz";
-import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "./credits";
-import { apiFailure, badRequest, stringArrayValue, stringValue } from "./http";
-import { checkRateLimit } from "./rateLimit";
-import { resolveAiJobResultAssetUrls } from "../../../lib/server/aiJobResultAssets";
+import type { RequestContext } from "../../app/api/_lib/authz";
+import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
+import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
+import { apiFailure, badRequest, stringArrayValue, stringValue } from "../../app/api/_lib/http";
+import { checkRateLimit } from "../../app/api/_lib/rateLimit";
+import { resolveAiJobResultAssetUrls } from "./aiJobResultAssets";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,
-} from "../../../lib/server/canvasSnapshotValidation";
-import { persistTemporaryProjectImageAsset } from "../../../lib/server/projectInputAssets";
+} from "./canvasSnapshotValidation";
+import { persistTemporaryProjectImageAsset } from "./projectInputAssets";
 
 const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
   "generate_concept",
@@ -193,7 +193,7 @@ export async function createProjectAiJob(params: {
   context: RequestContext;
   projectId: string;
   body: Record<string, unknown>;
-}) : Promise<CreateProjectAiJobResult> {
+}): Promise<CreateProjectAiJobResult> {
   const { request, context, projectId, body } = params;
 
   if (!projectId) {
@@ -717,7 +717,7 @@ function mapAiJobRecord(row: {
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-        jobResult: requestUrl
+    jobResult: requestUrl
       ? resolveAiJobResultAssetUrls(
           requestUrl,
           isCarverAiJobResult(row.job_result) ? row.job_result : null,

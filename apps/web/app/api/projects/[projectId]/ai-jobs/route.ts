@@ -1,14 +1,14 @@
 /*
  * Route: API tao AI job theo project.
  * Thuoc: module background jobs / generation workflow.
- * Vai tro: dong goi yeu cau AI thanh job co snapshot + graph context de worker xu ly bat dong bo.
+ * Vai tro: HTTP boundary cho flow tao AI job; orchestration nam trong aiJobService.
  * Chuc nang:
  * - `POST`: kiem tra quyen project, resolve snapshot, tao ai_job va enqueue vao queue.
  */
 
 import { apiSuccess, readJsonObject } from "../../../_lib/http";
-import { createProjectAiJob } from "../../../_lib/createProjectAiJob";
 import { requireRequestContext } from "../../../_lib/authz";
+import { createProjectAiJob } from "../../../../../lib/server/aiJobService";
 
 export async function POST(
   request: Request,

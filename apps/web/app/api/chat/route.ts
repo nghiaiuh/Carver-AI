@@ -13,13 +13,13 @@ import type { CreateAiJobRequest } from "@carver/shared";
 import { isUuidLike, requireProjectOwner, requireRequestContext } from "../_lib/authz";
 import { badRequest, readJsonObject, stringValue } from "../_lib/http";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../_lib/credits";
-import { createProjectAiJob } from "../_lib/createProjectAiJob";
 import {
   appendProjectChatExchange,
   appendProjectUserMessage,
   clearProjectChatMessages,
   listProjectChatMessages,
 } from "../../../lib/server/projectChatHistory";
+import { createProjectAiJob } from "../../../lib/server/aiJobService";
 import { resolveProjectChatMessageAssetUrls } from "../../../lib/server/chatMessageAssets";
 import { normalizeOpenAIChatModel } from "../../../lib/openaiChatModels";
 import { detectChatGenerationIntent } from "../../../lib/server/chatGenerationIntent";
