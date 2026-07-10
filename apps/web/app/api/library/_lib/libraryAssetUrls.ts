@@ -1,5 +1,5 @@
 import type { LibraryAssetRecord, LibraryFolderRecord } from "@carver/storage";
-import { buildAssetContentUrl } from "../../../../lib/server/assetDelivery";
+import { buildAssetContentUrl } from "../../../../lib/server/assetService";
 
 export function withGatewayLibraryAssetUrls(
   requestUrl: string,

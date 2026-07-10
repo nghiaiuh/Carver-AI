@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   buildAssetContentUrl,
   type AssetDeliveryVariant,
-} from "../../../../lib/server/assetDelivery";
+} from "../../../../lib/server/assetService";
 import { requireRequestContext } from "../../_lib/authz";
 import { apiFailure, apiSuccess, readJsonObject } from "../../_lib/http";
 

@@ -14,7 +14,7 @@ import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
 import { apiFailure, badRequest, stringArrayValue, stringValue } from "../../app/api/_lib/http";
 import { checkRateLimit } from "../../app/api/_lib/rateLimit";
-import { resolveAiJobResultAssetUrls } from "./aiJobResultAssets";
+import { resolveAiJobResultAssetUrls } from "./assetService";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,

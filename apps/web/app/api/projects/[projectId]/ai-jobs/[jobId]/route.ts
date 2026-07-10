@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { CarverAiJobRecord, CarverAiJobResult } from "@carver/shared";
 import { requireProjectScopedJob, requireRequestContext, isUuidLike } from "../../../../_lib/authz";
 import { badRequest } from "../../../../_lib/http";
-import { resolveAiJobResultAssetUrls } from "../../../../../../lib/server/aiJobResultAssets";
+import { resolveAiJobResultAssetUrls } from "../../../../../../lib/server/assetService";
 
 export async function GET(
   request: Request,

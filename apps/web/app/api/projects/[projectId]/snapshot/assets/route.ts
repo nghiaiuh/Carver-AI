@@ -1,7 +1,7 @@
 import { apiSuccess, badRequestResponse, createRequestId, readJsonObject, serverErrorResponse } from "../../../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../../../_lib/authz";
 import { persistTemporaryProjectImageAsset } from "../../../../../../lib/server/projectInputAssets";
-import { buildAssetContentUrl } from "../../../../../../lib/server/assetDelivery";
+import { buildAssetContentUrl } from "../../../../../../lib/server/assetService";
 
 type SnapshotAssetRequestItem = {
   nodeId: string;

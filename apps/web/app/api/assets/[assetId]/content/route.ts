@@ -6,7 +6,7 @@ import {
   normalizeAssetDeliveryVariant,
   verifyAssetDeliveryToken,
   type AssetDeliveryVariant,
-} from "../../../../../lib/server/assetDelivery";
+} from "../../../../../lib/server/assetService";
 import { apiFailure, createRequestId } from "../../../_lib/http";
 import { isUuidLike } from "../../../_lib/authz";
 
