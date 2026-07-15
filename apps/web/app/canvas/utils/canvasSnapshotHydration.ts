@@ -3,13 +3,20 @@ import type {
   CanvasSnapshotDocument,
 } from "@carver/shared";
 import type {
+  AddedObject,
   CanvasEdge,
   ImageConnectionRole,
+  Marker,
   CanvasNode,
+  MaskData,
+  MaskHistory,
+  PenStrokeObject,
   CanvasPresetChild,
   CanvasPresetGroupNode,
   CanvasSourceImage,
   PresetGroupCategory,
+  SketchGroup,
+  SketchLine,
 } from "../types/canvas";
 import { getDefaultInputPorts } from "../types/canvas";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
@@ -58,6 +65,11 @@ type HydratedCanvasSnapshotState = {
   edges: CanvasEdge[];
   activeGenerationTargetId: string | null;
   promptText: string;
+  markers: Marker[];
+  addedObjects: AddedObject[];
+  sketchLines: SketchLine[];
+  sketchGroups: SketchGroup[];
+  penStrokes: PenStrokeObject[];
 };
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -159,6 +171,52 @@ function sanitizeSourceImage(sourceImage: unknown): CanvasSourceImage | undefine
   };
 }
 
+function sanitizeMaskData(mask: unknown): MaskData | undefined {
+  const source = objectValue(mask);
+  if (!source) {
+    return undefined;
+  }
+
+  const dataUrl = stringValue(source.dataUrl);
+  if (
+    !dataUrl ||
+    !dataUrl.startsWith("data:image/") ||
+    typeof source.width !== "number" ||
+    typeof source.height !== "number" ||
+    typeof source.selectionRatio !== "number" ||
+    typeof source.updatedAt !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    width: source.width,
+    height: source.height,
+    dataUrl,
+    selectionRatio: source.selectionRatio,
+    updatedAt: source.updatedAt,
+  };
+}
+
+function sanitizeMaskHistory(maskHistory: unknown): MaskHistory | undefined {
+  const source = objectValue(maskHistory);
+  if (!source) {
+    return undefined;
+  }
+
+  const sanitizeEntries = (value: unknown) =>
+    Array.isArray(value)
+      ? value
+          .map((entry) => sanitizeMaskData(entry))
+          .slice(-10)
+      : [];
+
+  return {
+    past: sanitizeEntries(source.past),
+    future: sanitizeEntries(source.future),
+  };
+}
+
 function sanitizePresetChild(child: unknown, index: number): CanvasPresetChild | null {
   const source = objectValue(child);
   const id = stringValue(source?.id);
@@ -220,6 +278,8 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
           ? source.scale
           : 1,
       sourceImage,
+      regionMask: sanitizeMaskData(source?.regionMask),
+      maskHistory: sanitizeMaskHistory(source?.maskHistory),
       inputPorts: getDefaultInputPorts(),
       presetGroup: {
         category: sanitizePresetGroupCategory(presetGroupSource?.category),
@@ -247,7 +307,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
         ? source.scale
         : 1,
-    sourceImage,
+      sourceImage,
+    regionMask: sanitizeMaskData(source?.regionMask),
+    maskHistory: sanitizeMaskHistory(source?.maskHistory),
     inputPorts: getDefaultInputPorts(),
   };
 }
@@ -276,6 +338,131 @@ function sanitizeGraphEdge(edge: unknown): CanvasEdge | null {
     fromHandle: source?.fromHandle === "left" || source?.fromHandle === "right" ? source.fromHandle : undefined,
     toHandle: source?.toHandle === "left" || source?.toHandle === "right" ? source.toHandle : undefined,
     createdAt: stringValue(source?.createdAt) ?? undefined,
+  };
+}
+
+function sanitizeMarker(marker: unknown): Marker | null {
+  const source = objectValue(marker);
+  const id = stringValue(source?.id);
+  const label = stringValue(source?.label);
+  if (!id || !label) {
+    return null;
+  }
+
+  return {
+    id,
+    x: numberValue(source?.x, 0),
+    y: numberValue(source?.y, 0),
+    label,
+  };
+}
+
+function sanitizeAddedObject(object: unknown): AddedObject | null {
+  const source = objectValue(object);
+  const id = stringValue(source?.id);
+  const label = stringValue(source?.label);
+  if (!id || !label) {
+    return null;
+  }
+
+  return {
+    id,
+    x: numberValue(source?.x, 0),
+    y: numberValue(source?.y, 0),
+    w: Math.max(1, numberValue(source?.w, 160)),
+    h: Math.max(1, numberValue(source?.h, 160)),
+    rotation: numberValue(source?.rotation, 0),
+    label,
+    selectedAssetIds: Array.isArray(source?.selectedAssetIds)
+      ? source.selectedAssetIds.filter((item): item is string => typeof item === "string")
+      : [],
+  };
+}
+
+function sanitizeSketchLine(line: unknown): SketchLine | null {
+  const source = objectValue(line);
+  const id = stringValue(source?.id);
+  if (!id || !Array.isArray(source?.points)) {
+    return null;
+  }
+
+  const points = source.points
+    .map((point) => objectValue(point))
+    .filter((point): point is Record<string, unknown> => point !== null)
+    .map((point) => ({
+      x: numberValue(point.x, 0),
+      y: numberValue(point.y, 0),
+    }));
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  return {
+    id,
+    points,
+    color: stringValue(source?.color) ?? "#000000",
+    width: Math.max(1, numberValue(source?.width, 2)),
+    groupId: stringValue(source?.groupId) ?? undefined,
+  };
+}
+
+function sanitizeSketchGroup(group: unknown): SketchGroup | null {
+  const source = objectValue(group);
+  const id = stringValue(source?.id);
+  const nameTag = stringValue(source?.nameTag);
+  const objectType = stringValue(source?.objectType);
+  const bounds = objectValue(source?.bounds);
+  if (!id || !nameTag || !objectType || !bounds) {
+    return null;
+  }
+
+  return {
+    id,
+    nameTag,
+    objectType: objectType as SketchGroup["objectType"],
+    lineIds: Array.isArray(source?.lineIds)
+      ? source.lineIds.filter((item): item is string => typeof item === "string")
+      : [],
+    bounds: {
+      x: numberValue(bounds.x, 0),
+      y: numberValue(bounds.y, 0),
+      w: Math.max(1, numberValue(bounds.w, 1)),
+      h: Math.max(1, numberValue(bounds.h, 1)),
+    },
+    selectedAssetIds: Array.isArray(source?.selectedAssetIds)
+      ? source.selectedAssetIds.filter((item): item is string => typeof item === "string")
+      : [],
+  };
+}
+
+function sanitizePenStroke(stroke: unknown): PenStrokeObject | null {
+  const source = objectValue(stroke);
+  const id = stringValue(source?.id);
+  if (!id || source?.type !== "pen-stroke" || !Array.isArray(source?.points)) {
+    return null;
+  }
+
+  const points = source.points
+    .map((point) => objectValue(point))
+    .filter((point): point is Record<string, unknown> => point !== null)
+    .map((point) => ({
+      x: numberValue(point.x, 0),
+      y: numberValue(point.y, 0),
+    }));
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  return {
+    id,
+    type: "pen-stroke",
+    points,
+    color: stringValue(source?.color) ?? "#000000",
+    opacity: numberValue(source?.opacity, 1),
+    strokeWidth: Math.max(1, numberValue(source?.strokeWidth, 1)),
+    createdAt: stringValue(source?.createdAt) ?? new Date(0).toISOString(),
   };
 }
 
@@ -335,11 +522,46 @@ export function hydrateCanvasStateFromSnapshot(
       ? nodeMap.get(activeGenerationTargetId)!.prompt ?? ""
       : "";
 
+  const markers = Array.isArray(snapshot.markers)
+    ? snapshot.markers
+        .map(sanitizeMarker)
+        .filter((marker): marker is Marker => marker !== null)
+    : [];
+
+  const addedObjects = Array.isArray(snapshot.addedObjects)
+    ? snapshot.addedObjects
+        .map(sanitizeAddedObject)
+        .filter((object): object is AddedObject => object !== null)
+    : [];
+
+  const sketchLines = Array.isArray(snapshot.sketchLines)
+    ? snapshot.sketchLines
+        .map(sanitizeSketchLine)
+        .filter((line): line is SketchLine => line !== null)
+    : [];
+
+  const sketchGroups = Array.isArray(snapshot.sketchGroups)
+    ? snapshot.sketchGroups
+        .map(sanitizeSketchGroup)
+        .filter((group): group is SketchGroup => group !== null)
+    : [];
+
+  const penStrokes = Array.isArray(snapshot.penStrokes)
+    ? snapshot.penStrokes
+        .map(sanitizePenStroke)
+        .filter((stroke): stroke is PenStrokeObject => stroke !== null)
+    : [];
+
   return {
     nodes,
     edges,
     activeGenerationTargetId,
     promptText,
+    markers,
+    addedObjects,
+    sketchLines,
+    sketchGroups,
+    penStrokes,
   };
 }
 

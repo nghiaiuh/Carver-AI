@@ -1,9 +1,14 @@
 "use client";
 
 import type {
+  AddedObject,
   CanvasEdge,
   CanvasNode,
+  Marker,
+  PenStrokeObject,
   CanvasPresetGroupNode,
+  SketchGroup,
+  SketchLine,
   ImageConnectionRole,
 } from "../types/canvas";
 import type {
@@ -43,6 +48,42 @@ function sanitizePersistedPresetImageUrl(child: CanvasPresetGroupNode["presetGro
     sanitizePersistedSnapshotImageUrl(child.imageSrc) ||
     sanitizePersistedSnapshotImageUrl(child.sourceImage?.url)
   );
+}
+
+function sanitizeMaskDataForSnapshot(mask: CanvasNode["regionMask"]) {
+  if (
+    !mask ||
+    !Number.isFinite(mask.width) ||
+    !Number.isFinite(mask.height) ||
+    typeof mask.dataUrl !== "string" ||
+    !mask.dataUrl.startsWith("data:image/") ||
+    !Number.isFinite(mask.selectionRatio) ||
+    !Number.isFinite(mask.updatedAt)
+  ) {
+    return undefined;
+  }
+
+  return {
+    width: mask.width,
+    height: mask.height,
+    dataUrl: mask.dataUrl,
+    selectionRatio: mask.selectionRatio,
+    updatedAt: mask.updatedAt,
+  };
+}
+
+function sanitizeMaskHistoryForSnapshot(maskHistory: CanvasNode["maskHistory"]) {
+  if (!maskHistory) {
+    return undefined;
+  }
+
+  const sanitizeMaskEntry = (mask: CanvasNode["regionMask"]) =>
+    sanitizeMaskDataForSnapshot(mask) ?? null;
+
+  return {
+    past: maskHistory.past.map(sanitizeMaskEntry).slice(-10),
+    future: maskHistory.future.map(sanitizeMaskEntry).slice(-10),
+  };
 }
 
 export function getInboundEdgesForTarget(targetNodeId: string, edges: CanvasEdge[]) {
@@ -184,6 +225,11 @@ export function buildCanvasSnapshotWithGraph(params: {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   activeGenerationTargetId: string | null;
+  markers?: Marker[];
+  addedObjects?: AddedObject[];
+  sketchLines?: SketchLine[];
+  sketchGroups?: SketchGroup[];
+  penStrokes?: PenStrokeObject[];
 }): CanvasSnapshotDocument {
   const snapshot = createEmptyCanvasSnapshotDocument();
 
@@ -204,6 +250,8 @@ export function buildCanvasSnapshotWithGraph(params: {
         height: node.height,
         scale: node.scale,
         sourceImage: sanitizeSourceImageForSnapshot(node.sourceImage),
+        regionMask: sanitizeMaskDataForSnapshot(node.regionMask),
+        maskHistory: sanitizeMaskHistoryForSnapshot(node.maskHistory),
         presetGroup: isPresetGroupNode(node)
           ? {
               category: node.presetGroup.category,
@@ -238,5 +286,50 @@ export function buildCanvasSnapshotWithGraph(params: {
         createdAt: edge.createdAt,
       })),
     },
+    markers: (params.markers ?? []).map((marker) => ({
+      id: marker.id,
+      x: marker.x,
+      y: marker.y,
+      label: marker.label,
+    })),
+    addedObjects: (params.addedObjects ?? []).map((object) => ({
+      id: object.id,
+      x: object.x,
+      y: object.y,
+      w: object.w,
+      h: object.h,
+      rotation: object.rotation,
+      label: object.label,
+      selectedAssetIds: object.selectedAssetIds,
+    })),
+    sketchLines: (params.sketchLines ?? []).map((line) => ({
+      id: line.id,
+      points: line.points.map((point) => ({ x: point.x, y: point.y })),
+      color: line.color,
+      width: line.width,
+      groupId: line.groupId,
+    })),
+    sketchGroups: (params.sketchGroups ?? []).map((group) => ({
+      id: group.id,
+      nameTag: group.nameTag,
+      objectType: group.objectType,
+      lineIds: [...group.lineIds],
+      bounds: {
+        x: group.bounds.x,
+        y: group.bounds.y,
+        w: group.bounds.w,
+        h: group.bounds.h,
+      },
+      selectedAssetIds: [...group.selectedAssetIds],
+    })),
+    penStrokes: (params.penStrokes ?? []).map((stroke) => ({
+      id: stroke.id,
+      type: "pen-stroke",
+      points: stroke.points.map((point) => ({ x: point.x, y: point.y })),
+      color: stroke.color,
+      opacity: stroke.opacity,
+      strokeWidth: stroke.strokeWidth,
+      createdAt: stroke.createdAt,
+    })),
   };
 }
