@@ -82,6 +82,15 @@ import {
   type LocalCanvasDraftRecord,
   LOCAL_DRAFT_TTL_MS,
 } from "../utils/localCanvasDraft";
+import {
+  estimateCanvasPayloadBytes,
+  recordCanvasPersistenceBenchmarkEvent,
+} from "../utils/persistenceBenchmark";
+import {
+  finishAiJobBenchmarkRun,
+  recordAiJobPollRequest,
+  startAiJobBenchmarkRun,
+} from "../utils/aiJobBenchmark";
 
 // Lấy node đang được chọn từ trạng thái selection hiện tại của canvas.
 function getSelectedNodeFromSelection(nodes: CanvasNode[], selectedItem: SelectedItem) {
