@@ -19,6 +19,12 @@ import type {
 import { DEFAULT_OPENAI_CHAT_MODEL, OPENAI_CHAT_MODEL_OPTIONS } from "../../../../lib/openaiChatModels";
 import { getBrowserAuthClient } from "../../../components/auth/authClient";
 import {
+  finishAiJobBenchmarkRun,
+  recordAiJobPollRequest,
+  recordAiJobPollTransportFailure,
+  startAiJobBenchmarkRun,
+} from "../../utils/aiJobBenchmark";
+import {
   ArrowRight,
   ChevronDown,
   LoaderCircle,
@@ -670,6 +676,11 @@ export default function AiChatSidebar({
             },
           );
           payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+          recordAiJobPollRequest({
+            jobId: params.jobId,
+            projectId: params.projectId,
+            status: payload.data?.job?.status ?? null,
+          });
 
           if (!response.ok || !payload.data?.job) {
             const message = payload.error || "Unable to load AI job status.";
@@ -684,6 +695,11 @@ export default function AiChatSidebar({
           }
 
           consecutivePollFailures += 1;
+          recordAiJobPollTransportFailure({
+            jobId: params.jobId,
+            projectId: params.projectId,
+            message: error instanceof Error ? error.message : "Unknown poll transport failure.",
+          });
 
           if (consecutivePollFailures <= GENERATION_POLL_RETRY_LIMIT) {
             await wait(GENERATION_POLL_RETRY_DELAY_MS * consecutivePollFailures);
@@ -726,6 +742,13 @@ export default function AiChatSidebar({
             (job.status === "cancelled"
               ? "Image generation was cancelled."
               : "Image generation failed.");
+          finishAiJobBenchmarkRun({
+            jobId: job.id,
+            projectId: params.projectId,
+            terminalStatus: job.status === "enqueue_failed" ? "enqueue_failed" : job.status === "cancelled" ? "cancelled" : "failed",
+            generatedImageCount: job.jobResult?.generatedImages?.length ?? 0,
+            errorMessage: terminalMessage,
+          });
           setMessages((current) =>
             replaceMessage(current, params.placeholderMessageId, {
               id: `job-error-${job.id}`,
@@ -755,6 +778,12 @@ export default function AiChatSidebar({
               generatedImages: job.jobResult?.generatedImages ?? [],
             };
 
+        finishAiJobBenchmarkRun({
+          jobId: job.id,
+          projectId: params.projectId,
+          terminalStatus: "succeeded",
+          generatedImageCount: job.jobResult?.generatedImages?.length ?? 0,
+        });
         setMessages((current) => replaceMessage(current, params.placeholderMessageId, assistantMessage));
         onGenerationComplete?.({
           job,
@@ -767,6 +796,13 @@ export default function AiChatSidebar({
         error instanceof Error
           ? error.message
           : "Unable to load AI job status.";
+      finishAiJobBenchmarkRun({
+        jobId: params.jobId,
+        projectId: params.projectId,
+        terminalStatus: "poll_abandoned",
+        generatedImageCount: 0,
+        errorMessage: friendlyMessage,
+      });
       setMessages((current) =>
         replaceMessage(current, params.placeholderMessageId, {
           id: `job-poll-error-${Date.now()}`,
@@ -895,6 +931,12 @@ export default function AiChatSidebar({
       }
 
       if (payload.mode === "generation" && payload.job) {
+        startAiJobBenchmarkRun({
+          jobId: payload.job.id,
+          projectId,
+          source: "chat",
+          requestId,
+        });
         const placeholderMessageId = `local_job_${payload.job.id}`;
         const persistedUserMessage = payload.userMessage
           ? mapRouteMessage(payload.userMessage)
