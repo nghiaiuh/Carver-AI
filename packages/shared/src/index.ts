@@ -7,6 +7,7 @@
 
 export * from "./snapshot";
 export * from "./canvas-draft";
+export * from "./prompt-engine";
 export * from "./ai-jobs";
 export * from "./constants";
 export * from "./safe-logger";
