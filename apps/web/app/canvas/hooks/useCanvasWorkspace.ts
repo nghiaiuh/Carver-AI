@@ -77,8 +77,10 @@ import {
   loadCanvasDraft,
   markCanvasDraftClean,
   pruneExpiredCanvasDrafts,
+  recordCanvasDraftCloudSync,
   saveCanvasDraft,
   type LocalCanvasDraftRecord,
+  LOCAL_DRAFT_TTL_MS,
 } from "../utils/localCanvasDraft";
 
 // Lấy node đang được chọn từ trạng thái selection hiện tại của canvas.
@@ -124,6 +126,16 @@ type SnapshotMeta = {
   documentHash?: string | null;
 };
 
+type ProjectDraftMeta = {
+  projectId: string;
+  ownerId: string;
+  baseSnapshotId: string | null;
+  revision: number;
+  documentHash: string | null;
+  lastMutationId: string | null;
+  updatedAt: string;
+};
+
 type SnapshotRouteResponse = {
   success?: boolean;
   data?: {
@@ -131,6 +143,30 @@ type SnapshotRouteResponse = {
     snapshot?: SnapshotMeta | null;
   };
   error?: string;
+};
+
+type DraftRouteResponse = {
+  success?: boolean;
+  data?: {
+    projectId: string;
+    document?: CanvasSnapshotDocument | null;
+    draft?: ProjectDraftMeta | null;
+  };
+  error?: string;
+  code?: string;
+};
+
+type DraftFinalizeRouteResponse = {
+  success?: boolean;
+  data?: {
+    projectId: string;
+    snapshot?: SnapshotMeta & {
+      baseSnapshotId?: string | null;
+      draftRevision?: number;
+    };
+  };
+  error?: string;
+  code?: string;
 };
 
 type AssetResolveResponse = {
@@ -246,7 +282,14 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
 }
 
 const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 1000;
+const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 1500;
 const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
+
+function createDraftMutationId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `draft-mutation-${Date.now()}`;
+}
 
 function hasTransientSnapshotContent(document: CanvasSnapshotDocument) {
   const hasUnsafeUrl = (value: string | undefined) =>
@@ -413,6 +456,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [creditsAmount, setCreditsAmount] = useState<number | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isCloudDraftSyncLeader, setIsCloudDraftSyncLeader] = useState(true);
   const [draftConflict, setDraftConflict] = useState<LocalCanvasDraftRecord | null>(null);
   const [draftWarning, setDraftWarning] = useState<string | null>(null);
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
@@ -420,11 +464,25 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const snapshotLoadRequestRef = useRef(0);
   const snapshotSaveInFlightRef = useRef(false);
   const draftSaveTimeoutRef = useRef<number | null>(null);
+  const cloudDraftSyncTimeoutRef = useRef<number | null>(null);
+  const cloudDraftSyncInFlightRef = useRef(false);
+  const latestDraftMutationIdRef = useRef<string | null>(null);
   const latestSnapshotDocumentRef = useRef<CanvasSnapshotDocument>(coerceCanvasSnapshotDocument(undefined));
   const latestSnapshotFingerprintRef = useRef<string>("");
   const latestNodesRef = useRef<CanvasNode[]>([]);
   const latestEdgesRef = useRef<CanvasEdge[]>([]);
   const latestActiveGenerationTargetIdRef = useRef<string | null>(null);
+  const cloudDraftMetaRef = useRef<{
+    baseSnapshotId: string | null;
+    revision: number | null;
+    documentHash: string | null;
+    lastMutationId: string | null;
+  }>({
+    baseSnapshotId: null,
+    revision: null,
+    documentHash: null,
+    lastMutationId: null,
+  });
   const snapshotBaselineRef = useRef<{
     snapshotId: string | null;
     version: number | null;
@@ -440,6 +498,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       : `tab-${Date.now()}`,
   );
   const draftChannelRef = useRef<BroadcastChannel | null>(null);
+  const syncLeaderAbortRef = useRef<AbortController | null>(null);
   const saveSnapshotDocumentRef = useRef<
     ((params: {
       projectId?: string;
@@ -496,8 +555,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         nodes,
         edges,
         activeGenerationTargetId,
+        markers,
+        addedObjects,
+        sketchLines,
+        sketchGroups,
+        penStrokes,
       }),
-    [activeGenerationTargetId, edges, nodes],
+    [activeGenerationTargetId, addedObjects, edges, markers, nodes, penStrokes, sketchGroups, sketchLines],
   );
   const currentSnapshotFingerprint = useMemo(
     () => createSnapshotFingerprint(currentSnapshotDocument),
@@ -532,8 +596,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   useEffect(() => {
     if (!supabase) {
-      setCurrentUserId(null);
-      setIsAuthReady(true);
+      queueMicrotask(() => {
+        setCurrentUserId(null);
+        setIsAuthReady(true);
+      });
       return;
     }
 
@@ -569,12 +635,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     };
   }, [supabase]);
 
-  const applyHydratedSnapshotState = (document: CanvasSnapshotDocument) => {
+  const applyHydratedSnapshotState = useCallback((document: CanvasSnapshotDocument) => {
     const hydrated = hydrateCanvasStateFromSnapshot(document);
 
     setNodes(hydrated.nodes);
     setEdges(hydrated.edges);
     setPromptText(hydrated.promptText);
+    setMarkers(hydrated.markers);
+    setAddedObjects(hydrated.addedObjects);
+    setSketchLines(hydrated.sketchLines);
+    setSketchGroups(hydrated.sketchGroups);
+    setPenStrokes(hydrated.penStrokes);
     setActiveGenerationTargetId(hydrated.activeGenerationTargetId);
     setActiveNodeId(hydrated.activeGenerationTargetId);
     setSelectedItem(
@@ -584,14 +655,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     );
     setPendingGenerationJob(null);
     setGenerationAssistantMessages([]);
-    setMarkers(INITIAL_MARKERS);
-    setAddedObjects(INITIAL_OBJECTS);
-    setSketchLines([]);
-    setSketchGroups([]);
-    setPenStrokes([]);
     setSelectedSketchLineIds([]);
     handledGenerationJobIdsRef.current.clear();
-  };
+  }, []);
 
   const applySnapshotBaseline = useCallback((document: CanvasSnapshotDocument, snapshot: SnapshotMeta | null) => {
     const documentHash = snapshot?.documentHash?.trim() || createSnapshotFingerprint(document);
@@ -610,6 +676,15 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         : null,
     );
     setHasUnsavedSnapshotChanges(false);
+  }, []);
+
+  const applyCloudDraftMeta = useCallback((draft: ProjectDraftMeta | null) => {
+    cloudDraftMetaRef.current = {
+      baseSnapshotId: draft?.baseSnapshotId ?? null,
+      revision: draft?.revision ?? null,
+      documentHash: draft?.documentHash ?? null,
+      lastMutationId: draft?.lastMutationId ?? null,
+    };
   }, []);
 
   const persistCanvasNodeImageAsset = useCallback(async (assetParams: {
@@ -677,6 +752,48 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setDraftWarning(null);
   }, [applyHydratedSnapshotState, currentSnapshotMeta, supabase]);
 
+  const persistLocalDraftNow = useCallback(async (projectIdOverride?: string) => {
+    const projectId = projectIdOverride ?? params.projectId;
+    if (
+      !currentUserId ||
+      !projectId ||
+      isSnapshotLoading ||
+      !snapshotBaselineRef.current.documentHash
+    ) {
+      return false;
+    }
+
+    const mutationId = createDraftMutationId();
+    latestDraftMutationIdRef.current = mutationId;
+    setIsDraftSaving(true);
+
+    try {
+      await saveCanvasDraft(currentUserId, projectId, latestSnapshotDocumentRef.current, {
+        tabId: tabIdRef.current,
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+        basedOnSnapshotId: snapshotBaselineRef.current.snapshotId ?? null,
+        basedOnVersion: snapshotBaselineRef.current.version ?? null,
+        basedOnHash: snapshotBaselineRef.current.documentHash ?? null,
+        documentHash: latestSnapshotFingerprintRef.current,
+        cloudDraftRevision: cloudDraftMetaRef.current.revision,
+        cloudDraftHash: cloudDraftMetaRef.current.documentHash,
+        lastMutationId: mutationId,
+      });
+
+      draftChannelRef.current?.postMessage({
+        type: "draft-updated",
+        userId: currentUserId,
+        projectId,
+        tabId: tabIdRef.current,
+      });
+      void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
+      return true;
+    } finally {
+      setIsDraftSaving(false);
+    }
+  }, [currentUserId, isSnapshotLoading, params.projectId]);
+
   const applyCompletedGenerationJob = useCallback((params: {
     job: CarverAiJobRecord;
     targetNodeId?: string | null;
@@ -715,6 +832,97 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     showToast(getTerminalGenerationStatusMessage(params.job));
   }, [activeGenerationTarget, nodes]);
 
+  const syncCloudDraft = useCallback(async (syncParams: {
+    projectId?: string;
+    force?: boolean;
+    quiet?: boolean;
+    allowNonLeader?: boolean;
+  } = {}) => {
+    const projectId = syncParams.projectId ?? params.projectId;
+    if (
+      !projectId ||
+      !currentUserId ||
+      (!syncParams.allowNonLeader && !isCloudDraftSyncLeader)
+    ) {
+      return false;
+    }
+
+    const snapshotDocument = latestSnapshotDocumentRef.current;
+    const snapshotFingerprint = latestSnapshotFingerprintRef.current;
+    if (
+      !syncParams.force &&
+      cloudDraftMetaRef.current.documentHash &&
+      cloudDraftMetaRef.current.documentHash === snapshotFingerprint
+    ) {
+      return false;
+    }
+
+    if (cloudDraftSyncInFlightRef.current) {
+      return false;
+    }
+
+    cloudDraftSyncInFlightRef.current = true;
+
+    try {
+      const client = requireCanvasSupabaseClient(supabase);
+      const mutationId = latestDraftMutationIdRef.current ?? createDraftMutationId();
+      const response = await authedFetch(client, `/api/project-drafts/${projectId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document: snapshotDocument,
+          expectedRevision: cloudDraftMetaRef.current.revision ?? 0,
+          documentHash: snapshotFingerprint,
+          mutationId,
+          baseSnapshotId: snapshotBaselineRef.current.snapshotId ?? null,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
+
+      if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
+        setDraftWarning("Cloud draft changed in another tab or device. Reload the saved version or restore your local draft intentionally.");
+        return false;
+      }
+
+      if (!response.ok || !payload.data?.draft) {
+        throw new Error(payload.error || "Unable to sync the project draft.");
+      }
+
+      cloudDraftMetaRef.current = {
+        baseSnapshotId: payload.data.draft.baseSnapshotId,
+        revision: payload.data.draft.revision,
+        documentHash: payload.data.draft.documentHash ?? snapshotFingerprint,
+        lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
+      };
+      latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? mutationId;
+
+      await recordCanvasDraftCloudSync(currentUserId, projectId, {
+        cloudDraftRevision: payload.data.draft.revision,
+        cloudDraftHash: payload.data.draft.documentHash ?? snapshotFingerprint,
+        lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
+      }).catch(() => undefined);
+
+      if (!syncParams.quiet) {
+        setDraftWarning(null);
+      }
+
+      return true;
+    } catch (error) {
+      if (!syncParams.quiet) {
+        setDraftWarning(
+          error instanceof Error
+            ? `${error.message} Changes are still saved locally on this device.`
+            : "Unable to sync the project draft. Changes are still saved locally on this device.",
+        );
+      }
+      return false;
+    } finally {
+      cloudDraftSyncInFlightRef.current = false;
+    }
+  }, [currentUserId, isCloudDraftSyncLeader, params.projectId, supabase]);
+
   const saveSnapshotDocument = useCallback(async (saveParams: {
     projectId?: string;
     reason: "manual" | "close";
@@ -751,26 +959,50 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setIsSnapshotSaving(true);
 
     try {
+      await persistLocalDraftNow(projectId).catch(() => undefined);
+      await syncCloudDraft({
+        projectId,
+        force: true,
+        quiet: true,
+        allowNonLeader: true,
+      });
+
+      const currentDraftRevision = cloudDraftMetaRef.current.revision;
+      if (!currentDraftRevision) {
+        throw new Error("Unable to finalize a version before the cloud draft is synced.");
+      }
+
       const client = requireCanvasSupabaseClient(supabase);
       const fetcher = saveParams.keepalive ? authedKeepaliveFetch : authedFetch;
-      const response = await fetcher(client, `/api/projects/${projectId}/snapshot`, {
+      const response = await fetcher(client, `/api/project-drafts/${projectId}/finalize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          snapshot: snapshotDocument,
+          expectedRevision: currentDraftRevision,
           reason: saveParams.reason,
-          documentHash: snapshotFingerprint,
         }),
       });
-      const payload = (await response.json().catch(() => ({}))) as SnapshotRouteResponse;
+      const payload = (await response.json().catch(() => ({}))) as DraftFinalizeRouteResponse;
+
+      if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
+        setDraftWarning("Cloud draft changed in another tab or device before this version could be saved.");
+        return false;
+      }
 
       if (!response.ok || !payload.data?.snapshot) {
         throw new Error(payload.error || "Unable to save the current snapshot.");
       }
 
       applySnapshotBaseline(snapshotDocument, payload.data.snapshot);
+      cloudDraftMetaRef.current = {
+        baseSnapshotId: payload.data.snapshot.snapshotId,
+        revision: payload.data.snapshot.draftRevision ?? currentDraftRevision,
+        documentHash: payload.data.snapshot.documentHash ?? snapshotFingerprint,
+        lastMutationId: latestDraftMutationIdRef.current,
+      };
+
       if (currentUserId) {
         await markCanvasDraftClean(currentUserId, projectId, {
           tabId: tabIdRef.current,
@@ -778,6 +1010,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           basedOnVersion: payload.data.snapshot.version,
           basedOnHash: snapshotFingerprint,
           documentHash: snapshotFingerprint,
+          cloudDraftRevision: cloudDraftMetaRef.current.revision,
+          cloudDraftHash: cloudDraftMetaRef.current.documentHash,
+          lastMutationId: cloudDraftMetaRef.current.lastMutationId,
         });
       }
       setDraftConflict(null);
@@ -805,7 +1040,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       snapshotSaveInFlightRef.current = false;
       setIsSnapshotSaving(false);
     }
-  }, [applySnapshotBaseline, currentUserId, params.projectId, supabase]);
+  }, [applySnapshotBaseline, currentUserId, params.projectId, persistLocalDraftNow, supabase, syncCloudDraft]);
 
   useEffect(() => {
     if (!activeGenerationTargetId) return;
@@ -833,6 +1068,67 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [saveSnapshotDocument]);
 
   useEffect(() => {
+    syncLeaderAbortRef.current?.abort();
+    syncLeaderAbortRef.current = null;
+
+    if (!currentUserId || !params.projectId) {
+      queueMicrotask(() => {
+        setIsCloudDraftSyncLeader(true);
+      });
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !("locks" in navigator)) {
+      queueMicrotask(() => {
+        setIsCloudDraftSyncLeader(true);
+      });
+      return;
+    }
+
+    const abortController = new AbortController();
+    syncLeaderAbortRef.current = abortController;
+    queueMicrotask(() => {
+      setIsCloudDraftSyncLeader(false);
+    });
+
+    void navigator.locks
+      .request(
+        `carver-canvas-sync:${currentUserId}:${params.projectId}`,
+        { mode: "exclusive", signal: abortController.signal },
+        async () => {
+          if (abortController.signal.aborted) {
+            return;
+          }
+
+          setIsCloudDraftSyncLeader(true);
+          draftChannelRef.current?.postMessage({
+            type: "draft-leader",
+            userId: currentUserId,
+            projectId: params.projectId,
+            tabId: tabIdRef.current,
+          });
+
+          await new Promise<void>((resolve) => {
+            abortController.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        },
+      )
+      .catch(() => {
+        if (!abortController.signal.aborted) {
+          setIsCloudDraftSyncLeader(true);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+      if (syncLeaderAbortRef.current === abortController) {
+        syncLeaderAbortRef.current = null;
+      }
+      setIsCloudDraftSyncLeader(true);
+    };
+  }, [currentUserId, params.projectId]);
+
+  useEffect(() => {
     if (!currentUserId || !params.projectId) {
       draftChannelRef.current?.close();
       draftChannelRef.current = null;
@@ -849,10 +1145,19 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             projectId?: string;
             tabId?: string;
           }
+        | {
+            type?: "draft-leader";
+            userId?: string;
+            projectId?: string;
+            tabId?: string;
+          }
         | undefined;
 
+      if (!message) {
+        return;
+      }
+
       if (
-        message?.type !== "draft-updated" ||
         message.userId !== currentUserId ||
         message.projectId !== params.projectId ||
         message.tabId === tabIdRef.current
@@ -860,7 +1165,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         return;
       }
 
-      setDraftWarning("Another tab updated this local draft. Your next save will use last-write-wins.");
+      if (message.type === "draft-updated") {
+        setDraftWarning("Another tab updated this local draft. Your next save will use last-write-wins.");
+      }
+
+      if (message.type === "draft-leader") {
+        setDraftWarning("Another tab is the active cloud-sync leader for this project.");
+      }
     };
 
     return () => {
@@ -875,6 +1186,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const projectId = params.projectId;
     if (!projectId) {
       savedSnapshotFingerprintRef.current = null;
+      applyCloudDraftMeta(null);
       snapshotBaselineRef.current = {
         snapshotId: null,
         version: null,
@@ -883,6 +1195,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       if (draftSaveTimeoutRef.current !== null) {
         window.clearTimeout(draftSaveTimeoutRef.current);
         draftSaveTimeoutRef.current = null;
+      }
+      if (cloudDraftSyncTimeoutRef.current !== null) {
+        window.clearTimeout(cloudDraftSyncTimeoutRef.current);
+        cloudDraftSyncTimeoutRef.current = null;
       }
       queueMicrotask(() => {
         setIsSnapshotLoading(false);
@@ -912,27 +1228,50 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
       try {
         const client = requireCanvasSupabaseClient(supabase);
-        const response = await authedFetch(
-          client,
-          `/api/projects/${projectId}/snapshot`,
-          {
-            cache: "no-store",
-          },
-        );
-        const payload = (await response.json().catch(() => ({}))) as SnapshotRouteResponse;
+        const [snapshotResponse, draftResponse] = await Promise.all([
+          authedFetch(
+            client,
+            `/api/projects/${projectId}/snapshot`,
+            {
+              cache: "no-store",
+            },
+          ),
+          authedFetch(
+            client,
+            `/api/project-drafts/${projectId}`,
+            {
+              cache: "no-store",
+            },
+          ),
+        ]);
+        const snapshotPayload = (await snapshotResponse.json().catch(() => ({}))) as SnapshotRouteResponse;
+        const draftPayload = (await draftResponse.json().catch(() => ({}))) as DraftRouteResponse;
 
-        if (!response.ok || !payload.data?.document) {
-          throw new Error(payload.error || "Unable to load the current canvas snapshot.");
+        if (!snapshotResponse.ok || !snapshotPayload.data?.document) {
+          throw new Error(snapshotPayload.error || "Unable to load the current canvas snapshot.");
         }
 
-        const document = coerceCanvasSnapshotDocument(payload.data.document);
+        const snapshotDocument = coerceCanvasSnapshotDocument(snapshotPayload.data.document);
+        const cloudDraftDocument = draftResponse.ok && draftPayload.data?.document
+          ? coerceCanvasSnapshotDocument(draftPayload.data.document)
+          : null;
+        const cloudDraftMeta = draftResponse.ok ? draftPayload.data?.draft ?? null : null;
+        const baseDocument = cloudDraftDocument ?? snapshotDocument;
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }
 
-        applySnapshotBaseline(document, payload.data.snapshot ?? null);
+        applySnapshotBaseline(snapshotDocument, snapshotPayload.data.snapshot ?? null);
+        applyCloudDraftMeta(cloudDraftMeta);
         setDraftConflict(null);
-        setDraftWarning(null);
+        setDraftWarning(
+          cloudDraftMeta &&
+            snapshotPayload.data.snapshot?.snapshotId &&
+            cloudDraftMeta.baseSnapshotId &&
+            cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
+            ? "A cloud draft based on a different saved version was restored."
+            : null,
+        );
 
         const draftRecord =
           currentUserId ? await loadCanvasDraft(currentUserId, projectId) : null;
@@ -941,23 +1280,27 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         }
 
         if (!draftRecord || draftRecord.meta.documentHash === draftRecord.meta.basedOnHash) {
-          applyHydratedSnapshotState(document);
+          applyHydratedSnapshotState(baseDocument);
           return;
         }
 
-        const dbVersion = payload.data.snapshot?.version ?? 0;
-        const hasConflict =
+        const dbVersion = snapshotPayload.data.snapshot?.version ?? 0;
+        const hasSnapshotConflict =
           (typeof draftRecord.meta.basedOnVersion === "number" && draftRecord.meta.basedOnVersion < dbVersion) ||
           Boolean(
             draftRecord.meta.basedOnSnapshotId &&
-              payload.data.snapshot?.snapshotId &&
-              draftRecord.meta.basedOnSnapshotId !== payload.data.snapshot.snapshotId,
+              snapshotPayload.data.snapshot?.snapshotId &&
+              draftRecord.meta.basedOnSnapshotId !== snapshotPayload.data.snapshot.snapshotId,
           );
+        const hasCloudConflict =
+          typeof draftRecord.meta.cloudDraftRevision === "number" &&
+          typeof cloudDraftMeta?.revision === "number" &&
+          draftRecord.meta.cloudDraftRevision < cloudDraftMeta.revision;
 
-        if (hasConflict) {
-          applyHydratedSnapshotState(document);
+        if (hasSnapshotConflict || hasCloudConflict) {
+          applyHydratedSnapshotState(baseDocument);
           setDraftConflict(draftRecord);
-          setDraftWarning("A newer saved version exists. Restore the local draft only if you want to continue from that older base.");
+          setDraftWarning("A newer saved draft/version exists. Restore the local draft only if you want to continue from that older base.");
           return;
         }
 
@@ -968,12 +1311,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
         applyHydratedSnapshotState(resolvedDraft);
         snapshotBaselineRef.current = {
-          snapshotId: draftRecord.meta.basedOnSnapshotId ?? payload.data.snapshot?.snapshotId ?? null,
-          version: draftRecord.meta.basedOnVersion ?? payload.data.snapshot?.version ?? null,
-          documentHash: draftRecord.meta.basedOnHash ?? payload.data.snapshot?.documentHash ?? null,
+          snapshotId: draftRecord.meta.basedOnSnapshotId ?? snapshotPayload.data.snapshot?.snapshotId ?? null,
+          version: draftRecord.meta.basedOnVersion ?? snapshotPayload.data.snapshot?.version ?? null,
+          documentHash: draftRecord.meta.basedOnHash ?? snapshotPayload.data.snapshot?.documentHash ?? null,
         };
         savedSnapshotFingerprintRef.current =
-          draftRecord.meta.basedOnHash ?? payload.data.snapshot?.documentHash ?? null;
+          draftRecord.meta.basedOnHash ?? snapshotPayload.data.snapshot?.documentHash ?? null;
         setHasUnsavedSnapshotChanges(
           Boolean(draftRecord.meta.documentHash && draftRecord.meta.documentHash !== draftRecord.meta.basedOnHash),
         );
@@ -1002,7 +1345,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [applySnapshotBaseline, currentUserId, isAuthReady, params.projectId, supabase]);
+  }, [applyCloudDraftMeta, applyHydratedSnapshotState, applySnapshotBaseline, currentUserId, isAuthReady, params.projectId, supabase]);
 
   useEffect(() => {
     const baselineHash = snapshotBaselineRef.current.documentHash;
@@ -1032,30 +1375,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     draftSaveTimeoutRef.current = window.setTimeout(() => {
       draftSaveTimeoutRef.current = null;
-      setIsDraftSaving(true);
-      const updatedAt = new Date().toISOString();
-      void saveCanvasDraft(currentUserId, projectId, latestSnapshotDocumentRef.current, {
-        tabId: tabIdRef.current,
-        updatedAt,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        basedOnSnapshotId: snapshotBaselineRef.current.snapshotId ?? null,
-        basedOnVersion: snapshotBaselineRef.current.version ?? null,
-        basedOnHash: snapshotBaselineRef.current.documentHash ?? null,
-        documentHash: latestSnapshotFingerprintRef.current,
-      })
-        .then(() => {
-          draftChannelRef.current?.postMessage({
-            type: "draft-updated",
-            userId: currentUserId,
-            projectId,
-            tabId: tabIdRef.current,
-          });
-          void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          setIsDraftSaving(false);
-        });
+      void persistLocalDraftNow(projectId).catch(() => undefined);
     }, LOCAL_DRAFT_SAVE_DEBOUNCE_MS);
 
     return () => {
@@ -1069,25 +1389,62 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     currentUserId,
     isSnapshotLoading,
     params.projectId,
+    persistLocalDraftNow,
+  ]);
+
+  useEffect(() => {
+    if (cloudDraftSyncTimeoutRef.current !== null) {
+      window.clearTimeout(cloudDraftSyncTimeoutRef.current);
+      cloudDraftSyncTimeoutRef.current = null;
+    }
+
+    if (
+      !currentUserId ||
+      !params.projectId ||
+      !isCloudDraftSyncLeader ||
+      isSnapshotLoading ||
+      !snapshotBaselineRef.current.documentHash
+    ) {
+      return;
+    }
+
+    const baselineHash = snapshotBaselineRef.current.documentHash;
+    const currentHash = latestSnapshotFingerprintRef.current;
+    if (!currentHash || currentHash === baselineHash || currentHash === cloudDraftMetaRef.current.documentHash) {
+      return;
+    }
+
+    cloudDraftSyncTimeoutRef.current = window.setTimeout(() => {
+      cloudDraftSyncTimeoutRef.current = null;
+      void syncCloudDraft({
+        quiet: true,
+      }).catch(() => undefined);
+    }, CLOUD_DRAFT_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (cloudDraftSyncTimeoutRef.current !== null) {
+        window.clearTimeout(cloudDraftSyncTimeoutRef.current);
+        cloudDraftSyncTimeoutRef.current = null;
+      }
+    };
+  }, [
+    currentSnapshotFingerprint,
+    currentUserId,
+    isCloudDraftSyncLeader,
+    isSnapshotLoading,
+    params.projectId,
+    syncCloudDraft,
   ]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
-        void saveSnapshotDocumentRef.current?.({
-          reason: "close",
-          quiet: true,
-          keepalive: true,
-        });
+        void persistLocalDraftNow().catch(() => undefined);
       }
     };
 
     const handlePageHide = () => {
-      void saveSnapshotDocumentRef.current?.({
-        reason: "close",
-        quiet: true,
-        keepalive: true,
-      });
+      void persistLocalDraftNow().catch(() => undefined);
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -1097,7 +1454,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
     };
-  }, []);
+  }, [persistLocalDraftNow]);
 
   useEffect(() => {
     const closingProjectId = params.projectId;
@@ -1127,8 +1484,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       return;
     }
 
-    setDraftConflict(null);
-    setDraftWarning(null);
+    queueMicrotask(() => {
+      setDraftConflict(null);
+      setDraftWarning(null);
+    });
   }, [currentUserId, params.projectId]);
 
   useEffect(() => {
@@ -1578,6 +1937,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         nodes,
         edges,
         activeGenerationTargetId,
+        markers,
+        addedObjects,
+        sketchLines,
+        sketchGroups,
+        penStrokes,
       });
       const payload = {
         projectId: params.projectId,

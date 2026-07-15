@@ -241,10 +241,16 @@ Look at:
 Current save/load path:
 - `apps/web/app/api/projects/[projectId]/snapshot/route.ts`
   Loads the verified `projects.current_canvas_snapshot_id` snapshot and saves a new current snapshot.
+- `apps/web/app/api/project-drafts/[projectId]/route.ts`
+  Owns the mutable cloud draft autosave path (`revision` compare-and-swap, not immutable version rows).
+- `apps/web/app/api/project-drafts/[projectId]/finalize/route.ts`
+  Finalizes the current cloud draft into an immutable `canvas_snapshots` version for manual save / close save.
 - `apps/web/lib/server/snapshotService.ts`
   Owns project-scoped snapshot persistence helpers.
+- `apps/web/lib/server/draftService.ts`
+  Owns project-scoped mutable cloud draft load/save/finalize helpers.
 - `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
-  Bootstraps the current project snapshot into canvas state and exposes manual save.
+  Bootstraps current snapshot + cloud draft into canvas state, keeps local IndexedDB draft state, autosaves to cloud draft, and only finalizes immutable versions on manual/close flows.
 
 Important fields:
 - `graph.nodes`
@@ -255,6 +261,7 @@ Important fields:
 Backward compatibility expectation:
 - old snapshots without `graph` should still open
 - new snapshots should round-trip graph state
+- local draft persistence is now `IndexedDB draftMeta + draftOperations + draftCheckpoints`, not a single full-document record
 
 ## 9. Fast file map for common tasks
 
