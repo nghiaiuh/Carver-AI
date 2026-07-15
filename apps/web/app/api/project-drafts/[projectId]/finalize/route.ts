@@ -1,9 +1,14 @@
 import { apiFailure, apiSuccess, readJsonObject } from "../../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../../_lib/authz";
 import {
-  ProjectCanvasDraftConflictError,
   finalizeProjectCanvasDraft,
+  getProjectCanvasDraftErrorCode,
+  getProjectCanvasDraftErrorMessage,
+  getProjectCanvasDraftErrorStatus,
 } from "../../../../../lib/server/draftService";
+import { createSafeLogger } from "@carver/shared";
+
+const logger = createSafeLogger("web.project-drafts.finalize");
 
 function reasonValue(value: unknown): "manual" | "close" | "job_checkpoint" | null {
   if (value === "manual" || value === "close" || value === "job_checkpoint") {
@@ -55,14 +60,18 @@ export async function POST(
       snapshot: finalized,
     });
   } catch (error) {
-    if (error instanceof ProjectCanvasDraftConflictError) {
-      return apiFailure("DRAFT_CONFLICT", "The cloud draft changed in another tab or device.", 409, context.requestId);
-    }
+    logger.error("project draft finalize failed", {
+      requestId: context.requestId,
+      projectId: projectResult.project.id,
+      userId: context.user.id,
+      reason,
+      error,
+    });
 
     return apiFailure(
-      "DRAFT_FINALIZE_FAILED",
-      "Unable to finalize the project draft",
-      500,
+      getProjectCanvasDraftErrorCode(error, "DRAFT_FINALIZE_FAILED"),
+      getProjectCanvasDraftErrorMessage(error, "Unable to finalize the project draft"),
+      getProjectCanvasDraftErrorStatus(error),
       context.requestId,
     );
   }

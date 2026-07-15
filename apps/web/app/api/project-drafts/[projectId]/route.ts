@@ -6,6 +6,9 @@ import { apiFailure, apiSuccess, readJsonObject } from "../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../_lib/authz";
 import {
   ProjectCanvasDraftConflictError,
+  getProjectCanvasDraftErrorCode,
+  getProjectCanvasDraftErrorMessage,
+  getProjectCanvasDraftErrorStatus,
   loadProjectCanvasDraft,
   saveProjectCanvasDraft,
 } from "../../../../lib/server/draftService";
@@ -14,6 +17,9 @@ import {
   validateSnapshotAssetOwnership,
 } from "../../../../lib/server/canvasSnapshotValidation";
 import { resolveCanvasSnapshotAssetUrls } from "../../../../lib/server/assetService";
+import { createSafeLogger } from "@carver/shared";
+
+const logger = createSafeLogger("web.project-drafts");
 
 type DraftRouteResponse = {
   projectId: string;
@@ -70,11 +76,18 @@ export async function GET(
         : null,
       draft: loaded.draft,
     });
-  } catch {
+  } catch (error) {
+    logger.error("project draft load failed", {
+      requestId: context.requestId,
+      projectId: projectResult.project.id,
+      userId: context.user.id,
+      error,
+    });
+
     return apiFailure(
-      "DRAFT_LOAD_FAILED",
-      "Unable to load the project draft",
-      500,
+      getProjectCanvasDraftErrorCode(error, "DRAFT_LOAD_FAILED"),
+      getProjectCanvasDraftErrorMessage(error, "Unable to load the project draft"),
+      getProjectCanvasDraftErrorStatus(error),
       context.requestId,
     );
   }
@@ -146,18 +159,21 @@ export async function PUT(
 
     return apiSuccess<DraftRouteResponse>({
       projectId: projectResult.project.id,
-      document: resolveCanvasSnapshotAssetUrls(request.url, document),
+      document: null,
       draft: savedDraft,
     });
   } catch (error) {
-    if (error instanceof ProjectCanvasDraftConflictError) {
-      return apiFailure("DRAFT_CONFLICT", "The cloud draft changed in another tab or device.", 409, context.requestId);
-    }
+    logger.error("project draft save failed", {
+      requestId: context.requestId,
+      projectId: projectResult.project.id,
+      userId: context.user.id,
+      error,
+    });
 
     return apiFailure(
-      "DRAFT_SAVE_FAILED",
-      "Unable to save the project draft",
-      500,
+      getProjectCanvasDraftErrorCode(error, "DRAFT_SAVE_FAILED"),
+      getProjectCanvasDraftErrorMessage(error, "Unable to save the project draft"),
+      getProjectCanvasDraftErrorStatus(error),
       context.requestId,
     );
   }

@@ -45,11 +45,23 @@ type DraftRpcClient = {
     args: Record<string, unknown>,
   ) => Promise<{
     data: ProjectCanvasDraftRpcRow[] | FinalizeProjectCanvasDraftRpcRow[] | null;
-    error: { message: string } | null;
+    error: { message: string; code?: string; details?: string; hint?: string } | null;
   }>;
 };
 
 export class ProjectCanvasDraftConflictError extends Error {}
+export class ProjectCanvasDraftProjectNotFoundError extends Error {}
+export class ProjectCanvasDraftSchemaError extends Error {}
+export class ProjectCanvasDraftPermissionError extends Error {}
+
+export type ProjectCanvasDraftServiceErrorCode =
+  | "PROJECT_NOT_FOUND"
+  | "DRAFT_CONFLICT"
+  | "DRAFT_SCHEMA_ERROR"
+  | "DRAFT_PERMISSION_ERROR"
+  | "DRAFT_SAVE_FAILED"
+  | "DRAFT_LOAD_FAILED"
+  | "DRAFT_FINALIZE_FAILED";
 
 export type ProjectCanvasDraftMeta = {
   projectId: string;
@@ -87,13 +99,99 @@ function toDraftMeta(row: Pick<
   };
 }
 
+function isDraftProjectNotFoundMessage(message: string) {
+  return message.includes("PROJECT_NOT_FOUND");
+}
+
 function isDraftConflictMessage(message: string) {
   return message.includes("DRAFT_CONFLICT");
 }
 
+function isDraftSchemaMessage(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("function public.upsert_project_canvas_draft") ||
+    normalized.includes("function public.finalize_project_canvas_draft") ||
+    normalized.includes("function upsert_project_canvas_draft") ||
+    normalized.includes("function finalize_project_canvas_draft") ||
+    normalized.includes("could not find the function") ||
+    normalized.includes("project_canvas_drafts") ||
+    normalized.includes("schema cache") ||
+    normalized.includes("does not exist")
+  );
+}
+
+function isDraftPermissionMessage(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("permission denied") ||
+    normalized.includes("row-level security") ||
+    normalized.includes("violates row-level security")
+  );
+}
+
+export function getProjectCanvasDraftErrorMessage(error: unknown, fallback: string) {
+  if (process.env.NODE_ENV !== "production" && error instanceof Error && error.message) {
+    return `${fallback} (${error.message})`;
+  }
+
+  return fallback;
+}
+
+export function getProjectCanvasDraftErrorCode(
+  error: unknown,
+  fallback: ProjectCanvasDraftServiceErrorCode,
+): ProjectCanvasDraftServiceErrorCode {
+  if (error instanceof ProjectCanvasDraftProjectNotFoundError) {
+    return "PROJECT_NOT_FOUND";
+  }
+
+  if (error instanceof ProjectCanvasDraftConflictError) {
+    return "DRAFT_CONFLICT";
+  }
+
+  if (error instanceof ProjectCanvasDraftSchemaError) {
+    return "DRAFT_SCHEMA_ERROR";
+  }
+
+  if (error instanceof ProjectCanvasDraftPermissionError) {
+    return "DRAFT_PERMISSION_ERROR";
+  }
+
+  return fallback;
+}
+
+export function getProjectCanvasDraftErrorStatus(error: unknown) {
+  if (error instanceof ProjectCanvasDraftProjectNotFoundError) {
+    return 404;
+  }
+
+  if (error instanceof ProjectCanvasDraftConflictError) {
+    return 409;
+  }
+
+  if (error instanceof ProjectCanvasDraftSchemaError || error instanceof ProjectCanvasDraftPermissionError) {
+    return 500;
+  }
+
+  return 500;
+}
+
 function throwIfConflict(message: string): never {
+  if (isDraftProjectNotFoundMessage(message)) {
+    throw new ProjectCanvasDraftProjectNotFoundError("PROJECT_NOT_FOUND");
+  }
+
   if (isDraftConflictMessage(message)) {
     throw new ProjectCanvasDraftConflictError("DRAFT_CONFLICT");
+  }
+
+  if (isDraftSchemaMessage(message)) {
+    throw new ProjectCanvasDraftSchemaError(message);
+  }
+
+  if (isDraftPermissionMessage(message)) {
+    throw new ProjectCanvasDraftPermissionError(message);
   }
 
   throw new Error(message);
@@ -114,6 +212,14 @@ export async function loadProjectCanvasDraft(
   const row = data as ProjectCanvasDraftRow | null;
 
   if (error) {
+    if (isDraftSchemaMessage(error.message)) {
+      throw new ProjectCanvasDraftSchemaError(error.message);
+    }
+
+    if (isDraftPermissionMessage(error.message)) {
+      throw new ProjectCanvasDraftPermissionError(error.message);
+    }
+
     throw new Error(error.message);
   }
 
