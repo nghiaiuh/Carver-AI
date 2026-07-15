@@ -105,6 +105,18 @@ export type CreateAiJobMaskInput = {
   selectionRatio?: number;
 };
 
+export type CarverAiJobSimulationScenario =
+  | "success"
+  | "slow_success"
+  | "transient_provider_fail_then_success"
+  | "permanent_fail";
+
+export type CarverAiJobSimulationConfig = {
+  scenario: CarverAiJobSimulationScenario;
+  delayMs?: number;
+  failUntilAttempt?: number;
+};
+
 export type CanvasGenerationAssistantMessage = {
   id: string;
   role: "assistant";
@@ -169,6 +181,7 @@ export type CreateAiJobRequest = {
   targetNodeId?: string;
   mask?: CreateAiJobMaskInput;
   canvasGraphContext?: CanvasGenerationContext;
+  simulation?: CarverAiJobSimulationConfig;
 };
 
 export type QueuedCarverAiJobPayload = {
@@ -193,4 +206,5 @@ export type CarverAiJobPayload = {
   targetNodeId?: string;
   maskAssetId?: string;
   canvasGraphContext?: CanvasGenerationContext;
+  simulation?: CarverAiJobSimulationConfig;
 };
