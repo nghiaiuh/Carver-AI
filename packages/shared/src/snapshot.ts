@@ -106,6 +106,19 @@ export type CanvasGraphSourceImage = {
   quality?: "original";
 };
 
+export type CanvasMaskDataSnapshot = {
+  width: number;
+  height: number;
+  dataUrl: string;
+  selectionRatio: number;
+  updatedAt: number;
+};
+
+export type CanvasMaskHistorySnapshot = {
+  past: Array<CanvasMaskDataSnapshot | null>;
+  future: Array<CanvasMaskDataSnapshot | null>;
+};
+
 export type CanvasGraphPresetChild = {
   id: string;
   slot: string;
@@ -132,6 +145,8 @@ export type CanvasGraphNodeSnapshot = {
   height: number;
   scale?: number;
   sourceImage?: CanvasGraphSourceImage;
+  regionMask?: CanvasMaskDataSnapshot;
+  maskHistory?: CanvasMaskHistorySnapshot;
   presetGroup?: {
     category: string;
     activeChildId?: string | null;
@@ -160,9 +175,64 @@ export type CanvasGraphSnapshot = {
   activeGenerationTargetId: string | null;
 };
 
-export const CURRENT_CANVAS_SNAPSHOT_SCHEMA = "carver-canvas-v3";
-export const CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION = 3;
-export const CURRENT_CANVAS_SNAPSHOT_VERSION = 3;
+export type CanvasMarkerSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+};
+
+export type CanvasAddedObjectSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number;
+  label: string;
+  selectedAssetIds?: string[];
+};
+
+export type CanvasSketchPointSnapshot = {
+  x: number;
+  y: number;
+};
+
+export type CanvasPenStrokeSnapshot = {
+  id: string;
+  type: "pen-stroke";
+  points: CanvasSketchPointSnapshot[];
+  color: string;
+  opacity: number;
+  strokeWidth: number;
+  createdAt: string;
+};
+
+export type CanvasSketchLineSnapshot = {
+  id: string;
+  points: CanvasSketchPointSnapshot[];
+  color: string;
+  width: number;
+  groupId?: string;
+};
+
+export type CanvasSketchGroupSnapshot = {
+  id: string;
+  nameTag: string;
+  objectType: string;
+  lineIds: string[];
+  bounds: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
+  selectedAssetIds: string[];
+};
+
+export const CURRENT_CANVAS_SNAPSHOT_SCHEMA = "carver-canvas-v4";
+export const CURRENT_CANVAS_SNAPSHOT_SCHEMA_VERSION = 4;
+export const CURRENT_CANVAS_SNAPSHOT_VERSION = 4;
 
 export type CanvasSnapshotDocument = {
   schema: typeof CURRENT_CANVAS_SNAPSHOT_SCHEMA;
@@ -176,6 +246,11 @@ export type CanvasSnapshotDocument = {
   references: CanvasReferenceImage[];
   selection: CanvasSelectionState;
   graph: CanvasGraphSnapshot;
+  markers: CanvasMarkerSnapshot[];
+  addedObjects: CanvasAddedObjectSnapshot[];
+  sketchLines: CanvasSketchLineSnapshot[];
+  sketchGroups: CanvasSketchGroupSnapshot[];
+  penStrokes: CanvasPenStrokeSnapshot[];
   metadata: { [key: string]: SerializableJson | undefined };
 };
 
@@ -198,6 +273,11 @@ export const createEmptyCanvasSnapshotDocument = (): CanvasSnapshotDocument => (
     edges: [],
     activeGenerationTargetId: null,
   },
+  markers: [],
+  addedObjects: [],
+  sketchLines: [],
+  sketchGroups: [],
+  penStrokes: [],
   metadata: {},
 });
 
@@ -236,6 +316,11 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
     references?: CanvasReferenceImage[];
     selection?: Partial<CanvasSelectionState>;
     graph?: Partial<CanvasGraphSnapshot>;
+    markers?: CanvasMarkerSnapshot[];
+    addedObjects?: CanvasAddedObjectSnapshot[];
+    sketchLines?: CanvasSketchLineSnapshot[];
+    sketchGroups?: CanvasSketchGroupSnapshot[];
+    penStrokes?: CanvasPenStrokeSnapshot[];
     metadata?: { [key: string]: SerializableJson | undefined };
   };
 
@@ -263,6 +348,11 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
           ? legacy.graph.activeGenerationTargetId
           : fallback.graph.activeGenerationTargetId,
     },
+    markers: Array.isArray(legacy.markers) ? legacy.markers : fallback.markers,
+    addedObjects: Array.isArray(legacy.addedObjects) ? legacy.addedObjects : fallback.addedObjects,
+    sketchLines: Array.isArray(legacy.sketchLines) ? legacy.sketchLines : fallback.sketchLines,
+    sketchGroups: Array.isArray(legacy.sketchGroups) ? legacy.sketchGroups : fallback.sketchGroups,
+    penStrokes: Array.isArray(legacy.penStrokes) ? legacy.penStrokes : fallback.penStrokes,
     metadata: legacy.metadata ?? {
       legacyCanvas: value as SerializableJson,
     },
