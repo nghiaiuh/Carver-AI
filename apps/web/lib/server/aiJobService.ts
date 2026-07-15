@@ -616,6 +616,11 @@ export async function createProjectAiJob(params: {
   const jobPayload = {
     executionMode,
     promptMode,
+    promptEngine: {
+      contextRevision: loadedSnapshot?.version ?? 0,
+      snapshotId: resolvedSnapshotId ?? null,
+      parentEngineRunId: null,
+    },
     simulation: simulation ?? null,
     referenceAssetIds: resolvedReferenceAssetIds,
     inputAssetIds: [...inputAssetIds],
