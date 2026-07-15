@@ -124,10 +124,14 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
 
     switch (dbJob.payload.jobType) {
       case "generate_concept":
-        completedResult = await handleGenerateConceptJob(dbJob.payload);
+        completedResult = await handleGenerateConceptJob(dbJob.payload, {
+          currentAttempt: attemptContext.currentAttempt,
+        });
         break;
       case "refine_concept":
-        completedResult = await handleRefineConceptJob(dbJob.payload);
+        completedResult = await handleRefineConceptJob(dbJob.payload, {
+          currentAttempt: attemptContext.currentAttempt,
+        });
         break;
       case "analyze_reference":
       case "export":

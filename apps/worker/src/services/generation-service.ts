@@ -19,6 +19,7 @@ import { persistGeneratedImageAsset } from "./asset-persistence-service";
 import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGenerationTargetImage } from "./job-image-sources";
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
+import { generateSimulatedImage } from "./simulation-generation-service";
 
 const logger = createSafeLogger("worker.generation-service");
 
@@ -95,6 +96,9 @@ export const prepareGenerationJobResult = (state: PreparedGenerationState): Prep
 export const executeGeneratedImageJob = async (
   job: CarverAiJobPayload,
   state: PreparedGenerationState,
+  options?: {
+    currentAttempt?: number;
+  },
 ): Promise<PreparedGenerationJobResult> => {
   if (!state.finalPrompt) {
     throw new Error("Image-generating jobs require a compiled prompt.");
@@ -123,13 +127,19 @@ export const executeGeneratedImageJob = async (
     throw new Error("Region edit jobs require a resolved mask image.");
   }
 
-  const providerImage = await generateImageFromPrompt({
-    prompt: state.finalPrompt,
-    mode: job.executionMode,
-    targetImage,
-    referenceImages,
-    maskImage,
-  });
+  const providerImage = job.simulation
+    ? await generateSimulatedImage({
+        job,
+        prompt: state.finalPrompt,
+        currentAttempt: options?.currentAttempt ?? 1,
+      })
+    : await generateImageFromPrompt({
+        prompt: state.finalPrompt,
+        mode: job.executionMode,
+        targetImage,
+        referenceImages,
+        maskImage,
+      });
 
   logger.info("generation provider image received", {
     jobId: job.jobId,

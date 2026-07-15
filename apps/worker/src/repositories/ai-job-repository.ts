@@ -7,11 +7,29 @@
 
 import { getSupabaseAdmin } from "@carver/db/server";
 import type { Database } from "@carver/db";
-import { coerceCanvasSnapshotDocument, type CarverAiJobPayload, type CreateAiJobRequest } from "@carver/shared";
+import {
+  coerceCanvasSnapshotDocument,
+  type CarverAiJobPayload,
+  type CarverAiJobSimulationConfig,
+  type CreateAiJobRequest,
+} from "@carver/shared";
 import type { PreparedGenerationJobResult } from "../services/generation-service";
 
 const objectValue = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const simulationValue = (value: unknown): CarverAiJobSimulationConfig | undefined => {
+  const source = objectValue(value);
+  if (!source || typeof source.scenario !== "string") {
+    return undefined;
+  }
+
+  return {
+    scenario: source.scenario as CarverAiJobSimulationConfig["scenario"],
+    delayMs: typeof source.delayMs === "number" ? source.delayMs : undefined,
+    failUntilAttempt: typeof source.failUntilAttempt === "number" ? source.failUntilAttempt : undefined,
+  };
+};
 
 type AiJobRow = Database["public"]["Tables"]["ai_jobs"]["Row"];
 type AiJobStatus = AiJobRow["status"];
@@ -195,6 +213,7 @@ const loadForProcessing = async (
           ? payload.targetNodeId
           : undefined,
       maskAssetId: typeof payload.maskAssetId === "string" ? payload.maskAssetId : undefined,
+      simulation: simulationValue(payload.simulation),
       canvasGraphContext: "target" in canvasGraphContext
         ? (canvasGraphContext as CreateAiJobRequest["canvasGraphContext"])
         : undefined,
