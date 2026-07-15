@@ -251,6 +251,14 @@ Current save/load path:
   Owns project-scoped mutable cloud draft load/save/finalize helpers.
 - `apps/web/app/canvas/hooks/useCanvasWorkspace.ts`
   Bootstraps current snapshot + cloud draft into canvas state, keeps local IndexedDB draft state, autosaves to cloud draft, and only finalizes immutable versions on manual/close flows.
+- `apps/web/app/canvas/utils/persistenceBenchmark.ts`
+  Client-side benchmark capture for autosave/local draft/cloud draft/snapshot finalize timings, request suppression, and payload sizes.
+- `apps/web/app/field-notes/canvas-benchmarks/page.tsx`
+  Hidden internal dashboard that visualizes locally collected autosave benchmark events from browser storage.
+- `apps/web/app/canvas/utils/aiJobBenchmark.ts`
+  Client-side benchmark capture for queue-backed AI job runs, poll retries, terminal outcomes, and end-to-end completion timings.
+- `apps/web/app/field-notes/ai-job-benchmarks/page.tsx`
+  Hidden internal dashboard that visualizes locally collected AI job reliability benchmark runs from browser storage.
 
 Important fields:
 - `graph.nodes`
