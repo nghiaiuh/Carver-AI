@@ -208,6 +208,41 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      project_canvas_drafts: Table<
+        {
+          project_id: string;
+          owner_id: string;
+          base_snapshot_id: string | null;
+          revision: number;
+          document_hash: string | null;
+          canvas_json: Json;
+          last_mutation_id: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          project_id: string;
+          owner_id: string;
+          base_snapshot_id?: string | null;
+          revision?: number;
+          document_hash?: string | null;
+          canvas_json?: Json;
+          last_mutation_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          project_id?: string;
+          owner_id?: string;
+          base_snapshot_id?: string | null;
+          revision?: number;
+          document_hash?: string | null;
+          canvas_json?: Json;
+          last_mutation_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
       landscape_briefs: Table<
         {
           id: string;
@@ -575,6 +610,42 @@ export interface Database {
           is_user_visible: boolean;
           snapshot_kind: string;
           snapshot_id: string;
+          version: number;
+        }[];
+      };
+      upsert_project_canvas_draft: {
+        Args: {
+          draft_base_snapshot_id?: string | null;
+          draft_canvas_json: Json;
+          draft_document_hash?: string | null;
+          draft_last_mutation_id?: string | null;
+          expected_revision: number | null;
+          target_project_id: string;
+        };
+        Returns: {
+          base_snapshot_id: string | null;
+          document_hash: string | null;
+          last_mutation_id: string | null;
+          owner_id: string;
+          project_id: string;
+          revision: number;
+          updated_at: string;
+        }[];
+      };
+      finalize_project_canvas_draft: {
+        Args: {
+          expected_revision: number;
+          snapshot_reason?: string | null;
+          target_project_id: string;
+        };
+        Returns: {
+          base_snapshot_id: string | null;
+          created_at: string;
+          document_hash: string | null;
+          draft_revision: number;
+          is_user_visible: boolean;
+          snapshot_id: string;
+          snapshot_kind: string;
           version: number;
         }[];
       };
