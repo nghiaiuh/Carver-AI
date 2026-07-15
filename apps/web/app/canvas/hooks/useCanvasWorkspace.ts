@@ -763,12 +763,26 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   const persistLocalDraftNow = useCallback(async (projectIdOverride?: string) => {
     const projectId = projectIdOverride ?? params.projectId;
+    const attemptedAt = new Date().toISOString();
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
     if (
       !currentUserId ||
       !projectId ||
       isSnapshotLoading ||
       !snapshotBaselineRef.current.documentHash
     ) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "local-draft-save",
+        projectId: projectId ?? null,
+        intent: "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "not-ready",
+      });
       return false;
     }
 
@@ -797,7 +811,30 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         tabId: tabIdRef.current,
       });
       void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "local-draft-save",
+        projectId,
+        intent: "autosave",
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: false,
+        result: "succeeded",
+      });
       return true;
+    } catch (error) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "local-draft-save",
+        projectId,
+        intent: "autosave",
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: false,
+        result: "failed",
+        errorMessage: error instanceof Error ? error.message : "Local draft save failed.",
+      });
+      throw error;
     } finally {
       setIsDraftSaving(false);
     }
@@ -848,11 +885,25 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     allowNonLeader?: boolean;
   } = {}) => {
     const projectId = syncParams.projectId ?? params.projectId;
+    const attemptedAt = new Date().toISOString();
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
     if (
       !projectId ||
       !currentUserId ||
       (!syncParams.allowNonLeader && !isCloudDraftSyncLeader)
     ) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId: projectId ?? null,
+        intent: syncParams.force ? "manual" : "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: !projectId || !currentUserId ? "not-ready" : "not-leader",
+      });
       return false;
     }
 
@@ -863,10 +914,32 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       cloudDraftMetaRef.current.documentHash &&
       cloudDraftMetaRef.current.documentHash === snapshotFingerprint
     ) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId,
+        intent: "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "dedupe",
+      });
       return false;
     }
 
     if (cloudDraftSyncInFlightRef.current) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId,
+        intent: syncParams.force ? "manual" : "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "inflight",
+      });
       return false;
     }
 
@@ -892,6 +965,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
       if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
         setDraftWarning("Cloud draft changed in another tab or device. Reload the saved version or restore your local draft intentionally.");
+        recordCanvasPersistenceBenchmarkEvent({
+          operation: "cloud-draft-sync",
+          projectId,
+          intent: syncParams.force ? "manual" : "autosave",
+          attemptedAt,
+          durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          payloadBytes,
+          requestSent: true,
+          result: "skipped",
+          skipReason: "conflict",
+        });
         return false;
       }
 
@@ -917,6 +1001,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         setDraftWarning(null);
       }
 
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId,
+        intent: syncParams.force ? "manual" : "autosave",
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: true,
+        result: "succeeded",
+      });
       return true;
     } catch (error) {
       if (!syncParams.quiet) {
@@ -926,6 +1020,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             : "Unable to sync the project draft. Changes are still saved locally on this device.",
         );
       }
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId,
+        intent: syncParams.force ? "manual" : "autosave",
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: true,
+        result: "failed",
+        errorMessage: error instanceof Error ? error.message : "Cloud draft sync failed.",
+      });
       return false;
     } finally {
       cloudDraftSyncInFlightRef.current = false;
@@ -939,10 +1044,24 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     keepalive?: boolean;
   }) => {
     const projectId = saveParams.projectId ?? params.projectId;
+    const attemptedAt = new Date().toISOString();
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
     if (!projectId) {
       if (!saveParams.quiet) {
         showToast("Open this canvas with a projectId before saving snapshots.");
       }
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId: null,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "missing-project",
+      });
       return false;
     }
 
@@ -953,14 +1072,47 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     if (!isDirty) {
       setHasUnsavedSnapshotChanges(false);
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "not-dirty",
+      });
       return false;
     }
 
     if (saveParams.reason === "close" && hasTransientSnapshotContent(snapshotDocument)) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "transient-content",
+      });
       return false;
     }
 
     if (snapshotSaveInFlightRef.current) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "inflight",
+      });
       return false;
     }
 
@@ -978,6 +1130,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
       const currentDraftRevision = cloudDraftMetaRef.current.revision;
       if (!currentDraftRevision) {
+        recordCanvasPersistenceBenchmarkEvent({
+          operation: "snapshot-finalize",
+          projectId,
+          intent: saveParams.reason,
+          attemptedAt,
+          durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          payloadBytes,
+          requestSent: false,
+          result: "skipped",
+          skipReason: "missing-revision",
+        });
         throw new Error("Unable to finalize a version before the cloud draft is synced.");
       }
 
@@ -997,6 +1160,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
       if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
         setDraftWarning("Cloud draft changed in another tab or device before this version could be saved.");
+        recordCanvasPersistenceBenchmarkEvent({
+          operation: "snapshot-finalize",
+          projectId,
+          intent: saveParams.reason,
+          attemptedAt,
+          durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          payloadBytes,
+          requestSent: true,
+          result: "skipped",
+          skipReason: "conflict",
+        });
         return false;
       }
 
@@ -1035,6 +1209,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         );
       }
 
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: true,
+        result: "succeeded",
+      });
       return true;
     } catch (error) {
       if (!saveParams.quiet) {
@@ -1044,6 +1228,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             : "Unable to save the current snapshot.",
         );
       }
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "snapshot-finalize",
+        projectId,
+        intent: saveParams.reason,
+        attemptedAt,
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+        payloadBytes,
+        requestSent: Boolean(projectId),
+        result: "failed",
+        errorMessage: error instanceof Error ? error.message : "Snapshot finalize failed.",
+      });
       return false;
     } finally {
       snapshotSaveInFlightRef.current = false;
@@ -1234,6 +1429,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     const loadSnapshot = async () => {
       setIsSnapshotLoading(true);
+      const attemptedAt = new Date().toISOString();
+      const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
 
       try {
         const client = requireCanvasSupabaseClient(supabase);
@@ -1329,6 +1526,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         setHasUnsavedSnapshotChanges(
           Boolean(draftRecord.meta.documentHash && draftRecord.meta.documentHash !== draftRecord.meta.basedOnHash),
         );
+        recordCanvasPersistenceBenchmarkEvent({
+          operation: "snapshot-load",
+          projectId,
+          intent: "load",
+          attemptedAt,
+          durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          payloadBytes: estimateCanvasPayloadBytes(baseDocument),
+          requestSent: true,
+          result: "succeeded",
+        });
       } catch (error) {
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
@@ -1342,6 +1549,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             ? error.message
             : "Unable to load the current canvas snapshot.",
         );
+        recordCanvasPersistenceBenchmarkEvent({
+          operation: "snapshot-load",
+          projectId,
+          intent: "load",
+          attemptedAt,
+          durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          payloadBytes: 0,
+          requestSent: true,
+          result: "failed",
+          errorMessage: error instanceof Error ? error.message : "Snapshot load failed.",
+        });
       } finally {
         if (!cancelled && requestId === snapshotLoadRequestRef.current) {
           setIsSnapshotLoading(false);
@@ -1525,6 +1743,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           },
         );
         const payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+        recordAiJobPollRequest({
+          jobId: pendingGenerationJob.jobId,
+          projectId: pendingGenerationJob.projectId,
+          status: payload.data?.job?.status ?? null,
+        });
 
         if (!response.ok || !payload.data?.job) {
           throw new Error(payload.error || "Unable to load AI job status.");
@@ -1545,18 +1768,38 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           case "failed":
           case "cancelled":
           case "enqueue_failed":
+            finishAiJobBenchmarkRun({
+              jobId: job.id,
+              projectId: pendingGenerationJob.projectId,
+              terminalStatus: job.status === "enqueue_failed" ? "enqueue_failed" : job.status === "cancelled" ? "cancelled" : "failed",
+              generatedImageCount: job.jobResult?.generatedImages?.length ?? 0,
+              errorMessage: job.errorMessage ?? getTerminalGenerationStatusMessage(job),
+            });
             showToast(getTerminalGenerationStatusMessage(job));
             return;
           default:
             break;
         }
 
+        finishAiJobBenchmarkRun({
+          jobId: job.id,
+          projectId: pendingGenerationJob.projectId,
+          terminalStatus: "succeeded",
+          generatedImageCount: job.jobResult?.generatedImages?.length ?? 0,
+        });
         applyCompletedGenerationJob({
           job,
           targetNodeId: pendingGenerationJob.targetNodeId,
           syncAssistantMessage: true,
         });
       } catch (error) {
+        finishAiJobBenchmarkRun({
+          jobId: pendingGenerationJob.jobId,
+          projectId: pendingGenerationJob.projectId,
+          terminalStatus: "poll_abandoned",
+          generatedImageCount: 0,
+          errorMessage: error instanceof Error ? error.message : "Unable to load AI job status.",
+        });
         setPendingGenerationJob((current) =>
           current?.jobId === pendingGenerationJob.jobId ? null : current,
         );
@@ -1997,6 +2240,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         handledGenerationJobIdsRef.current.delete(job.id);
       }
 
+      startAiJobBenchmarkRun({
+        jobId: job.id,
+        projectId: params.projectId,
+        source: "canvas",
+      });
       setPendingGenerationJob({
         jobId: job.id,
         projectId: params.projectId,
