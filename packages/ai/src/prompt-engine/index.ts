@@ -1,9 +1,17 @@
 /*
- * Flow: Participates in the Landscape Prompt Compiler.
- * 1. Receive raw landscape prompt context.
- * 2. Detect task intent, scope, risk, or constraints.
- * 3. Return structured prompt data for enhance/generate APIs.
+ * Flow: Exposes the pure Prompt Engine surface.
+ * 1. Define typed contracts and deterministic policy/compiler helpers.
+ * 2. Keep server-only interpreter orchestration out of the root export.
+ * 3. Preserve a legacy sync adapter while worker/web migrate to V2.
  */
 
-export * from "./enhance-prompt";
+export * from "./contracts";
+export * from "./canonicalizePlan";
+export * from "./compileProviderPrompt";
+export * from "./buildPromptPlan";
+export * from "./fallback";
+export * from "./compare";
+export * from "./telemetry";
+export * from "./compat";
+export type { EnhanceMode } from "./enhance-prompt/enhanceTypes";
 export * from "./generate";
