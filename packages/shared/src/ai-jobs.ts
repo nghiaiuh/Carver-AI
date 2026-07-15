@@ -6,6 +6,18 @@
  */
 
 import type { CanvasReferenceRole, CanvasSnapshotDocument } from "./snapshot";
+import type {
+  ExecutionDecision,
+  ExecutionRevalidationContract,
+  GenerationPromptResultV2,
+  PromptExecutionMode,
+  PromptPlanV2,
+  PromptRiskAssessment,
+  PromptWarning,
+  ReviewReason,
+  TrustedTarget,
+  ValidatedReference,
+} from "./prompt-engine";
 
 export type CarverJobKind =
   | "generate_concept"
@@ -13,10 +25,7 @@ export type CarverJobKind =
   | "analyze_reference"
   | "export";
 
-export type CarverImageExecutionMode =
-  | "text_to_image"
-  | "image_edit"
-  | "region_edit";
+export type CarverImageExecutionMode = PromptExecutionMode;
 
 export type CarverEditIntent =
   | "generate"
@@ -133,6 +142,22 @@ export type CarverCompiledPromptMeta = {
   targetObject: string | null;
   formulaUsed: string;
   shouldShowReview: boolean;
+  engineVersion?: "2";
+  engineRunId?: string;
+  parentEngineRunId?: string;
+  planHash?: string;
+  contextRevision?: number;
+  snapshotId?: string | null;
+  decision?: ExecutionDecision;
+  warnings?: PromptWarning[];
+  risk?: PromptRiskAssessment;
+  reviewReasons?: ReviewReason[];
+  validatedReferences?: ValidatedReference[];
+  executionTarget?: TrustedTarget | null;
+  revalidation?: ExecutionRevalidationContract;
+  degraded?: boolean;
+  providerPrompt?: string | null;
+  plan?: PromptPlanV2;
 };
 
 export type CarverAiJobResultStage = "brief_ready" | "prompt_compiled" | "generated";
@@ -142,6 +167,7 @@ export type CarverAiJobResult = {
   provider: string | null;
   editBrief: CarverEditBrief;
   compiledPromptMeta: CarverCompiledPromptMeta | null;
+  compiledPromptV2?: GenerationPromptResultV2 | null;
   generatedImages: GeneratedCanvasImage[];
   assistantMessage: CanvasGenerationAssistantMessage | null;
   outputAssetIds: string[];
@@ -207,4 +233,9 @@ export type CarverAiJobPayload = {
   maskAssetId?: string;
   canvasGraphContext?: CanvasGenerationContext;
   simulation?: CarverAiJobSimulationConfig;
+  promptEngine?: {
+    contextRevision: number;
+    snapshotId?: string | null;
+    parentEngineRunId?: string | null;
+  };
 };
