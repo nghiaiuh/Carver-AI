@@ -6,12 +6,19 @@
  */
 
 import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
-import { compileFinalPrompt, type PromptMode } from "@carver/ai/prompt-engine";
+import {
+  mapGenerationResultToLegacyMeta,
+  type PromptEngineTrustedContext,
+  type RequestedReferenceRole,
+} from "@carver/ai/prompt-engine";
+import { compileGenerationPromptV2 } from "@carver/ai/prompt-engine/server";
 import type {
+  CanvasReferenceRole,
   CarverAiJobPayload,
   CarverAiJobResult,
   CarverCompiledPromptMeta,
   CarverEditBrief,
+  GenerationPromptResultV2,
 } from "@carver/shared";
 import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
 import { generateImageFromPrompt } from "../providers/openai/generate-image";
@@ -26,9 +33,20 @@ const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
 
+const CANVAS_REFERENCE_ROLES: CanvasReferenceRole[] = [
+  "direct_edit_target",
+  "layout_reference",
+  "style_reference",
+  "material_reference",
+  "plant_reference",
+  "architecture_reference",
+  "generic_reference",
+];
+
 export type PreparedGenerationState = {
   editBrief: CarverEditBrief;
   compiledPromptMeta: CarverCompiledPromptMeta | null;
+  compiledPromptV2: GenerationPromptResultV2 | null;
   finalPrompt: string | null;
 };
 
@@ -37,49 +55,134 @@ export type PreparedGenerationJobResult = {
   jobResult: CarverAiJobResult;
 };
 
-export const prepareGenerationState = (
+const mapReferenceRoleToAllowedRoles = (role: string): RequestedReferenceRole[] => {
+  switch (role) {
+    case "style_reference":
+      return ["style", "composition", "unspecified"];
+    case "material_reference":
+      return ["material", "composition", "unspecified"];
+    case "layout_reference":
+      return ["layout", "composition", "unspecified"];
+    case "architecture_reference":
+    case "plant_reference":
+      return ["object", "composition", "unspecified"];
+    default:
+      return ["composition", "unspecified", "object", "style"];
+  }
+};
+
+const toCanvasReferenceRole = (role: unknown): CanvasReferenceRole | null =>
+  typeof role === "string" && CANVAS_REFERENCE_ROLES.includes(role as CanvasReferenceRole)
+    ? (role as CanvasReferenceRole)
+    : null;
+
+const buildTrustedContextForJob = (job: CarverAiJobPayload): PromptEngineTrustedContext => {
+  const target = job.canvasGraphContext?.target
+    ? {
+        contextId: job.canvasGraphContext.target.nodeId,
+        title: job.canvasGraphContext.target.title,
+        assetId: job.canvasGraphContext.target.assetId,
+        role: job.canvasGraphContext.target.role,
+        prompt: job.canvasGraphContext.target.prompt,
+        source: "canvas_target" as const,
+        locked: job.snapshot.locks.some((lock) => lock.targetId === job.canvasGraphContext?.target.nodeId),
+      }
+    : null;
+
+  return {
+    projectId: job.projectId,
+    contextRevision: job.promptEngine?.contextRevision ?? job.snapshot.snapshotVersion,
+    snapshotId: job.promptEngine?.snapshotId ?? job.inputSnapshotId ?? undefined,
+    executionMode: job.executionMode,
+    target,
+    availableTargets: target ? [target] : [],
+    availableReferences: [
+      ...(job.canvasGraphContext?.imageReferences ?? []).map((reference) => ({
+        contextId: reference.nodeId,
+        title: reference.title,
+        assetId: reference.assetId,
+        graphRole: toCanvasReferenceRole(reference.role),
+        allowedRoles: mapReferenceRoleToAllowedRoles(String(reference.role ?? "generic_reference")),
+        source: "image_reference" as const,
+      })),
+      ...(job.canvasGraphContext?.presetReferences ?? []).map((reference) => ({
+        contextId: reference.childId ?? reference.nodeId,
+        title: reference.label,
+        assetId: reference.assetId,
+        graphRole: toCanvasReferenceRole(reference.role),
+        allowedRoles: mapReferenceRoleToAllowedRoles(String(reference.role ?? "generic_reference")),
+        source: "preset_reference" as const,
+      })),
+    ],
+    selectedObjectIds: job.snapshot.selection.objectIds,
+    selectedRegionIds: job.snapshot.selection.regionIds,
+    lockedObjectIds: job.snapshot.locks
+      .filter((lock) => lock.targetType === "object" && typeof lock.targetId === "string")
+      .map((lock) => lock.targetId as string),
+    locks: job.snapshot.locks,
+    mask:
+      job.executionMode === "region_edit"
+        ? {
+            assetId: job.maskAssetId,
+            required: true,
+            regionId: job.snapshot.selection.regionIds[0],
+          }
+        : null,
+    explicitConstraints: {
+      preserve: job.canvasGraphContext?.preserveRules ?? [],
+    },
+  };
+};
+
+const buildRequiredAssetIds = (job: CarverAiJobPayload) => {
+  const ids = new Set<string>();
+
+  if (job.canvasGraphContext?.target.assetId) {
+    ids.add(job.canvasGraphContext.target.assetId);
+  }
+
+  for (const reference of job.canvasGraphContext?.imageReferences ?? []) {
+    if (reference.assetId) {
+      ids.add(reference.assetId);
+    }
+  }
+
+  for (const reference of job.canvasGraphContext?.presetReferences ?? []) {
+    if (reference.assetId) {
+      ids.add(reference.assetId);
+    }
+  }
+
+  if (job.maskAssetId) {
+    ids.add(job.maskAssetId);
+  }
+
+  return [...ids];
+};
+
+export const prepareGenerationState = async (
   job: CarverAiJobPayload,
-): PreparedGenerationState => {
+): Promise<PreparedGenerationState> => {
   const snapshotBrief = buildSnapshotAwareEditBrief(job);
   const editBrief = job.canvasGraphContext
     ? buildConnectedGenerationBrief(snapshotBrief, job.canvasGraphContext)
     : snapshotBrief;
   const shouldCompilePrompt = shouldCompilePromptForJob(job.jobType);
 
-  const compiledPrompt = shouldCompilePrompt
-    ? compileFinalPrompt({
+  const compiledPromptV2 = shouldCompilePrompt
+    ? await compileGenerationPromptV2({
         rawPrompt: job.prompt,
-        promptMode: job.promptMode as PromptMode,
-        projectContext: {
-          snapshotVersion: job.snapshot.snapshotVersion,
-          selectedObjectIds: job.snapshot.selection.objectIds,
-          selectedRegionIds: job.snapshot.selection.regionIds,
-          lockCount: job.snapshot.locks.length,
-          connectionSummary: job.canvasGraphContext?.connectionSummary,
-        },
-        imageContext: {
-          referenceAssetIds: job.referenceAssetIds,
-          targetNodeId: job.targetNodeId,
-          imageReferences: job.canvasGraphContext?.imageReferences,
-          presetReferences: job.canvasGraphContext?.presetReferences,
-        },
+        trustedContext: buildTrustedContextForJob(job),
+        requiredAssetIds: buildRequiredAssetIds(job),
+        parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
       })
     : null;
 
   return {
     editBrief,
-    compiledPromptMeta: compiledPrompt
-      ? {
-          taskType: compiledPrompt.taskType,
-          editScope: compiledPrompt.editScope,
-          riskLevel: compiledPrompt.riskLevel,
-          targetArea: compiledPrompt.targetArea ?? null,
-          targetObject: compiledPrompt.targetObject ?? null,
-          formulaUsed: compiledPrompt.formulaUsed,
-          shouldShowReview: compiledPrompt.shouldShowReview,
-        }
-      : null,
-    finalPrompt: compiledPrompt?.enhancedPrompt ?? null,
+    compiledPromptMeta: compiledPromptV2 ? mapGenerationResultToLegacyMeta(compiledPromptV2) : null,
+    compiledPromptV2,
+    finalPrompt: compiledPromptV2?.providerPrompt ?? null,
   };
 };
 
@@ -90,6 +193,7 @@ export const prepareGenerationJobResult = (state: PreparedGenerationState): Prep
     stage: state.compiledPromptMeta ? "prompt_compiled" : "brief_ready",
     editBrief: state.editBrief,
     compiledPromptMeta: state.compiledPromptMeta,
+    compiledPromptV2: state.compiledPromptV2,
   }),
 });
 
@@ -201,6 +305,7 @@ export const executeGeneratedImageJob = async (
       provider: providerImage.provider,
       editBrief: state.editBrief,
       compiledPromptMeta: state.compiledPromptMeta,
+      compiledPromptV2: state.compiledPromptV2,
       generatedImages: [persisted.generatedImage],
       assistantMessage,
       outputAssetIds: [persisted.assetId],

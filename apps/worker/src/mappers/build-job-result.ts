@@ -10,6 +10,7 @@ import type {
   CarverAiJobResult,
   CarverCompiledPromptMeta,
   CarverEditBrief,
+  GenerationPromptResultV2,
   GeneratedCanvasImage,
 } from "@carver/shared";
 
@@ -18,11 +19,13 @@ export const buildPreparedJobResult = (params: {
   stage: CarverAiJobResult["stage"];
   editBrief: CarverEditBrief;
   compiledPromptMeta: CarverCompiledPromptMeta | null;
+  compiledPromptV2?: GenerationPromptResultV2 | null;
 }): CarverAiJobResult => ({
   stage: params.stage,
   provider: params.provider,
   editBrief: params.editBrief,
   compiledPromptMeta: params.compiledPromptMeta,
+  compiledPromptV2: params.compiledPromptV2 ?? null,
   generatedImages: [],
   assistantMessage: null,
   outputAssetIds: [],
@@ -33,6 +36,7 @@ export const buildGeneratedJobResult = (params: {
   provider: string;
   editBrief: CarverEditBrief;
   compiledPromptMeta: CarverCompiledPromptMeta | null;
+  compiledPromptV2?: GenerationPromptResultV2 | null;
   generatedImages: GeneratedCanvasImage[];
   assistantMessage: CanvasGenerationAssistantMessage;
   outputAssetIds: string[];
@@ -42,6 +46,7 @@ export const buildGeneratedJobResult = (params: {
   provider: params.provider,
   editBrief: params.editBrief,
   compiledPromptMeta: params.compiledPromptMeta,
+  compiledPromptV2: params.compiledPromptV2 ?? null,
   generatedImages: params.generatedImages,
   assistantMessage: params.assistantMessage,
   outputAssetIds: params.outputAssetIds,

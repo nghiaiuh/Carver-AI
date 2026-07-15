@@ -12,6 +12,6 @@ import { prepareGenerationJobResult, prepareGenerationState } from "../../servic
 export const handlePrepareAiJob = async (
   job: CarverAiJobPayload,
 ): Promise<PreparedGenerationJobResult> => {
-  const preparedState = prepareGenerationState(job);
+  const preparedState = await prepareGenerationState(job);
   return prepareGenerationJobResult(preparedState);
 };

@@ -155,11 +155,18 @@ const loadForProcessing = async (
 
   const payload = objectValue(job.job_payload);
   let snapshot = payload.snapshot ? coerceCanvasSnapshotDocument(payload.snapshot) : null;
+  let snapshotVersion =
+    payload.promptEngine &&
+    typeof payload.promptEngine === "object" &&
+    !Array.isArray(payload.promptEngine) &&
+    typeof (payload.promptEngine as Record<string, unknown>).contextRevision === "number"
+      ? ((payload.promptEngine as Record<string, unknown>).contextRevision as number)
+      : null;
 
   if (!snapshot && job.input_snapshot_id) {
     const { data: snapshotRow, error: snapshotError } = await supabase
       .from("canvas_snapshots")
-      .select("canvas_json")
+      .select("canvas_json, version")
       .eq("id", job.input_snapshot_id)
       .eq("project_id", job.project_id)
       .maybeSingle();
@@ -170,6 +177,7 @@ const loadForProcessing = async (
 
     if (snapshotRow) {
       snapshot = coerceCanvasSnapshotDocument(snapshotRow.canvas_json);
+      snapshotVersion = typeof snapshotRow.version === "number" ? snapshotRow.version : snapshotVersion;
     }
   }
 
@@ -217,6 +225,23 @@ const loadForProcessing = async (
       canvasGraphContext: "target" in canvasGraphContext
         ? (canvasGraphContext as CreateAiJobRequest["canvasGraphContext"])
         : undefined,
+      promptEngine: {
+        contextRevision: snapshotVersion ?? snapshot.snapshotVersion,
+        snapshotId:
+          payload.promptEngine &&
+          typeof payload.promptEngine === "object" &&
+          !Array.isArray(payload.promptEngine) &&
+          typeof (payload.promptEngine as Record<string, unknown>).snapshotId === "string"
+            ? ((payload.promptEngine as Record<string, unknown>).snapshotId as string)
+            : job.input_snapshot_id,
+        parentEngineRunId:
+          payload.promptEngine &&
+          typeof payload.promptEngine === "object" &&
+          !Array.isArray(payload.promptEngine) &&
+          typeof (payload.promptEngine as Record<string, unknown>).parentEngineRunId === "string"
+            ? ((payload.promptEngine as Record<string, unknown>).parentEngineRunId as string)
+            : undefined,
+      },
     },
   };
 };
