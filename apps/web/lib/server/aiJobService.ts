@@ -5,6 +5,8 @@ import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type {
   CarverAiJobRecord,
   CarverAiJobResult,
+  CarverAiJobSimulationConfig,
+  CarverAiJobSimulationScenario,
   CarverImageExecutionMode,
   CreateAiJobRequest,
   QueuedCarverAiJobPayload,
@@ -34,8 +36,16 @@ const SUPPORTED_JOB_TYPES: CreateAiJobRequest["jobType"][] = [
 
 const PROMPT_MODES = ["auto", "review", "expert"] as const;
 const EXECUTION_MODES = ["text_to_image", "image_edit", "region_edit"] as const;
+const SIMULATION_SCENARIOS = [
+  "success",
+  "slow_success",
+  "transient_provider_fail_then_success",
+  "permanent_fail",
+] as const;
 const INLINE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
 const logger = createSafeLogger("web.ai-jobs");
+const AI_JOB_SIMULATION_ENABLED =
+  process.env.CARVER_ENABLE_AI_JOB_SIMULATION === "true" || process.env.NODE_ENV !== "production";
 
 type CreateAiJobWithCheckpointRpcRow = {
   id: string;
@@ -96,6 +106,7 @@ const buildIdempotencyKey = (params: {
   snapshotIdentity: string | null;
   targetNodeId: string | undefined;
   executionMode: CarverImageExecutionMode;
+  simulationScenario?: string | null;
 }) =>
   createHash("sha256")
     .update(
@@ -107,6 +118,7 @@ const buildIdempotencyKey = (params: {
         snapshotIdentity: params.snapshotIdentity,
         targetNodeId: params.targetNodeId ?? null,
         executionMode: params.executionMode,
+        simulationScenario: params.simulationScenario ?? null,
       }),
     )
     .digest("hex")
@@ -177,6 +189,31 @@ const normalizeSelection = (
   };
 };
 
+const normalizeSimulation = (value: unknown): CarverAiJobSimulationConfig | undefined => {
+  const source = objectValue(value);
+  if (!source) {
+    return undefined;
+  }
+
+  const scenario = typeof source.scenario === "string" &&
+    SIMULATION_SCENARIOS.includes(source.scenario as CarverAiJobSimulationScenario)
+    ? (source.scenario as CarverAiJobSimulationScenario)
+    : undefined;
+
+  if (!scenario) {
+    return undefined;
+  }
+
+  return {
+    scenario,
+    delayMs: typeof source.delayMs === "number" && Number.isFinite(source.delayMs) ? source.delayMs : undefined,
+    failUntilAttempt:
+      typeof source.failUntilAttempt === "number" && Number.isFinite(source.failUntilAttempt)
+        ? source.failUntilAttempt
+        : undefined,
+  };
+};
+
 export type CreateProjectAiJobSuccess = {
   created: boolean;
   idempotent: boolean;
@@ -220,9 +257,14 @@ export async function createProjectAiJob(params: {
   const canvasGraphContext = objectValue(body.canvasGraphContext);
   const maskInput = maskValue(body.mask);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
+  const simulation = normalizeSimulation(body.simulation);
 
   if (!SUPPORTED_JOB_TYPES.includes(jobType)) {
     return { ok: false, response: badRequest(`jobType ${jobType} is not supported yet`) };
+  }
+
+  if (simulation && !AI_JOB_SIMULATION_ENABLED) {
+    return { ok: false, response: badRequest("AI job simulation mode is disabled.") };
   }
 
   const projectResult = await requireProjectOwner(context, projectId);
@@ -498,6 +540,7 @@ export async function createProjectAiJob(params: {
       snapshotIdentity: loadedSnapshot?.id ?? resolvedSnapshotId ?? mergedSnapshotHash,
       targetNodeId,
       executionMode,
+      simulationScenario: simulation?.scenario ?? null,
     });
 
   const sanitizedCanvasGraphContext = canvasGraphContext
@@ -563,14 +606,17 @@ export async function createProjectAiJob(params: {
 
   const generationCreditCost =
     jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept;
-  const creditReservation = await reserveUserCredits(context, generationCreditCost);
-  if ("error" in creditReservation) {
+  const creditReservation = simulation
+    ? null
+    : await reserveUserCredits(context, generationCreditCost);
+  if (creditReservation && "error" in creditReservation) {
     return { ok: false, response: creditReservation.error };
   }
 
   const jobPayload = {
     executionMode,
     promptMode,
+    simulation: simulation ?? null,
     referenceAssetIds: resolvedReferenceAssetIds,
     inputAssetIds: [...inputAssetIds],
     selection: mergedSnapshot.selection,
@@ -617,7 +663,9 @@ export async function createProjectAiJob(params: {
       .maybeSingle();
 
     if (racedJob) {
-      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+      if (!simulation) {
+        await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+      }
       return {
         ok: true,
         data: {
@@ -628,7 +676,9 @@ export async function createProjectAiJob(params: {
       };
     }
 
-    await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    if (!simulation) {
+      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    }
     return {
       ok: false,
       response: apiFailure("AI_JOB_CREATE_FAILED", "Unable to create AI job", 500, context.requestId),
@@ -656,7 +706,9 @@ export async function createProjectAiJob(params: {
       projectId,
       jobId: aiJob.id,
     });
-    await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    if (!simulation) {
+      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    }
     await supabase
       .from("ai_jobs")
       .update({
@@ -680,7 +732,7 @@ export async function createProjectAiJob(params: {
       created: true,
       idempotent: false,
       job: mapAiJobRecord(aiJob, request.url),
-      creditsRemaining: creditReservation.creditsRemaining,
+      creditsRemaining: creditReservation?.creditsRemaining,
     },
   };
 }
