@@ -3,12 +3,21 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import type { Database, Json } from "@carver/db";
-import type { CarverAiJobRecord, CreateAiJobRequest, GeneratedCanvasImage } from "@carver/shared";
+import {
+  chatRequestBodySchema,
+  formatZodError,
+} from "@carver/shared";
+import type {
+  CarverAiJobRecord,
+  ChatRequestBody,
+  CreateAiJobRequest,
+  GeneratedCanvasImage,
+} from "@carver/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
-import { badRequest, stringValue } from "../../app/api/_lib/http";
+import { badRequest } from "../../app/api/_lib/http";
 import { normalizeOpenAIChatModel } from "../openaiChatModels";
 import { createProjectAiJob } from "./aiJobService";
 import { detectChatGenerationIntent } from "./chatGenerationIntent";
@@ -380,34 +389,15 @@ function buildChatDebugHeaders(params: {
   return headers;
 }
 
-function readChatInputImages(body: Record<string, unknown>) {
-  const value = body.images;
-  if (!Array.isArray(value)) {
-    return [] as ChatInputImage[];
-  }
-
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") {
-      return [];
-    }
-
-    const candidate = item as Record<string, unknown>;
-    const imageUrl = typeof candidate.imageUrl === "string" ? candidate.imageUrl.trim() : "";
-    const label = typeof candidate.label === "string" ? candidate.label.trim() : undefined;
-    const source =
-      candidate.source === "attachment" ||
-      candidate.source === "canvas-target" ||
-      candidate.source === "canvas-reference" ||
-      candidate.source === "preset-reference"
-        ? candidate.source
-        : undefined;
-
-    if (!imageUrl) {
-      return [];
-    }
-
-    return [{ imageUrl, label, source } satisfies ChatInputImage];
-  });
+function readChatInputImages(body: ChatRequestBody) {
+  return (body.images ?? []).map(
+    (image) =>
+      ({
+        imageUrl: image.imageUrl,
+        label: image.label,
+        source: image.source,
+      }) satisfies ChatInputImage,
+  );
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
@@ -577,27 +567,29 @@ export async function sendChatMessage(params: {
   job?: CarverAiJobRecord;
   creditsRemaining: number | null;
 }>> {
-  const rawPrompt = stringValue(params.body, "rawPrompt");
-  const content = stringValue(params.body, "content");
-  const canvasId = stringValue(params.body, "canvasId") ?? "canvas-main";
-  const projectId = stringValue(params.body, "projectId") ?? getProjectIdFromUrl(params.request.url);
-  const model = normalizeOpenAIChatModel(stringValue(params.body, "model"));
-  const images = readChatInputImages(params.body);
+  const parsedBody = chatRequestBodySchema.safeParse(params.body);
+  if (!parsedBody.success) {
+    return { ok: false, response: badRequest(formatZodError(parsedBody.error)) };
+  }
+
+  const body = parsedBody.data;
+  const rawPrompt = body.rawPrompt;
+  const content = body.content;
+  const canvasId = body.canvasId ?? "canvas-main";
+  const projectId = body.projectId ?? getProjectIdFromUrl(params.request.url);
+  const model = normalizeOpenAIChatModel(body.model);
+  const images = readChatInputImages(body);
   const messageContent =
     content ??
     rawPrompt ??
     (images.length > 0 ? "Describe these image references for landscape design context." : undefined);
-
-  if (!messageContent && images.length === 0) {
-    return { ok: false, response: badRequest("content or images are required") };
-  }
 
   const projectResult = await requireOwnedChatProject(params.context, projectId);
   if ("error" in projectResult) {
     return { ok: false, response: projectResult.error };
   }
 
-  const generationContext = objectValue(params.body.canvasGraphContext);
+  const generationContext = objectValue(body.canvasGraphContext);
   const imageReferenceCount =
     (Array.isArray(generationContext?.imageReferences) ? generationContext.imageReferences.length : 0) +
     (Array.isArray(generationContext?.presetReferences) ? generationContext.presetReferences.length : 0);
@@ -614,7 +606,7 @@ export async function sendChatMessage(params: {
       context: params.context,
       projectId: projectResult.project.id,
       canvasId,
-      body: params.body,
+      body,
       prompt: rawPrompt ?? messageContent ?? "",
       images,
       executionMode: generationIntent.executionMode,

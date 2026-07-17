@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { createSafeLogger, coerceCanvasSnapshotDocument } from "@carver/shared";
+import {
+  createAiJobBodySchema,
+  createSafeLogger,
+  coerceCanvasSnapshotDocument,
+  formatZodError,
+} from "@carver/shared";
 import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type {
   CarverAiJobRecord,
@@ -8,13 +13,14 @@ import type {
   CarverAiJobSimulationConfig,
   CarverAiJobSimulationScenario,
   CarverImageExecutionMode,
+  CreateAiJobBody,
   CreateAiJobRequest,
   QueuedCarverAiJobPayload,
 } from "@carver/shared";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
-import { apiFailure, badRequest, stringArrayValue, stringValue } from "../../app/api/_lib/http";
+import { apiFailure, badRequest } from "../../app/api/_lib/http";
 import { checkRateLimit } from "../../app/api/_lib/rateLimit";
 import { resolveAiJobResultAssetUrls } from "./assetService";
 import {
@@ -229,9 +235,15 @@ export async function createProjectAiJob(params: {
   request: Request;
   context: RequestContext;
   projectId: string;
-  body: Record<string, unknown>;
+  body: Record<string, unknown> | CreateAiJobBody;
 }): Promise<CreateProjectAiJobResult> {
-  const { request, context, projectId, body } = params;
+  const { request, context, projectId } = params;
+  const parsedBody = createAiJobBodySchema.safeParse(params.body);
+  if (!parsedBody.success) {
+    return { ok: false, response: badRequest(formatZodError(parsedBody.error)) };
+  }
+
+  const body = parsedBody.data;
 
   if (!projectId) {
     return { ok: false, response: badRequest("projectId is required") };
@@ -241,19 +253,18 @@ export async function createProjectAiJob(params: {
     return { ok: false, response: badRequest("projectId is invalid") };
   }
 
-  const prompt = stringValue(body, "prompt") ?? stringValue(body, "rawPrompt");
+  const prompt = body.prompt ?? body.rawPrompt;
   if (!prompt) {
     return { ok: false, response: badRequest("prompt is required") };
   }
-
-  const inputSnapshotId = stringValue(body, "inputSnapshotId");
-  const threadId = stringValue(body, "threadId");
-  const referenceAssetIds = stringArrayValue(body, "referenceAssetIds") ?? [];
+  const inputSnapshotId = body.inputSnapshotId;
+  const threadId = body.threadId;
+  const referenceAssetIds = body.referenceAssetIds ?? [];
   const selection = normalizeSelection(body.selection);
   const promptMode = normalizePromptMode(body.promptMode);
   const jobType = normalizeJobType(body.jobType);
   const requestedExecutionMode = normalizeExecutionMode(body.executionMode);
-  const targetNodeId = stringValue(body, "targetNodeId");
+  const targetNodeId = body.targetNodeId;
   const canvasGraphContext = objectValue(body.canvasGraphContext);
   const maskInput = maskValue(body.mask);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
@@ -531,7 +542,7 @@ export async function createProjectAiJob(params: {
   );
 
   const idempotencyKey =
-    stringValue(body, "idempotencyKey") ??
+    body.idempotencyKey ??
     buildIdempotencyKey({
       userId: user.id,
       projectId,
