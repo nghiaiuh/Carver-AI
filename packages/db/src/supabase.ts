@@ -18,7 +18,10 @@ export const createBrowserSupabaseClient = (): SupabaseClient<Database> => {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      // OAuth callbacks are completed explicitly in the web app. This prevents
+      // Supabase from leaving implicit-flow credentials in the visible URL.
+      detectSessionInUrl: false,
+      flowType: "pkce",
     },
     db: {
       schema: "public",

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import {
   buildAuthPageHref,
-  buildOAuthRedirectUrl,
+  buildAuthCallbackUrl,
+  clearAuthCredentialsFromUrl,
   getAuthRedirectPath,
   getBrowserAuthClient,
+  getLegacyHashSession,
   normalizeNextPath,
 } from "./authClient";
 import { useAuthSession } from "./useAuthSession";
@@ -49,6 +51,25 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
     router.replace(getAuthRedirectPath(nextPath));
   }, [nextPath, router, status]);
 
+  useEffect(() => {
+    const legacySession = getLegacyHashSession();
+    if (!legacySession) return;
+
+    const supabase = getBrowserAuthClient();
+    // Remove credentials from the address bar before any asynchronous work.
+    clearAuthCredentialsFromUrl();
+
+    if (!supabase) {
+      setError("Supabase is not configured yet.");
+      return;
+    }
+
+    void supabase.auth.setSession({
+      access_token: legacySession.accessToken,
+      refresh_token: legacySession.refreshToken,
+    });
+  }, []);
+
   const isRegister = mode === "register";
 
   const submitLabel = isRegister ? "Create account" : "Sign in";
@@ -74,7 +95,7 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: buildOAuthRedirectUrl(isRegister ? "/register" : "/login", nextPath),
+        redirectTo: buildAuthCallbackUrl(nextPath),
       },
     });
 
@@ -116,7 +137,7 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
           email: email.trim(),
           password,
           options: {
-            emailRedirectTo: buildOAuthRedirectUrl("/login", nextPath),
+            emailRedirectTo: buildAuthCallbackUrl(nextPath),
           },
         });
 
