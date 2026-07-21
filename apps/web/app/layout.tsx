@@ -6,12 +6,14 @@
  */
 
 import type { ReactNode } from "react";
+import AuthCodeExchangeFallback from "./components/auth/AuthCodeExchangeFallback";
 import "./globals.css";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased">
+        <AuthCodeExchangeFallback />
         {children}
       </body>
     </html>
