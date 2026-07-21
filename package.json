@@ -12,6 +12,8 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "storage:landing:dry-run": "node scripts/upload-landing-assets.mjs --dry-run",
+    "storage:landing:upload": "node scripts/upload-landing-assets.mjs",
     "storage:orphan-r2:dry-run": "node scripts/orphan-r2-cleanup.mjs",
     "storage:orphan-r2:delete": "node scripts/orphan-r2-cleanup.mjs --delete"
   },

@@ -1,11 +1,19 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight, FolderOpen, Leaf, Loader2, Plus } from "lucide-react";
 import { buildAuthPageHref, getBrowserAuthClient } from "./auth/authClient";
 import { useAuthSession } from "./auth/useAuthSession";
+import { getLandingAssetUrl } from "./landingAssetUrl";
+
+const projectPreviewImages = [
+  getLandingAssetUrl("/landing/hero-courtyard-reference.png"),
+  getLandingAssetUrl("/landing/gallery-zen.webp"),
+];
 
 type LandingProject = {
   id: string;
@@ -133,7 +141,8 @@ export default function RecentProjectsSection() {
     };
   }, [status]);
 
-  const recentProjects = useMemo(() => projects.slice(0, 4), [projects]);
+  const recentProjects = useMemo(() => projects.slice(0, 2), [projects]);
+  const activityProjects = useMemo(() => projects.slice(0, 4), [projects]);
 
   const createProject = async () => {
     if (creatingProject) {
@@ -178,11 +187,11 @@ export default function RecentProjectsSection() {
   };
 
   return (
-    <div className="mt-14">
-      <div className="mb-7 flex items-end justify-between gap-4 border-b border-[#17372A]/15 pb-5">
+    <div className="mx-auto max-w-[1280px]">
+      <div className="mb-8 flex items-end justify-between gap-4 border-b border-[#B59C6B]/45 pb-5">
         <div>
-          <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-[#17372A]">Recent projects</h3>
-          <p className="mt-2 text-sm font-medium text-[#17372A]/48">
+          <h3 className="botanical-display mt-3 text-[clamp(2.4rem,3.5vw,4.05rem)] font-medium leading-[0.92] tracking-[-0.05em] text-[#17372A]">Your projects</h3>
+          <p className="mt-5 text-sm font-medium text-[#9A7A43]">
             {status === "authenticated"
               ? "Tiếp tục phát triển những phương án gần đây của bạn."
               : "Đăng nhập để xem các dự án cảnh quan đã lưu."}
@@ -190,7 +199,7 @@ export default function RecentProjectsSection() {
         </div>
         <Link
           href={status === "authenticated" ? "/canvas" : buildAuthPageHref("/login", pathname, "recent-projects")}
-          className="inline-flex items-center gap-2 text-sm font-bold text-[#62755B] transition hover:text-[#17372A]"
+          className="inline-flex -translate-y-5 items-center gap-3 rounded-md border border-[#B59C6B]/40 bg-white/25 px-5 py-3 text-sm font-semibold text-[#17372A] transition hover:border-[#9A7A43]/70 hover:bg-white/55"
         >
           {status === "authenticated" ? "Mở canvas" : "Đăng nhập"}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -203,36 +212,40 @@ export default function RecentProjectsSection() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(200px,0.78fr)_minmax(270px,1.08fr)_minmax(270px,1.08fr)_minmax(230px,0.92fr)]">
         <button
           type="button"
           onClick={() => void createProject()}
           disabled={creatingProject}
-          className="group flex min-h-[232px] flex-col justify-between rounded-[1.5rem] border border-dashed border-[#17372A]/22 bg-[#F5F2E9]/55 p-6 text-left transition hover:border-[#62755B] hover:bg-[#F5F2E9] disabled:cursor-not-allowed disabled:opacity-70"
+          className="group relative flex min-h-[390px] flex-col justify-between overflow-hidden rounded-[1.25rem] border border-dashed border-[#B59C6B]/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(244,236,221,0.86))] p-7 text-left transition hover:-translate-y-1 hover:border-[#9A7A43]/70 hover:shadow-[0_24px_48px_rgba(40,53,38,0.12)] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          <span className="grid h-12 w-12 place-items-center rounded-full border border-[#17372A]/18 text-[#17372A] transition group-hover:rotate-[-8deg] group-hover:bg-[#C7F36B]">
-            {creatingProject ? <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" /> : <Plus className="h-8 w-8" aria-hidden="true" />}
+          <span className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(154,122,67,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(154,122,67,0.1)_1px,transparent_1px)] [background-size:26px_26px]" />
+          <span className="pointer-events-none absolute left-1/2 top-[30%] h-36 w-36 -translate-x-1/2 rounded-full border border-[#B59C6B]/20" />
+          <span className="pointer-events-none absolute left-[22%] top-[41%] h-16 w-16 rounded-full border border-[#B59C6B]/15" />
+          <span className="relative grid h-20 w-20 place-items-center rounded-full border border-[#B59C6B]/65 bg-[#FBF7EE] text-[#17372A] shadow-[0_14px_30px_rgba(81,67,41,0.13)] transition group-hover:rotate-[-8deg] group-hover:bg-[#F1E5CB]">
+            {creatingProject ? <Loader2 className="h-9 w-9 animate-spin" aria-hidden="true" /> : <Plus className="h-9 w-9" aria-hidden="true" />}
           </span>
-          <div>
-            <span className="font-[family-name:var(--font-botanical-display)] text-2xl font-semibold tracking-[-0.03em]">Dự án mới</span>
-            <p className="mt-2 text-sm font-medium leading-6 text-[#17372A]/48">
+          <div className="relative">
+            <span className="font-[family-name:var(--font-botanical-display)] text-[1.9rem] font-medium tracking-[-0.04em] text-[#17372A]">Dự án mới</span>
+            <p className="mt-2 text-sm leading-6 text-[#17372A]">
               {status === "authenticated" ? "Mở một canvas cảnh quan mới" : "Đăng nhập để tạo project đầu tiên"}
             </p>
+            <span className="mt-7 inline-flex items-center gap-2 text-sm font-medium text-[#9A7A43]">Bắt đầu <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" /></span>
           </div>
         </button>
 
         {status === "loading" || loadingProjects ? (
-          Array.from({ length: 4 }).map((_, index) => (
+          Array.from({ length: 2 }).map((_, index) => (
             <div
               key={`project-skeleton-${index}`}
-              className="min-h-[232px] rounded-[1.5rem] border border-[#17372A]/8 bg-[#F5F2E9]/60 p-5"
+              className="min-h-[390px] overflow-hidden rounded-[1.25rem] border border-[#8C7D68]/12 bg-[#F7F2E9]"
             >
-              <div className="h-28 animate-pulse rounded-[1.2rem] bg-black/[0.05]" />
-              <div className="mt-4 h-5 w-2/3 animate-pulse rounded-full bg-black/[0.06]" />
-              <div className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-black/[0.05]" />
+              <div className="h-[238px] animate-pulse bg-black/[0.05]" />
+              <div className="m-6 h-5 w-2/3 animate-pulse rounded-full bg-black/[0.06]" />
+              <div className="mx-6 h-4 w-1/2 animate-pulse rounded-full bg-black/[0.05]" />
             </div>
           ))
-        ) : status !== "authenticated" ? (
+        ) : false && status !== "authenticated" ? (
           <div className="md:col-span-1 xl:col-span-4 flex min-h-[232px] flex-col justify-center rounded-[1.5rem] border border-[#17372A]/12 bg-[#E4E7D8] p-8">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#17372A] text-[#F5F2E9]">
               <Leaf className="h-5 w-5" aria-hidden="true" />
@@ -253,7 +266,7 @@ export default function RecentProjectsSection() {
               </Link>
             </div>
           </div>
-        ) : recentProjects.length === 0 ? (
+        ) : false && recentProjects.length === 0 ? (
           <div className="md:col-span-1 xl:col-span-4 flex min-h-[232px] flex-col justify-center rounded-[1.5rem] border border-[#17372A]/12 bg-[#E4E7D8] p-8">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#C7F36B] text-[#17372A]">
               <FolderOpen className="h-5 w-5" aria-hidden="true" />
@@ -270,34 +283,28 @@ export default function RecentProjectsSection() {
             <Link
               key={project.id}
               href={`/canvas?projectId=${project.id}`}
-              className="group flex min-h-[232px] flex-col overflow-hidden rounded-[1.5rem] border border-[#17372A]/12 bg-[#F5F2E9] transition hover:-translate-y-1 hover:border-[#62755B]/45 hover:shadow-[0_20px_50px_rgba(23,55,42,0.10)]"
+              className="group flex min-h-[390px] flex-col overflow-hidden rounded-[1.25rem] border border-[#17372A]/12 bg-[#FAF6ED] transition hover:-translate-y-1 hover:border-[#9A7A43]/45 hover:shadow-[0_24px_48px_rgba(23,55,42,0.13)]"
             >
-              <div
-                className="flex h-[124px] items-end justify-between px-5 py-4 text-white"
-                style={{
-                  background: [
-                    "linear-gradient(135deg, rgba(23,55,42,0.98), rgba(98,117,91,0.86))",
-                    "radial-gradient(circle at top right, rgba(255,255,255,0.12), transparent 34%)",
-                  ].join(", "),
-                }}
-              >
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-sm font-black">
+              <div className="relative flex h-[238px] items-end overflow-hidden px-5 py-4 text-white">
+                <img src={projectPreviewImages[index % projectPreviewImages.length]} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/58 via-black/5 to-black/5" />
+                <span className="absolute left-4 top-4 rounded-sm bg-[#17372A]/92 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F9F5E9]">
+                  <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-[#D5B66F]" />{project.status}
+                </span>
+                <div className="relative border-b border-[#D5B66F]/85 pb-1 text-3xl font-medium leading-none text-white/92">
                   {String(index + 1).padStart(2, "0")}
                 </div>
-                <span className="rounded-full border border-white/18 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/78">
-                  {project.status}
-                </span>
               </div>
-              <div className="flex flex-1 flex-col p-5">
-                <h3 className="font-[family-name:var(--font-botanical-display)] text-xl font-semibold leading-tight tracking-[-0.025em] text-[#17372A] transition group-hover:text-[#62755B]">
+              <div className="flex flex-1 flex-col p-6">
+                <h3 className="font-[family-name:var(--font-botanical-display)] text-[1.7rem] font-medium leading-[0.98] tracking-[-0.035em] text-[#17372A] transition group-hover:text-[#62755B]">
                   {project.name}
                 </h3>
-                <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#17372A]/52">
+                <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#17372A]">
                   {buildProjectSubtitle(project)}
                 </p>
-                <div className="mt-auto flex items-center justify-between pt-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#17372A]/38">
+                <div className="mt-auto flex items-center justify-between pt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[#17372A]">
                   <span>Updated {formatProjectDate(project.updated_at)}</span>
-                  <span className="inline-flex items-center gap-1.5 text-[#62755B]">
+                  <span className="inline-flex items-center gap-2 text-[#62755B]">
                     Mở
                     <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden="true" />
                   </span>
@@ -306,6 +313,27 @@ export default function RecentProjectsSection() {
             </Link>
           ))
         )}
+
+        {status === "authenticated" && !loadingProjects ? (
+          <aside className="hidden min-h-[390px] flex-col rounded-[1.25rem] border border-[#B59C6B]/24 bg-[linear-gradient(135deg,rgba(255,255,255,0.48),rgba(245,237,222,0.72))] p-6 xl:flex">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#9A7A43]">Continue designing</p>
+            <div className="mt-5 space-y-4 border-t border-[#B59C6B]/35 pt-4">
+              {activityProjects.length ? activityProjects.map((project, index) => (
+                <Link key={project.id} href={`/canvas?projectId=${project.id}`} className="group flex items-center gap-3 border-b border-[#17372A]/8 pb-4 last:border-0">
+                  <img src={projectPreviewImages[index % projectPreviewImages.length]} alt="" className="h-12 w-12 rounded-lg object-cover" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-bold text-[#17372A]">{project.name}</span>
+                    <span className="mt-0.5 block text-[10px] text-[#17372A]/48">Edited {formatProjectDate(project.updated_at)}</span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-[#9A7A43] transition group-hover:translate-x-0.5" />
+                </Link>
+              )) : <p className="text-sm leading-6 text-[#17372A]/48">Your active studies will appear here.</p>}
+            </div>
+            <Link href="/canvas" className="mt-auto inline-flex items-center justify-between gap-2 border-b border-[#B59C6B]/55 pb-2 text-sm font-medium text-[#17372A] transition hover:border-[#9A7A43] hover:text-[#9A7A43]">
+              Open recent canvases <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </aside>
+        ) : null}
       </div>
     </div>
   );
