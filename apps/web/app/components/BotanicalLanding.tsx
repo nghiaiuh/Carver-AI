@@ -431,21 +431,23 @@ export default function BotanicalLanding() {
             </div>
           <img src={BOTANICAL_CORNER_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -left-[13rem] top-[6rem] hidden w-72 -scale-x-100 opacity-50 lg:block" />
           <img src={BOTANICAL_WREATH_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -right-32 top-1/2 hidden w-80 -translate-y-1/2 opacity-46 lg:block" />
-            <div className="relative mx-auto grid max-w-[1180px] grid-cols-[1.08fr_0.92fr] items-center gap-3 rounded-[0.9rem] border border-[#294539]/12 bg-[#FCFAF5] p-2 sm:grid-cols-[1.18fr_0.92fr_0.56fr] sm:gap-5 sm:p-4">
-              <div className="relative aspect-[1.2] overflow-hidden rounded-[0.6rem] sm:aspect-[1.48]">
+            <div className="relative mx-auto grid max-w-[1180px] grid-cols-1 items-center gap-3 rounded-[0.9rem] border border-[#294539]/12 bg-[#FCFAF5] p-3 min-[751px]:grid-cols-[1.18fr_0.92fr_0.56fr] min-[751px]:gap-5 min-[751px]:p-4">
+              <div className="relative aspect-[1.48] overflow-hidden rounded-[0.6rem]">
                 <img src={templateCards[0].image} alt="Koi courtyard retreat" className="h-full w-full object-cover" />
                 <span className="absolute left-3 top-3 grid h-11 w-11 place-items-center rounded-full border border-[#EED9A7]/55 bg-[#A88A50]/90 text-[8px] font-bold uppercase tracking-[0.12em] text-white">Winner</span>
               </div>
-              <div className="px-2 py-1 sm:px-3">
+              <div className="px-1 py-1 pb-1 min-[751px]:px-3">
                 <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#59715D] sm:text-[11px] sm:tracking-[0.18em]">June 2026</p>
                 <h2 className="botanical-display mt-1.5 text-[1.55rem] font-medium leading-[0.92] tracking-[-0.045em] text-[#294539] sm:mt-2 sm:text-[clamp(2rem,3vw,3rem)]">Koi courtyard retreat</h2>
                 <p className="mt-3 text-sm leading-6 text-[#294539]/62">“A calm sequence of water, stone, and verdant layers that frames everyday life as a quiet ritual.”</p>
-                <p className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#59715D]"><span className="h-5 w-5 rounded-full bg-[#486044]" /> Designed by Garden Studio</p>
-                <Link href={primaryHref} className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#A88A50] px-3 py-2 text-[10px] font-bold text-white transition hover:bg-[#8E733F] sm:mt-5 sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs">
-                  View project <ArrowRight className="h-4 w-4" />
-                </Link>
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold text-[#59715D]"><span className="h-5 w-5 rounded-full bg-[#486044]" /> Designed by Garden Studio</p>
+                  <Link href={primaryHref} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#A88A50] px-3 py-2 text-[10px] font-bold text-white transition hover:bg-[#8E733F] sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs">
+                    View project <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
               </div>
-              <div className="relative hidden aspect-[0.82] overflow-hidden rounded-[0.55rem] sm:block">
+              <div className="relative hidden aspect-[0.82] overflow-hidden rounded-[0.55rem] min-[751px]:block">
                 <img src={GALLERY_TROPICAL_IMAGE} alt="Winner detail" className="h-full w-full object-cover" />
               </div>
             </div>
