@@ -1,30 +1,37 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   clearAuthCredentialsFromUrl,
+  getAuthRedirectPath,
   getBrowserAuthClient,
 } from "./authClient";
 
 export default function AuthCodeExchangeFallback() {
+  const router = useRouter();
   const hasHandledCode = useRef(false);
 
   useEffect(() => {
-    if (hasHandledCode.current || window.location.pathname === "/auth/callback") return;
+    if (hasHandledCode.current) return;
 
-    const authorizationCode = new URLSearchParams(window.location.search).get("code");
+    const searchParams = new URLSearchParams(window.location.search);
+    const authorizationCode = searchParams.get("code");
     if (!authorizationCode) return;
 
     hasHandledCode.current = true;
     const supabase = getBrowserAuthClient();
 
-    // A misconfigured Supabase redirect can fall back to the site URL. Complete
-    // the PKCE flow here as a safe fallback and remove the code immediately.
+    // Complete the PKCE hand-off without rendering a separate callback screen.
     clearAuthCredentialsFromUrl();
     if (!supabase) return;
 
-    void supabase.auth.exchangeCodeForSession(authorizationCode);
-  }, []);
+    void supabase.auth.exchangeCodeForSession(authorizationCode).then(({ error }) => {
+      if (!error) {
+        router.replace(getAuthRedirectPath(searchParams.get("next")));
+      }
+    });
+  }, [router]);
 
   return null;
 }

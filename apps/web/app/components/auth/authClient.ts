@@ -34,7 +34,9 @@ export function buildAuthPageHref(pathname: "/login" | "/register", nextPath?: s
 }
 
 export function buildAuthCallbackUrl(nextPath?: string | null) {
-  const url = new URL("/auth/callback", window.location.origin);
+  // Keep the PKCE hand-off invisible: the landing page exchanges the code in
+  // the background, then moves the user directly to their intended workspace.
+  const url = new URL("/", window.location.origin);
   const normalizedNext = normalizeNextPath(nextPath);
   if (normalizedNext !== "/") {
     url.searchParams.set("next", normalizedNext);
