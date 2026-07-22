@@ -257,8 +257,8 @@ export default function BotanicalLanding() {
         <img src={HERO_IMAGE} alt="Luxury courtyard landscape" className="absolute inset-0 h-full w-full object-cover object-top" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,13,9,0.42)_0%,rgba(5,13,9,0.50)_48%,rgba(5,13,9,0.14)_74%,rgba(5,13,9,0.08)_100%)]" />
 
-        <div className="relative z-10 mx-auto flex min-h-[100svh] max-w-[1520px] items-center px-5 pb-10 pt-24 sm:pb-12 sm:pt-28 lg:px-10 lg:pb-12 lg:pt-24">
-          <div className="mx-auto flex w-full max-w-[940px] translate-y-1 flex-col items-center text-center sm:translate-y-2 lg:translate-y-3">
+        <div className="relative z-10 mx-auto flex min-h-[50rem] max-w-[1520px] items-center px-5 pb-4 pt-24 sm:min-h-[50rem] sm:pb-6 sm:pt-28 lg:min-h-[44rem] lg:px-10 lg:pb-8 lg:pt-20 xl:min-h-[100svh] xl:pb-12 xl:pt-24">
+          <div className="mx-auto flex w-full max-w-[940px] translate-y-1 flex-col items-center text-center sm:translate-y-2 lg:translate-y-0 xl:translate-y-3">
             <h1
               data-intro="title"
               className="botanical-display max-w-[680px] text-[clamp(2.85rem,4.7vw,4.8rem)] font-medium leading-[0.88] tracking-[-0.05em] text-[#F5EFE6]"
@@ -356,21 +356,21 @@ export default function BotanicalLanding() {
           </div>
         </div>
 
-        <section id="projects" className="relative z-10 px-4 pb-0 pt-10 sm:px-6 sm:pt-12 lg:px-10 lg:pt-14">
-          <div className="relative mx-auto max-w-[1320px] rounded-t-[1.75rem] border border-b-0 border-[#D8CEBE] bg-[#F3EEE4] px-5 py-10 shadow-[0_32px_90px_rgba(4,16,11,0.24)] sm:px-8 sm:py-11 lg:rounded-t-[2.2rem] lg:px-12 lg:py-14">
+        <section id="projects" className="relative z-10 px-3 pb-0 pt-3 sm:px-6 sm:pt-6 lg:px-10 lg:pt-14">
+          <div className="relative mx-auto max-w-[1320px] rounded-t-[1.4rem] border border-b-0 border-[#D8CEBE] bg-[#F3EEE4] px-3 py-5 shadow-[0_32px_90px_rgba(4,16,11,0.24)] sm:rounded-t-[1.75rem] sm:px-8 sm:py-11 lg:rounded-t-[2.2rem] lg:px-12 lg:py-14">
             <RecentProjectsSection />
           </div>
         </section>
       </section>
 
-      <div className="relative z-10 flex min-h-40 items-center justify-center overflow-hidden bg-[#CBD3C4] px-5 py-5 text-[#17372A] lg:px-10 lg:py-6">
+      <div className="relative z-10 flex min-h-[5.5rem] items-center justify-center overflow-hidden bg-[#CBD3C4] px-5 py-3 text-[#17372A] sm:min-h-40 sm:py-5 lg:px-10 lg:py-6">
         <img src={BRIDGE_PLAN_IMAGE} alt="" className="absolute inset-0 h-full w-full object-cover opacity-70" />
         <p className="relative mx-auto text-center botanical-display text-[clamp(1.25rem,3vw,2rem)] font-medium italic leading-none tracking-[-0.03em] text-[#F7F4EC]">
           From real space to refined direction
         </p>
       </div>
 
-      <section id="templates" data-template-section className="relative z-10 overflow-hidden bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.9),transparent_42%),#F6F2E9] px-5 py-14 text-[#294539] lg:px-10 lg:py-20">
+      <section id="templates" data-template-section className="relative z-10 overflow-hidden bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.9),transparent_42%),#F6F2E9] px-4 py-10 text-[#294539] sm:px-5 sm:py-14 lg:px-10 lg:py-20">
         <img
           src={BOTANICAL_WREATH_IMAGE}
           alt=""
@@ -394,7 +394,7 @@ export default function BotanicalLanding() {
             </Link>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3 lg:grid-cols-4">
             {templateCards.slice(1, 5).map(({ title, image, tone }, index) => (
               <article
                 key={title}
@@ -410,11 +410,11 @@ export default function BotanicalLanding() {
                     {String(index + 1).padStart(2, "0")}
                   </span>
                 </div>
-                <div className="p-2.5">
+                <div className="p-2 sm:p-2.5">
                   <div>
-                    <h3 className="botanical-display text-[1.1rem] font-medium leading-none tracking-[-0.03em] text-[#294539]">{title}</h3>
+                    <h3 className="botanical-display text-[0.92rem] font-medium leading-none tracking-[-0.03em] text-[#294539] sm:text-[1.1rem]">{title}</h3>
                   </div>
-                  <div className="mt-2 flex items-center justify-between">
+                  <div className="mt-1.5 flex items-center justify-between sm:mt-2">
                     <span className="rounded-full border border-[#294539]/10 bg-[#F6F2E9] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.1em] text-[#59715D]">{tone}</span>
                     <span className="text-[11px] text-[#294539]/45">&#9825; {128 - index * 11}</span>
                   </div>
@@ -422,7 +422,7 @@ export default function BotanicalLanding() {
               </article>
             ))}
           </div>
-          <div className="relative mt-8 border-y border-[#294539]/15 py-8 sm:py-10">
+          <div className="relative mt-6 border-y border-[#294539]/15 py-6 sm:mt-8 sm:py-10">
             <div className="flex items-end justify-between gap-5 pb-4">
               <div>
                 <h2 className="botanical-display text-[clamp(1.7rem,2.5vw,2.45rem)] font-medium leading-none tracking-[-0.04em] text-[#294539]">Winner project of the month</h2>
@@ -431,52 +431,52 @@ export default function BotanicalLanding() {
             </div>
           <img src={BOTANICAL_CORNER_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -left-[13rem] top-[6rem] hidden w-72 -scale-x-100 opacity-50 lg:block" />
           <img src={BOTANICAL_WREATH_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -right-32 top-1/2 hidden w-80 -translate-y-1/2 opacity-46 lg:block" />
-            <div className="relative mx-auto grid max-w-[1180px] items-center gap-5 rounded-[0.9rem] border border-[#294539]/12 bg-[#FCFAF5] p-3 sm:grid-cols-[1.18fr_0.92fr_0.56fr] sm:p-4">
-              <div className="relative aspect-[1.48] overflow-hidden rounded-[0.6rem]">
+            <div className="relative mx-auto grid max-w-[1180px] grid-cols-[1.08fr_0.92fr] items-center gap-3 rounded-[0.9rem] border border-[#294539]/12 bg-[#FCFAF5] p-2 sm:grid-cols-[1.18fr_0.92fr_0.56fr] sm:gap-5 sm:p-4">
+              <div className="relative aspect-[1.2] overflow-hidden rounded-[0.6rem] sm:aspect-[1.48]">
                 <img src={templateCards[0].image} alt="Koi courtyard retreat" className="h-full w-full object-cover" />
                 <span className="absolute left-3 top-3 grid h-11 w-11 place-items-center rounded-full border border-[#EED9A7]/55 bg-[#A88A50]/90 text-[8px] font-bold uppercase tracking-[0.12em] text-white">Winner</span>
               </div>
               <div className="px-2 py-1 sm:px-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#59715D]">June 2026</p>
-                <h2 className="botanical-display mt-2 text-[clamp(2rem,3vw,3rem)] font-medium leading-[0.92] tracking-[-0.045em] text-[#294539]">Koi courtyard retreat</h2>
+                <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#59715D] sm:text-[11px] sm:tracking-[0.18em]">June 2026</p>
+                <h2 className="botanical-display mt-1.5 text-[1.55rem] font-medium leading-[0.92] tracking-[-0.045em] text-[#294539] sm:mt-2 sm:text-[clamp(2rem,3vw,3rem)]">Koi courtyard retreat</h2>
                 <p className="mt-3 text-sm leading-6 text-[#294539]/62">“A calm sequence of water, stone, and verdant layers that frames everyday life as a quiet ritual.”</p>
                 <p className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#59715D]"><span className="h-5 w-5 rounded-full bg-[#486044]" /> Designed by Garden Studio</p>
-                <Link href={primaryHref} className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#A88A50] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#8E733F]">
+                <Link href={primaryHref} className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#A88A50] px-3 py-2 text-[10px] font-bold text-white transition hover:bg-[#8E733F] sm:mt-5 sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs">
                   View project <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="relative aspect-[0.82] overflow-hidden rounded-[0.55rem]">
+              <div className="relative hidden aspect-[0.82] overflow-hidden rounded-[0.55rem] sm:block">
                 <img src={GALLERY_TROPICAL_IMAGE} alt="Winner detail" className="h-full w-full object-cover" />
               </div>
             </div>
           </div>
 
-          <div className="relative mt-9 flex flex-col gap-5 border-b border-[#294539]/15 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="relative mt-6 flex flex-col gap-3 border-b border-[#294539]/15 pb-4 sm:mt-9 sm:gap-5 sm:flex-row sm:items-end sm:justify-between">
             <img src={BOTANICAL_SPRIG_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -right-20 -top-10 hidden h-80 w-auto -scale-x-100 -rotate-[-20deg] opacity-60 xl:block" />
             <img src={BOTANICAL_SPRIG_IMAGE} alt="" aria-hidden="true" className="pointer-events-none absolute -left-24 top-24 hidden h-72 w-auto -rotate-[18deg] opacity-34 xl:block" />
             <div>
               <h2 className="botanical-display text-[clamp(1.7rem,2.5vw,2.45rem)] font-medium leading-none tracking-[-0.04em] text-[#294539]">Inspiration</h2>
               <p className="mt-2 text-xs text-[#294539]/58">Explore styles and spark new ideas.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
               {["All", "Courtyard", "Tropical", "Zen", "Night"].map((filter, index) => (
-                <button key={filter} type="button" className={`rounded-full border px-3.5 py-1.5 text-[10px] font-semibold transition ${index === 0 ? "border-[#294539] bg-[#294539] text-[#F7F4EC]" : "border-[#294539]/12 bg-[#FCFAF5]/65 text-[#294539]/62 hover:bg-white"}`}>
+                <button key={filter} type="button" className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold transition sm:px-3.5 sm:py-1.5 sm:text-[10px] ${index === 0 ? "border-[#294539] bg-[#294539] text-[#F7F4EC]" : "border-[#294539]/12 bg-[#FCFAF5]/65 text-[#294539]/62 hover:bg-white"}`}>
                   {filter}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-3 lg:grid-cols-4">
             {templateCards.slice(1).map(({ title, image, tone }, index) => (
               <article key={title} className="group overflow-hidden rounded-[0.65rem] border border-[#294539]/12 bg-[#FCFAF5]/72 transition hover:-translate-y-1 hover:bg-[#FFFEFA] hover:shadow-[0_14px_28px_rgba(41,69,57,0.07)]">
                 <div className="relative aspect-[1.55] overflow-hidden">
                   <img src={image} alt={title} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
                   <span className="absolute left-2 top-2 rounded-full border border-[#294539]/12 bg-[#F8F5ED]/95 px-2 py-0.5 text-[9px] font-bold text-[#294539]">{String(index + 1).padStart(2, "0")}</span>
                 </div>
-                <div className="p-2.5">
-                  <h3 className="botanical-display text-[1.08rem] font-medium leading-none tracking-[-0.03em] text-[#294539]">{title}</h3>
-                  <div className="mt-2 flex items-center justify-between">
+                <div className="p-2 sm:p-2.5">
+                  <h3 className="botanical-display text-[0.92rem] font-medium leading-none tracking-[-0.03em] text-[#294539] sm:text-[1.08rem]">{title}</h3>
+                  <div className="mt-1.5 flex items-center justify-between sm:mt-2">
                     <span className="rounded-full border border-[#294539]/10 bg-[#F6F2E9] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.1em] text-[#59715D]">{tone}</span>
                     <span className="text-[11px] text-[#294539]/45">&#9825; {142 - index * 9}</span>
                   </div>
@@ -485,7 +485,7 @@ export default function BotanicalLanding() {
             ))}
           </div>
 
-          <div className="mt-7 text-center">
+          <div className="mt-5 text-center sm:mt-7">
             <Link href={primaryHref} className="inline-flex items-center gap-2 rounded-full border border-[#294539]/12 bg-[#EEE9DE] px-5 py-2.5 text-xs font-bold text-[#294539] transition hover:bg-white">
               Browse more inspiration <ArrowRight className="h-4 w-4" />
             </Link>
@@ -493,15 +493,15 @@ export default function BotanicalLanding() {
         </div>
       </section>
 
-      <footer className="relative overflow-hidden bg-[#080D0B] px-5 pb-8 pt-14 text-[#F5F0E5] lg:px-10 lg:pt-16">
+      <footer className="relative overflow-hidden bg-[#080D0B] px-5 pb-8 pt-9 text-[#F5F0E5] sm:pt-14 lg:px-10 lg:pt-16">
         <img src={FOOTER_CONTOUR_IMAGE} alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(149, 154, 152, 0.1),rgba(8,13,11,0.78))]" />
         <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full border border-[#D5E0C7]/10" />
         <div className="pointer-events-none absolute -left-20 bottom-0 h-56 w-56 rounded-full bg-[#64795E]/10 blur-3xl" />
         <div className="relative mx-auto max-w-[1480px]">
-          <div className="grid gap-12 border-b border-white/12 pb-14 md:grid-cols-[1.35fr_0.7fr_0.7fr_0.9fr]">
-            <div>
-              <Link href="/" className="botanical-display text-4xl font-medium tracking-[-0.04em]">Carver AI</Link>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-8 border-b border-white/12 pb-8 md:grid-cols-[1.35fr_0.7fr_0.7fr_0.9fr] md:gap-12 md:pb-14">
+            <div className="col-span-2 md:col-span-1">
+              <Link href="/" className="botanical-display text-[2rem] font-medium tracking-[-0.04em] sm:text-4xl">Carver AI</Link>
               <p className="mt-5 max-w-sm text-sm leading-7 text-white/58">AI landscape design for real spaces, built around controlled composition and the details worth preserving.</p>
               <Link href={primaryHref} className="mt-7 inline-flex items-center gap-2 rounded-full bg-[#E7EEE0] px-5 py-3 text-sm font-bold text-[#17372A] transition hover:bg-white">
                 Open your canvas <ArrowRight className="h-4 w-4" />

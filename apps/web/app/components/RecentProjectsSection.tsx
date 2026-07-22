@@ -188,10 +188,10 @@ export default function RecentProjectsSection() {
 
   return (
     <div className="mx-auto max-w-[1280px]">
-      <div className="mb-8 flex items-end justify-between gap-4 border-b border-[#B59C6B]/45 pb-5">
+      <div className="mb-4 flex items-start justify-between gap-3 border-b border-[#B59C6B]/45 pb-3 sm:mb-8 sm:items-end sm:gap-4 sm:pb-5">
         <div>
-          <h3 className="botanical-display mt-3 text-[clamp(2.4rem,3.5vw,4.05rem)] font-medium leading-[0.92] tracking-[-0.05em] text-[#17372A]">Your projects</h3>
-          <p className="mt-5 text-sm font-medium text-[#9A7A43]">
+          <h3 className="botanical-display text-[1.95rem] font-medium leading-[0.92] tracking-[-0.05em] text-[#17372A] sm:mt-3 sm:text-[clamp(2.4rem,3.5vw,4.05rem)]">Your projects</h3>
+          <p className="mt-2 max-w-[12rem] text-[11px] font-medium leading-4 text-[#9A7A43] sm:mt-5 sm:max-w-none sm:text-sm sm:leading-normal">
             {status === "authenticated"
               ? "Tiếp tục phát triển những phương án gần đây của bạn."
               : "Đăng nhập để xem các dự án cảnh quan đã lưu."}
@@ -199,7 +199,7 @@ export default function RecentProjectsSection() {
         </div>
         <Link
           href={status === "authenticated" ? "/canvas" : buildAuthPageHref("/login", pathname, "recent-projects")}
-          className="inline-flex -translate-y-5 items-center gap-3 rounded-md border border-[#B59C6B]/40 bg-white/25 px-5 py-3 text-sm font-semibold text-[#17372A] transition hover:border-[#9A7A43]/70 hover:bg-white/55"
+          className="inline-flex items-center gap-1.5 rounded-md border border-[#B59C6B]/40 bg-white/25 px-3 py-2 text-[11px] font-semibold text-[#17372A] transition hover:border-[#9A7A43]/70 hover:bg-white/55 sm:-translate-y-5 sm:gap-3 sm:px-5 sm:py-3 sm:text-sm"
         >
           {status === "authenticated" ? "Mở canvas" : "Đăng nhập"}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -212,18 +212,18 @@ export default function RecentProjectsSection() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(200px,0.78fr)_minmax(270px,1.08fr)_minmax(270px,1.08fr)_minmax(230px,0.92fr)]">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-[minmax(200px,0.78fr)_minmax(270px,1.08fr)_minmax(270px,1.08fr)_minmax(230px,0.92fr)]">
         <button
           type="button"
           onClick={() => void createProject()}
           disabled={creatingProject}
-          className="group relative flex min-h-[390px] flex-col justify-between overflow-hidden rounded-[1.25rem] border border-dashed border-[#B59C6B]/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(244,236,221,0.86))] p-7 text-left transition hover:-translate-y-1 hover:border-[#9A7A43]/70 hover:shadow-[0_24px_48px_rgba(40,53,38,0.12)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-[1rem] border border-dashed border-[#B59C6B]/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(244,236,221,0.86))] p-4 text-left transition hover:-translate-y-1 hover:border-[#9A7A43]/70 hover:shadow-[0_24px_48px_rgba(40,53,38,0.12)] disabled:cursor-not-allowed disabled:opacity-70 sm:min-h-[390px] sm:rounded-[1.25rem] sm:p-7"
         >
           <span className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(154,122,67,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(154,122,67,0.1)_1px,transparent_1px)] [background-size:26px_26px]" />
-          <span className="pointer-events-none absolute left-1/2 top-[30%] h-36 w-36 -translate-x-1/2 rounded-full border border-[#B59C6B]/20" />
-          <span className="pointer-events-none absolute left-[22%] top-[41%] h-16 w-16 rounded-full border border-[#B59C6B]/15" />
-          <span className="relative grid h-20 w-20 place-items-center rounded-full border border-[#B59C6B]/65 bg-[#FBF7EE] text-[#17372A] shadow-[0_14px_30px_rgba(81,67,41,0.13)] transition group-hover:rotate-[-8deg] group-hover:bg-[#F1E5CB]">
-            {creatingProject ? <Loader2 className="h-9 w-9 animate-spin" aria-hidden="true" /> : <Plus className="h-9 w-9" aria-hidden="true" />}
+          <span className="pointer-events-none absolute left-1/2 top-[30%] h-24 w-24 -translate-x-1/2 rounded-full border border-[#B59C6B]/20 sm:h-36 sm:w-36" />
+          <span className="pointer-events-none absolute left-[22%] top-[41%] h-11 w-11 rounded-full border border-[#B59C6B]/15 sm:h-16 sm:w-16" />
+          <span className="relative grid h-11 w-11 place-items-center rounded-full border border-[#B59C6B]/65 bg-[#FBF7EE] text-[#17372A] shadow-[0_14px_30px_rgba(81,67,41,0.13)] transition group-hover:rotate-[-8deg] group-hover:bg-[#F1E5CB] sm:h-20 sm:w-20">
+            {creatingProject ? <Loader2 className="h-5 w-5 animate-spin sm:h-9 sm:w-9" aria-hidden="true" /> : <Plus className="h-5 w-5 sm:h-9 sm:w-9" aria-hidden="true" />}
           </span>
           <div className="relative">
             <span className="font-[family-name:var(--font-botanical-display)] text-[1.9rem] font-medium tracking-[-0.04em] text-[#17372A]">Dự án mới</span>
@@ -238,9 +238,9 @@ export default function RecentProjectsSection() {
           Array.from({ length: 2 }).map((_, index) => (
             <div
               key={`project-skeleton-${index}`}
-              className="min-h-[390px] overflow-hidden rounded-[1.25rem] border border-[#8C7D68]/12 bg-[#F7F2E9]"
+               className="min-h-[220px] overflow-hidden rounded-[1rem] border border-[#8C7D68]/12 bg-[#F7F2E9] sm:min-h-[390px] sm:rounded-[1.25rem]"
             >
-              <div className="h-[238px] animate-pulse bg-black/[0.05]" />
+               <div className="h-[118px] animate-pulse bg-black/[0.05] sm:h-[238px]" />
               <div className="m-6 h-5 w-2/3 animate-pulse rounded-full bg-black/[0.06]" />
               <div className="mx-6 h-4 w-1/2 animate-pulse rounded-full bg-black/[0.05]" />
             </div>
@@ -283,26 +283,26 @@ export default function RecentProjectsSection() {
             <Link
               key={project.id}
               href={`/canvas?projectId=${project.id}`}
-              className="group flex min-h-[390px] flex-col overflow-hidden rounded-[1.25rem] border border-[#17372A]/12 bg-[#FAF6ED] transition hover:-translate-y-1 hover:border-[#9A7A43]/45 hover:shadow-[0_24px_48px_rgba(23,55,42,0.13)]"
+              className="group flex min-h-[220px] flex-col overflow-hidden rounded-[1rem] border border-[#17372A]/12 bg-[#FAF6ED] transition hover:-translate-y-1 hover:border-[#9A7A43]/45 hover:shadow-[0_24px_48px_rgba(23,55,42,0.13)] sm:min-h-[390px] sm:rounded-[1.25rem]"
             >
-              <div className="relative flex h-[238px] items-end overflow-hidden px-5 py-4 text-white">
+              <div className="relative flex h-[118px] items-end overflow-hidden px-3 py-2 text-white sm:h-[238px] sm:px-5 sm:py-4">
                 <img src={projectPreviewImages[index % projectPreviewImages.length]} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/58 via-black/5 to-black/5" />
-                <span className="absolute left-4 top-4 rounded-sm bg-[#17372A]/92 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F9F5E9]">
+                <span className="absolute left-2 top-2 rounded-sm bg-[#17372A]/92 px-2 py-1 text-[8px] font-bold uppercase tracking-[0.13em] text-[#F9F5E9] sm:left-4 sm:top-4 sm:px-3 sm:py-2 sm:text-[10px] sm:tracking-[0.18em]">
                   <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-[#D5B66F]" />{project.status}
                 </span>
-                <div className="relative border-b border-[#D5B66F]/85 pb-1 text-3xl font-medium leading-none text-white/92">
+                <div className="relative border-b border-[#D5B66F]/85 pb-1 text-xl font-medium leading-none text-white/92 sm:text-3xl">
                   {String(index + 1).padStart(2, "0")}
                 </div>
               </div>
-              <div className="flex flex-1 flex-col p-6">
-                <h3 className="font-[family-name:var(--font-botanical-display)] text-[1.7rem] font-medium leading-[0.98] tracking-[-0.035em] text-[#17372A] transition group-hover:text-[#62755B]">
+              <div className="flex flex-1 flex-col p-3 sm:p-6">
+                <h3 className="font-[family-name:var(--font-botanical-display)] text-[1.12rem] font-medium leading-[0.98] tracking-[-0.035em] text-[#17372A] transition group-hover:text-[#62755B] sm:text-[1.7rem]">
                   {project.name}
                 </h3>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#17372A]">
+                <p className="mt-1 line-clamp-1 text-[10px] leading-4 text-[#17372A] sm:mt-3 sm:line-clamp-2 sm:text-sm sm:leading-6">
                   {buildProjectSubtitle(project)}
                 </p>
-                <div className="mt-auto flex items-center justify-between pt-5 text-[10px] font-bold uppercase tracking-[0.15em] text-[#17372A]">
+                <div className="mt-auto flex items-center justify-between pt-3 text-[8px] font-bold uppercase tracking-[0.08em] text-[#17372A] sm:pt-5 sm:text-[10px] sm:tracking-[0.15em]">
                   <span>Updated {formatProjectDate(project.updated_at)}</span>
                   <span className="inline-flex items-center gap-2 text-[#62755B]">
                     Mở
