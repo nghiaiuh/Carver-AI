@@ -7,10 +7,8 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import {
   buildAuthPageHref,
   buildAuthCallbackUrl,
-  clearAuthCredentialsFromUrl,
   getAuthRedirectPath,
   getBrowserAuthClient,
-  getLegacyHashSession,
   normalizeNextPath,
 } from "./authClient";
 import { useAuthSession } from "./useAuthSession";
@@ -50,25 +48,6 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
     if (status !== "authenticated") return;
     router.replace(getAuthRedirectPath(nextPath));
   }, [nextPath, router, status]);
-
-  useEffect(() => {
-    const legacySession = getLegacyHashSession();
-    if (!legacySession) return;
-
-    const supabase = getBrowserAuthClient();
-    // Remove credentials from the address bar before any asynchronous work.
-    clearAuthCredentialsFromUrl();
-
-    if (!supabase) {
-      setError("Supabase is not configured yet.");
-      return;
-    }
-
-    void supabase.auth.setSession({
-      access_token: legacySession.accessToken,
-      refresh_token: legacySession.refreshToken,
-    });
-  }, []);
 
   const isRegister = mode === "register";
 

@@ -5,7 +5,8 @@
  * 3. Export shared DB primitives to apps.
  */
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabasePublicEnv } from "./env";
 import type { Database } from "./types";
 
@@ -14,12 +15,11 @@ let browserClient: SupabaseClient<Database> | null = null;
 export const createBrowserSupabaseClient = (): SupabaseClient<Database> => {
   const { url, anonKey } = getSupabasePublicEnv();
 
-  return createClient<Database>(url, anonKey, {
+  return createBrowserClient<Database>(url, anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // OAuth callbacks are completed explicitly in the web app. This prevents
-      // Supabase from leaving implicit-flow credentials in the visible URL.
+      // The server callback exchanges PKCE codes before rendering a page.
       detectSessionInUrl: false,
       flowType: "pkce",
     },

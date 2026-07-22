@@ -16,6 +16,7 @@
     "@carver/shared": "*",
     "@carver/storage": "*",
     "@gsap/react": "^2.1.2",
+    "@supabase/ssr": "^0.12.3",
     "framer-motion": "^12.40.0",
     "gsap": "^3.15.0",
     "lucide-react": "^1.16.0",

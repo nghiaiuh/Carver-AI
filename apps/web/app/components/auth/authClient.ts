@@ -16,7 +16,7 @@ export function getBrowserAuthClient(): SupabaseClient<Database> | null {
 export function normalizeNextPath(value: string | null | undefined) {
   if (!value) return "/";
   const trimmed = value.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return "/";
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\")) return "/";
   return trimmed;
 }
 
@@ -34,45 +34,12 @@ export function buildAuthPageHref(pathname: "/login" | "/register", nextPath?: s
 }
 
 export function buildAuthCallbackUrl(nextPath?: string | null) {
-  // Keep the PKCE hand-off invisible: the landing page exchanges the code in
-  // the background, then moves the user directly to their intended workspace.
-  const url = new URL("/", window.location.origin);
+  const url = new URL("/auth/callback", window.location.origin);
   const normalizedNext = normalizeNextPath(nextPath);
   if (normalizedNext !== "/") {
     url.searchParams.set("next", normalizedNext);
   }
   return url.toString();
-}
-
-type LegacyHashSession = {
-  accessToken: string;
-  refreshToken: string;
-};
-
-export function getLegacyHashSession(): LegacyHashSession | null {
-  if (typeof window === "undefined" || !window.location.hash) return null;
-
-  const params = new URLSearchParams(window.location.hash.slice(1));
-  const accessToken = params.get("access_token");
-  const refreshToken = params.get("refresh_token");
-
-  return accessToken && refreshToken ? { accessToken, refreshToken } : null;
-}
-
-export function clearAuthCredentialsFromUrl() {
-  if (typeof window === "undefined") return;
-
-  const url = new URL(window.location.href);
-  url.hash = "";
-  url.searchParams.delete("code");
-  url.searchParams.delete("access_token");
-  url.searchParams.delete("refresh_token");
-  url.searchParams.delete("provider_token");
-  url.searchParams.delete("token_type");
-  url.searchParams.delete("expires_at");
-  url.searchParams.delete("expires_in");
-
-  window.history.replaceState(window.history.state, document.title, `${url.pathname}${url.search}`);
 }
 
 export function subscribeToAuthSession(
