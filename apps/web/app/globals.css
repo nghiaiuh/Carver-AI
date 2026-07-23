@@ -26,6 +26,14 @@
   font-family: var(--font-botanical-sans);
 }
 
+/* Landing imagery is presentational; keep card and link interactions on its wrapper. */
+.botanical-landing img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+}
+
 .botanical-display {
   font-family: var(--font-botanical-display);
 }
