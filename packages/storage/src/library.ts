@@ -318,7 +318,7 @@ export const uploadLibraryAssets = async (params: {
   const nextAssets: LibraryAssetRow[] = [];
 
   for (const file of params.files) {
-    const sourceImage = sharp(file.bytes, { failOn: "none" }).rotate();
+    const sourceImage = sharp(file.bytes, { failOn: "none", limitInputPixels: 40_000_000 }).rotate();
     const metadata = await sourceImage.metadata();
     if (!metadata.width || !metadata.height) {
       throw new Error("Unable to read image dimensions.");
@@ -343,7 +343,7 @@ export const uploadLibraryAssets = async (params: {
     const previewStoragePath = createR2ObjectKey([...baseParts, "preview"], `${safeFileName}.${extension}`);
 
     const contentType = targetFormat === "png" ? "image/png" : "image/jpeg";
-    const [originalUrl, thumbUrl, previewUrl] = await Promise.all([
+    await Promise.all([
       uploadR2Object({
         key: originalStoragePath,
         body: originalBuffer,
@@ -384,9 +384,10 @@ export const uploadLibraryAssets = async (params: {
         thumb_storage_path: thumbStoragePath,
         preview_storage_path: previewStoragePath,
         original_storage_path: originalStoragePath,
-        thumb_url: thumbUrl,
-        preview_url: previewUrl,
-        original_url: originalUrl,
+        // Runtime URLs are minted by the app gateway, never persisted in R2 metadata.
+        thumb_url: `asset://${assetId}`,
+        preview_url: `asset://${assetId}`,
+        original_url: `asset://${assetId}`,
         metadata: {
           sourceFileName: file.name,
           targetFormat,
@@ -394,11 +395,6 @@ export const uploadLibraryAssets = async (params: {
           folderTitle: folder.title,
           originalWidth: metadata.width ?? null,
           originalHeight: metadata.height ?? null,
-          imageUrls: {
-            thumb: thumbUrl,
-            preview: previewUrl,
-            original: originalUrl,
-          },
         },
       })
       .select()

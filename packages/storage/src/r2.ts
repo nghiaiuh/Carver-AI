@@ -18,7 +18,6 @@ export type R2Env = {
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
-  publicBaseUrl: string | null;
 };
 
 const stripWrappingQuotes = (value: string) => value.replace(/^['"]|['"]$/g, "");
@@ -37,7 +36,6 @@ export const getR2Env = (env: Record<string, string | undefined> = process.env):
   accessKeyId: readRequired(env, "CLOUDFLARE_R2_ACCESS_KEY_ID"),
   secretAccessKey: readRequired(env, "CLOUDFLARE_R2_SECRET_ACCESS_KEY"),
   bucket: readRequired(env, "CLOUDFLARE_R2_BUCKET"),
-  publicBaseUrl: env.CLOUDFLARE_R2_PUBLIC_BASE_URL ? stripWrappingQuotes(env.CLOUDFLARE_R2_PUBLIC_BASE_URL) : null,
 });
 
 let r2Client: S3Client | null = null;
@@ -60,15 +58,6 @@ export const getR2Client = () => {
 };
 
 export const getR2Bucket = () => getR2Env().bucket;
-
-export const getR2PublicUrl = (key: string) => {
-  const { publicBaseUrl } = getR2Env();
-  if (!publicBaseUrl) {
-    return `r2://${key}`;
-  }
-
-  return new URL(key, publicBaseUrl.endsWith("/") ? publicBaseUrl : `${publicBaseUrl}/`).toString();
-};
 
 export const createR2ObjectKey = (parts: string[], fileName: string) => {
   const cleanParts = parts
@@ -114,7 +103,6 @@ export async function uploadR2Object(params: {
 
   await client.send(new PutObjectCommand(input));
 
-  return getR2PublicUrl(params.key);
 }
 
 export async function deleteR2Objects(keys: string[]) {

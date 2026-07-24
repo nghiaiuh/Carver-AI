@@ -11,7 +11,6 @@ import {
   createR2ObjectKey,
   deleteR2Objects,
   getR2ObjectBuffer,
-  getR2PublicUrl,
   listR2Objects,
   uploadR2Object,
   type R2ObjectSummary,
@@ -332,10 +331,6 @@ export async function syncLibraryFromBucket(params: {
         const title = humanizeSourceName(sourceFileName);
         const mimeType = inferMimeType(original.key);
         const targetFormat = inferTargetFormat({ mimeType, hasAlpha: Boolean(metadata.hasAlpha) });
-        const originalUrl = getR2PublicUrl(original.key);
-        const thumbUrl = getR2PublicUrl(thumb.key);
-        const previewUrl = getR2PublicUrl(preview.key);
-
         const { data, error } = await supabase
           .from("library_assets")
           .insert({
@@ -354,9 +349,9 @@ export async function syncLibraryFromBucket(params: {
             thumb_storage_path: thumb.key,
             preview_storage_path: preview.key,
             original_storage_path: original.key,
-            thumb_url: thumbUrl,
-            preview_url: previewUrl,
-            original_url: originalUrl,
+            thumb_url: `asset://${group.assetId}`,
+            preview_url: `asset://${group.assetId}`,
+            original_url: `asset://${group.assetId}`,
             metadata: {
               importedFrom: "cloudflare-r2",
               importedAt: new Date().toISOString(),
@@ -368,11 +363,6 @@ export async function syncLibraryFromBucket(params: {
                 thumb: thumb.key,
                 preview: preview.key,
                 original: original.key,
-              },
-              imageUrls: {
-                thumb: thumbUrl,
-                preview: previewUrl,
-                original: originalUrl,
               },
               targetFormat,
             },
@@ -416,7 +406,7 @@ export async function syncLibraryFromBucket(params: {
 
       const contentType =
         mimeType === "image/webp" ? "image/webp" : targetFormat === "png" ? "image/png" : "image/jpeg";
-      const [thumbUrl, previewUrl] = await Promise.all([
+      await Promise.all([
         uploadR2Object({
           key: thumbStoragePath,
           body: thumbBuffer,
@@ -429,7 +419,6 @@ export async function syncLibraryFromBucket(params: {
         }),
       ]);
 
-      const originalUrl = getR2PublicUrl(original.key);
       const { data, error } = await supabase
         .from("library_assets")
         .insert({
@@ -448,9 +437,9 @@ export async function syncLibraryFromBucket(params: {
           thumb_storage_path: thumbStoragePath,
           preview_storage_path: previewStoragePath,
           original_storage_path: original.key,
-          thumb_url: thumbUrl,
-          preview_url: previewUrl,
-          original_url: originalUrl,
+          thumb_url: `asset://${group.assetId}`,
+          preview_url: `asset://${group.assetId}`,
+          original_url: `asset://${group.assetId}`,
           metadata: {
             importedFrom: "cloudflare-r2",
             importedAt: new Date().toISOString(),
@@ -459,11 +448,6 @@ export async function syncLibraryFromBucket(params: {
             sourceFileName,
             sourceAssetId: group.assetId,
             sourceOriginalKey: original.key,
-            imageUrls: {
-              thumb: thumbUrl,
-              preview: previewUrl,
-              original: originalUrl,
-            },
             targetFormat,
           },
         })

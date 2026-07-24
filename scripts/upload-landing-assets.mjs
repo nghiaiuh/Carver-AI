@@ -45,11 +45,14 @@ await loadEnvFile(path.resolve(process.cwd(), "apps/web/.env.local"));
 await loadEnvFile(path.resolve(process.cwd(), "apps/worker/.env"));
 await loadEnvFile(path.resolve(process.cwd(), "apps/worker/.env.local"));
 
+const landingBucket = process.env.CLOUDFLARE_LANDING_R2_BUCKET;
+const landingPublicBaseUrl = process.env.CLOUDFLARE_LANDING_PUBLIC_BASE_URL?.replace(/\/+$/, "");
+
 const required = [
   "CLOUDFLARE_R2_ACCOUNT_ID",
   "CLOUDFLARE_R2_ACCESS_KEY_ID",
   "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
-  "CLOUDFLARE_R2_BUCKET",
+  "CLOUDFLARE_LANDING_R2_BUCKET",
 ];
 
 const missing = required.filter((key) => !process.env[key]);
@@ -104,8 +107,7 @@ async function collectFiles(dir) {
 }
 
 function toPublicUrl(key) {
-  const publicBaseUrl = process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL?.replace(/\/+$/, "");
-  return publicBaseUrl ? `${publicBaseUrl}/${key}` : null;
+  return landingPublicBaseUrl ? `${landingPublicBaseUrl}/${key}` : null;
 }
 
 const files = await collectFiles(rootDir);
@@ -120,7 +122,7 @@ for (const filePath of files) {
   if (!dryRun) {
     await r2.send(
       new PutObjectCommand({
-        Bucket: process.env.CLOUDFLARE_R2_BUCKET,
+        Bucket: landingBucket,
         Key: key,
         Body: body,
         ContentType: contentType,
@@ -145,8 +147,8 @@ console.log(
       rootDir,
       keyPrefix,
       fileCount: uploaded.length,
-      publicBaseUrl: process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ?? null,
-      suggestedNextPublicLandingAssetBaseUrl: process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL ?? null,
+      publicBaseUrl: landingPublicBaseUrl ?? null,
+      suggestedNextPublicLandingAssetBaseUrl: landingPublicBaseUrl ?? null,
       uploaded,
     },
     null,
