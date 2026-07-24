@@ -20,6 +20,17 @@ type AuthFormProps = {
   nextPath?: string;
 };
 
+const MIN_PASSWORD_LENGTH = 12;
+
+function hasStrongPassword(value: string) {
+  return (
+    value.length >= MIN_PASSWORD_LENGTH &&
+    /[a-z]/.test(value) &&
+    /[A-Z]/.test(value) &&
+    /\d/.test(value)
+  );
+}
+
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -80,7 +91,7 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
 
     if (oauthError) {
       setOauthLoading(false);
-      setError(oauthError.message || "Unable to start Google sign-in.");
+      setError("Unable to start Google sign-in. Please try again.");
     }
   };
 
@@ -104,6 +115,11 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
       return;
     }
 
+    if (isRegister && !hasStrongPassword(password)) {
+      setError("Use at least 12 characters with uppercase, lowercase, and a number.");
+      return;
+    }
+
     startTransition(async () => {
       const supabase = getBrowserAuthClient();
       if (!supabase) {
@@ -121,7 +137,7 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
         });
 
         if (signUpError) {
-          setError(signUpError.message || "Unable to create your account.");
+          setError("Unable to create the account. Check your details or try signing in instead.");
           return;
         }
 
@@ -140,7 +156,7 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
       });
 
       if (signInError) {
-        setError(signInError.message || "Unable to sign in.");
+        setError("Unable to sign in with those credentials.");
         return;
       }
 
@@ -234,16 +250,10 @@ export default function AuthForm({ mode, nextPath: rawNextPath }: AuthFormProps)
             </label>
           ) : null}
 
-          {!isRegister ? (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="text-sm font-semibold text-black/48 transition hover:text-[#101412]"
-                onClick={() => setInfo("Password reset can be added next. Use Google sign-in or create a new password flow later.")}
-              >
-                Forgot password?
-              </button>
-            </div>
+          {isRegister ? (
+            <p className="text-xs leading-5 text-black/46">
+              Use 12 or more characters with uppercase, lowercase, and a number.
+            </p>
           ) : null}
 
           <button

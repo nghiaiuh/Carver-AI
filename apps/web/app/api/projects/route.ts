@@ -10,7 +10,11 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
-import { readJsonObject, serverError, stringValue } from "../_lib/http";
+import { apiFailure, readJsonObject, serverError, stringValue } from "../_lib/http";
+import { enforceRateLimit } from "../_lib/rateLimit";
+
+const MAX_PROJECT_NAME_LENGTH = 160;
+const MAX_PROJECT_TEXT_LENGTH = 4_000;
 
 export async function GET(request: Request) {
   const context = await getRequestContext(request);
@@ -45,74 +49,49 @@ export async function POST(request: Request) {
   const description = stringValue(body, "description") ?? null;
   const landscapeGoal = stringValue(body, "landscape_goal") ?? null;
 
-  const { supabase, user } = context;
+  if (
+    name.length > MAX_PROJECT_NAME_LENGTH ||
+    (description?.length ?? 0) > MAX_PROJECT_TEXT_LENGTH ||
+    (landscapeGoal?.length ?? 0) > MAX_PROJECT_TEXT_LENGTH
+  ) {
+    return apiFailure("BAD_REQUEST", "Project details are too long.", 400, context.requestId);
+  }
+
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "project-create",
+    limit: 10,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
+  const { supabase } = context;
   const initialSnapshot = createEmptyCanvasSnapshotDocument();
   const initialSnapshotHash = createHash("sha256")
     .update(JSON.stringify(initialSnapshot))
     .digest("hex");
 
-  const { data: project, error: projectError } = await supabase
-    .from("projects")
-    .insert({
-      owner_id: user.id,
-      name,
-      description,
-      landscape_goal: landscapeGoal,
-    })
-    .select()
-    .single();
+  const rpcClient = supabase as typeof supabase & {
+    rpc: (
+      functionName: "create_project_workspace",
+      params: Record<string, unknown>,
+    ) => Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>;
+  };
+  const { data, error } = await rpcClient.rpc("create_project_workspace", {
+    p_name: name,
+    p_description: description,
+    p_landscape_goal: landscapeGoal,
+    p_initial_snapshot: initialSnapshot,
+    p_initial_snapshot_hash: initialSnapshotHash,
+  });
 
-  if (projectError) {
-    return serverError();
-  }
-
-  const { data: snapshot, error: snapshotError } = await supabase
-    .from("canvas_snapshots")
-    .insert({
-      project_id: project.id,
-      version: 1,
-      canvas_json: initialSnapshot,
-      created_by: user.id,
-      snapshot_kind: "initial",
-      is_user_visible: false,
-      document_hash: initialSnapshotHash,
-    })
-    .select()
-    .single();
-
-  if (snapshotError) {
-    return serverError();
-  }
-
-  const [{ error: projectUpdateError }, { data: brief }, { data: thread }] =
-    await Promise.all([
-      supabase
-        .from("projects")
-        .update({ current_canvas_snapshot_id: snapshot.id })
-        .eq("id", project.id),
-      supabase
-        .from("landscape_briefs")
-        .insert({ project_id: project.id })
-        .select()
-        .single(),
-      supabase
-        .from("chat_threads")
-        .insert({ project_id: project.id })
-        .select()
-        .single(),
-    ]);
-
-  if (projectUpdateError) {
-    return serverError();
+  if (error || !data) {
+    return apiFailure("PROJECT_CREATE_FAILED", "Unable to create the project.", 500, context.requestId);
   }
 
   return NextResponse.json(
-    {
-      project: { ...project, current_canvas_snapshot_id: snapshot.id },
-      current_snapshot: snapshot,
-      landscape_brief: brief,
-      chat_thread: thread,
-    },
-    { status: 201 }
+    data,
+    { status: 201 },
   );
 }

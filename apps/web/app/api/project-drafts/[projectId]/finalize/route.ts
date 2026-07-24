@@ -7,6 +7,7 @@ import {
   getProjectCanvasDraftErrorStatus,
 } from "../../../../../lib/server/draftService";
 import { createSafeLogger } from "@carver/shared";
+import { enforceRateLimit } from "../../../_lib/rateLimit";
 
 const logger = createSafeLogger("web.project-drafts.finalize");
 
@@ -35,6 +36,15 @@ export async function POST(
   const projectResult = await requireProjectOwner(context, projectId);
   if ("error" in projectResult) {
     return projectResult.error;
+  }
+
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "project-draft-finalize",
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
   }
 
   const body = await readJsonObject(request);

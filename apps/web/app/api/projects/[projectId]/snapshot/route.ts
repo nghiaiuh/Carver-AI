@@ -79,7 +79,13 @@ export async function GET(
       success: true,
       data: {
         projectId,
-        document: resolveCanvasSnapshotAssetUrls(request.url, loaded.document),
+        document: await resolveCanvasSnapshotAssetUrls({
+          requestUrl: request.url,
+          document: loaded.document,
+          supabase: context.supabase,
+          userId: context.user.id,
+          projectId,
+        }),
         snapshot: loaded.snapshot,
       },
     });

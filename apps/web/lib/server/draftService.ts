@@ -131,10 +131,7 @@ function isDraftPermissionMessage(message: string) {
 }
 
 export function getProjectCanvasDraftErrorMessage(error: unknown, fallback: string) {
-  if (process.env.NODE_ENV !== "production" && error instanceof Error && error.message) {
-    return `${fallback} (${error.message})`;
-  }
-
+  // Database/RPC details belong in safe server logs, never in browser responses.
   return fallback;
 }
 

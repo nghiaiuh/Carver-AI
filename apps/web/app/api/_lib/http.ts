@@ -21,14 +21,8 @@ export type ApiFailure = {
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
-const REQUEST_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,128}$/;
-
-export const createRequestId = (request?: Request) => {
-  const forwardedRequestId = request?.headers.get("x-request-id")?.trim();
-  if (forwardedRequestId && REQUEST_ID_PATTERN.test(forwardedRequestId)) {
-    return forwardedRequestId;
-  }
-
+/** Server-generated IDs keep logs trustworthy; client headers are untrusted input. */
+export const createRequestId = (_request?: Request) => {
   return crypto.randomUUID();
 };
 
@@ -46,6 +40,7 @@ export const apiFailure = (
   error: string,
   status: number,
   requestId: string,
+  init?: ResponseInit,
 ) =>
   NextResponse.json<ApiFailure>(
     {
@@ -54,7 +49,7 @@ export const apiFailure = (
       error,
       requestId,
     },
-    { status },
+    { ...init, status },
   );
 
 export const readJsonObject = async (

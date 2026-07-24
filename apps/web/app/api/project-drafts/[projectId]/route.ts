@@ -3,7 +3,7 @@ import {
   type CanvasSnapshotDocument,
 } from "@carver/shared";
 import { apiFailure, apiSuccess, readJsonObject } from "../../_lib/http";
-import { requireProjectOwner, requireRequestContext } from "../../_lib/authz";
+import { isUuidLike, requireProjectOwner, requireRequestContext } from "../../_lib/authz";
 import {
   ProjectCanvasDraftConflictError,
   getProjectCanvasDraftErrorCode,
@@ -18,8 +18,10 @@ import {
 } from "../../../../lib/server/canvasSnapshotValidation";
 import { resolveCanvasSnapshotAssetUrls } from "../../../../lib/server/assetService";
 import { createSafeLogger } from "@carver/shared";
+import { enforceRateLimit } from "../../_lib/rateLimit";
 
 const logger = createSafeLogger("web.project-drafts");
+const MAX_DRAFT_REQUEST_BYTES = 5 * 1024 * 1024;
 
 type DraftRouteResponse = {
   projectId: string;
@@ -72,7 +74,13 @@ export async function GET(
     return apiSuccess<DraftRouteResponse>({
       projectId: projectResult.project.id,
       document: loaded.document
-        ? resolveCanvasSnapshotAssetUrls(request.url, loaded.document)
+        ? await resolveCanvasSnapshotAssetUrls({
+            requestUrl: request.url,
+            document: loaded.document,
+            supabase: context.supabase,
+            userId: context.user.id,
+            projectId: projectResult.project.id,
+          })
         : null,
       draft: loaded.draft,
     });
@@ -112,6 +120,20 @@ export async function PUT(
     return projectResult.error;
   }
 
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "project-draft-save",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_DRAFT_REQUEST_BYTES) {
+    return apiFailure("PAYLOAD_TOO_LARGE", "Canvas draft is too large.", 413, context.requestId);
+  }
+
   const body = await readJsonObject(request);
   const document = documentValue(body.document ?? body.snapshot);
   if (!document) {
@@ -138,14 +160,23 @@ export async function PUT(
     typeof body.documentHash === "string" && body.documentHash.trim()
       ? body.documentHash.trim()
       : null;
+  if (documentHash && (documentHash.length < 32 || documentHash.length > 128)) {
+    return apiFailure("BAD_REQUEST", "documentHash is invalid", 400, context.requestId);
+  }
   const mutationId =
     typeof body.mutationId === "string" && body.mutationId.trim()
       ? body.mutationId.trim()
       : null;
+  if (mutationId && mutationId.length > 128) {
+    return apiFailure("BAD_REQUEST", "mutationId is invalid", 400, context.requestId);
+  }
   const baseSnapshotId =
     typeof body.baseSnapshotId === "string" && body.baseSnapshotId.trim()
       ? body.baseSnapshotId.trim()
       : null;
+  if (baseSnapshotId && !isUuidLike(baseSnapshotId)) {
+    return apiFailure("BAD_REQUEST", "baseSnapshotId is invalid", 400, context.requestId);
+  }
 
   try {
     const savedDraft = await saveProjectCanvasDraft(context.supabase, {
