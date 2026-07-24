@@ -16,9 +16,11 @@ import {
 } from "@carver/shared";
 import { hasAllowedMagicBytes } from "@carver/storage";
 import { createSafeLogger } from "@carver/shared";
+import sharp from "sharp";
 
 const logger = createSafeLogger("worker.openai-image");
 const OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
+const MAX_PROVIDER_IMAGE_BYTES = 20 * 1024 * 1024;
 
 type OpenAIImageGenerationResponse = {
   data?: Array<{
@@ -49,14 +51,6 @@ function toBlobPart(buffer: Buffer) {
   return new Uint8Array(buffer);
 }
 
-function parseImageSize(size: string): { width: number; height: number } {
-  const [width, height] = size.split("x").map(Number);
-  return {
-    width: Number.isFinite(width) ? width : 1024,
-    height: Number.isFinite(height) ? height : 1024,
-  };
-}
-
 async function imageUrlToBuffer(imageUrl: string) {
   const response = await fetchWithTimeout(imageUrl, {
     timeoutMs: OPENAI_IMAGE_REQUEST_TIMEOUT_MS,
@@ -65,7 +59,20 @@ async function imageUrlToBuffer(imageUrl: string) {
     throw new Error("OpenAI returned an image URL that could not be downloaded.");
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get("content-type") ?? "";
+  const contentLength = Number(response.headers.get("content-length"));
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    throw new Error("OpenAI returned an invalid image content type.");
+  }
+  if (Number.isFinite(contentLength) && contentLength > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new Error("OpenAI returned an image that exceeds the output limit.");
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new Error("OpenAI returned an image that exceeds the output limit.");
+  }
+  return buffer;
 }
 
 function inferOutputMimeType(buffer: Buffer): OpenAiGeneratedImage["mimeType"] {
@@ -84,6 +91,24 @@ function inferOutputMimeType(buffer: Buffer): OpenAiGeneratedImage["mimeType"] {
   throw new Error("OpenAI returned image bytes with an unsupported format.");
 }
 
+async function inspectGeneratedImage(
+  buffer: Buffer,
+  mimeType: OpenAiGeneratedImage["mimeType"],
+): Promise<{ width: number; height: number }> {
+  const metadata = await sharp(buffer, {
+    failOn: "none",
+    limitInputPixels: 40_000_000,
+  }).metadata();
+  if (!metadata.width || !metadata.height || metadata.width > 8_000 || metadata.height > 8_000) {
+    throw new Error("OpenAI returned image dimensions outside supported limits.");
+  }
+  if (!hasAllowedMagicBytes(buffer, mimeType)) {
+    throw new Error("OpenAI returned image bytes with an unsupported format.");
+  }
+
+  return { width: metadata.width, height: metadata.height };
+}
+
 async function parseGeneratedImage(payload: OpenAIImageGenerationResponse) {
   const firstImage = payload.data?.[0];
   if (!firstImage) {
@@ -98,6 +123,9 @@ async function parseGeneratedImage(payload: OpenAIImageGenerationResponse) {
 
   if (!buffer) {
     throw new Error("Image generation returned no image buffer.");
+  }
+  if (buffer.length > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new Error("OpenAI returned an image that exceeds the output limit.");
   }
 
   return {
@@ -243,7 +271,7 @@ export async function generateImageFromPrompt(params: {
     mimeType,
   });
 
-  const { width, height } = parseImageSize(OPENAI_IMAGE_SIZE);
+  const { width, height } = await inspectGeneratedImage(buffer, mimeType);
   return {
     buffer,
     mimeType,

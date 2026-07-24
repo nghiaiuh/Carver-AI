@@ -16,18 +16,37 @@ export const AI_JOB_QUEUE_EVENT_NAME = "carver-ai-job";
 const resolveRedisConnection = () => {
   if (process.env.REDIS_URL) {
     const redisUrl = new URL(process.env.REDIS_URL);
+    const port = Number(redisUrl.port || 6379);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("REDIS_URL has an invalid port.");
+    }
+    if (process.env.NODE_ENV === "production" && redisUrl.protocol !== "rediss:") {
+      throw new Error("Production Redis must use a rediss:// URL.");
+    }
+    if (process.env.NODE_ENV === "production" && !redisUrl.password) {
+      throw new Error("Production Redis must require authentication.");
+    }
     return {
       host: redisUrl.hostname,
-      port: Number(redisUrl.port || 6379),
+      port,
       username: redisUrl.username || undefined,
       password: redisUrl.password || undefined,
       tls: redisUrl.protocol === "rediss:" ? {} : undefined,
     };
   }
 
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Production Redis must be configured with REDIS_URL using rediss://.");
+  }
+
+  const port = Number(process.env.REDIS_PORT ?? 6379);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("REDIS_PORT is invalid.");
+  }
+
   return {
     host: process.env.REDIS_HOST ?? "localhost",
-    port: Number(process.env.REDIS_PORT ?? 6379),
+    port,
     username: process.env.REDIS_USERNAME,
     password: process.env.REDIS_PASSWORD,
   };
