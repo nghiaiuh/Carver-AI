@@ -12,7 +12,7 @@ import { enhancePromptV2 } from "@carver/ai/prompt-engine/server";
 import { requireProjectOwner, requireRequestContext, isUuidLike } from "../../_lib/authz";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../_lib/credits";
 import { apiFailure, badRequest, readJsonObject, stringValue } from "../../_lib/http";
-import { checkRateLimit } from "../../_lib/rateLimit";
+import { enforceRateLimit } from "../../_lib/rateLimit";
 
 const MODE_VALUES: EnhanceMode[] = [
   "image_generation",
@@ -82,13 +82,13 @@ export async function POST(request: Request) {
     return context.error;
   }
 
-  const rateLimit = checkRateLimit({
-    key: `prompt-enhance:${context.user.id}`,
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "prompt-enhance",
     limit: 20,
     windowMs: 60_000,
   });
-  if (!rateLimit.allowed) {
-    return apiFailure("RATE_LIMITED", "Too many prompt enhance requests", 429, context.requestId);
+  if (!rateLimit.ok) {
+    return rateLimit.response;
   }
 
   const body = await readJsonObject(request);
@@ -133,11 +133,17 @@ export async function POST(request: Request) {
 
     const mode = modeValue(body);
 
-    const creditReservation = await reserveUserCredits(context, AI_CREDIT_COSTS.promptEnhance);
+    const creditOperationKey = `enhance:${context.requestId}`;
+    const creditReservation = await reserveUserCredits(
+      context,
+      AI_CREDIT_COSTS.promptEnhance,
+      creditOperationKey,
+      "prompt_enhance",
+    );
     if ("error" in creditReservation) {
       return creditReservation.error;
     }
-    reservedCredits = true;
+    reservedCredits = creditReservation.applied;
 
     const enhanced = await enhancePromptV2({
       rawPrompt,
@@ -173,9 +179,17 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (reservedCredits) {
-      await restoreUserCredits(context, AI_CREDIT_COSTS.promptEnhance).catch(() => undefined);
+      await restoreUserCredits(
+        context,
+        AI_CREDIT_COSTS.promptEnhance,
+        `enhance:${context.requestId}`,
+      ).catch(() => undefined);
     }
-    const message = error instanceof Error ? error.message : "Unable to enhance prompt right now.";
-    return apiFailure("PROMPT_ENHANCE_FAILED", message, 500, context.requestId);
+    return apiFailure(
+      "PROMPT_ENHANCE_FAILED",
+      "Unable to enhance prompt right now.",
+      502,
+      context.requestId,
+    );
   }
 }

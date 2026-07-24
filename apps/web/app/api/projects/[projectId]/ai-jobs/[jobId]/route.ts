@@ -62,11 +62,14 @@ export async function GET(
         errorMessage: job.error_message,
         createdAt: job.created_at,
         updatedAt: job.updated_at,
-        jobResult: resolveAiJobResultAssetUrls(
-          request.url,
-          isCarverAiJobResult(job.job_result) ? job.job_result : null,
-          job.status as CarverAiJobRecord["status"],
-        ),
+        jobResult: await resolveAiJobResultAssetUrls({
+          requestUrl: request.url,
+          result: isCarverAiJobResult(job.job_result) ? job.job_result : null,
+          jobStatus: job.status as CarverAiJobRecord["status"],
+          supabase: context.supabase,
+          userId: context.user.id,
+          projectId,
+        }),
       } satisfies CarverAiJobRecord,
     },
   });

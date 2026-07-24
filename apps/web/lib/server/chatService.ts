@@ -17,12 +17,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
 import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
-import { badRequest } from "../../app/api/_lib/http";
+import { apiFailure, badRequest } from "../../app/api/_lib/http";
+import { enforceRateLimit } from "../../app/api/_lib/rateLimit";
 import { normalizeOpenAIChatModel } from "../openaiChatModels";
 import { createProjectAiJob } from "./aiJobService";
 import { detectChatGenerationIntent } from "./chatGenerationIntent";
-import { resolveProjectChatMessageAssetUrls } from "./assetService";
+import {
+  extractAssetIdFromGatewayUrl,
+  resolveOwnedAssetUrls,
+  resolveProjectChatMessageAssetUrls,
+} from "./assetService";
 import { createChatCompletion, type ChatInputImage } from "./openaiChat";
+import { parseDataUrlImage } from "@carver/storage";
 
 type ChatRole = "user" | "assistant";
 
@@ -389,15 +395,48 @@ function buildChatDebugHeaders(params: {
   return headers;
 }
 
-function readChatInputImages(body: ChatRequestBody) {
-  return (body.images ?? []).map(
-    (image) =>
-      ({
-        imageUrl: image.imageUrl,
+async function readChatInputImages(params: {
+  body: ChatRequestBody;
+  context: RequestContext;
+  requestUrl: string;
+  projectId: string;
+}): Promise<ChatApiImageReference[]> {
+  const pendingImages = params.body.images ?? [];
+  const assetIds = pendingImages.map((image) => image.assetId ?? extractAssetIdFromGatewayUrl(image.imageUrl));
+  const ownedUrls = await resolveOwnedAssetUrls({
+    requestUrl: params.requestUrl,
+    supabase: params.context.supabase,
+    userId: params.context.user.id,
+    projectId: params.projectId,
+    assetIds,
+  });
+
+  return pendingImages.map((image) => {
+    const assetId = image.assetId ?? extractAssetIdFromGatewayUrl(image.imageUrl);
+    if (assetId) {
+      const owned = ownedUrls.get(assetId);
+      if (!owned) {
+        throw new Error("Referenced image was not found.");
+      }
+
+      return {
+        imageUrl: owned.originalUrl,
         label: image.label,
         source: image.source,
-      }) satisfies ChatInputImage,
-  );
+      };
+    }
+
+    if (!image.imageUrl?.startsWith("data:image/")) {
+      throw new Error("Chat images must be owned assets or small inline images.");
+    }
+
+    parseDataUrlImage(image.imageUrl, 3 * 1024 * 1024);
+    return {
+      imageUrl: image.imageUrl,
+      label: image.label,
+      source: image.source,
+    };
+  });
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
@@ -479,12 +518,25 @@ export async function loadProjectChatHistory(params: {
     return {
       ok: true,
       data: {
-        messages: resolveProjectChatMessageAssetUrls(params.requestUrl, messages),
+        messages: await resolveProjectChatMessageAssetUrls({
+          requestUrl: params.requestUrl,
+          messages,
+          supabase: params.context.supabase,
+          userId: params.context.user.id,
+          projectId: projectResult.project.id,
+        }),
       },
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load chat history right now.";
-    return { ok: false, response: NextResponse.json({ error: message }, { status: 500 }) };
+    return {
+      ok: false,
+      response: apiFailure(
+        "CHAT_HISTORY_LOAD_FAILED",
+        "Unable to load chat history right now.",
+        500,
+        params.context.requestId,
+      ),
+    };
   }
 }
 
@@ -550,9 +602,15 @@ export async function enqueueChatGeneration(params: {
       }),
     };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Carver AI could not queue image generation right now.";
-    return { ok: false, response: NextResponse.json({ error: message }, { status: 500 }) };
+    return {
+      ok: false,
+      response: apiFailure(
+        "AI_JOB_CREATE_FAILED",
+        "Carver AI could not queue image generation right now.",
+        500,
+        params.context.requestId,
+      ),
+    };
   }
 }
 
@@ -578,16 +636,36 @@ export async function sendChatMessage(params: {
   const canvasId = body.canvasId ?? "canvas-main";
   const projectId = body.projectId ?? getProjectIdFromUrl(params.request.url);
   const model = normalizeOpenAIChatModel(body.model);
-  const images = readChatInputImages(body);
-  const messageContent =
-    content ??
-    rawPrompt ??
-    (images.length > 0 ? "Describe these image references for landscape design context." : undefined);
-
   const projectResult = await requireOwnedChatProject(params.context, projectId);
   if ("error" in projectResult) {
     return { ok: false, response: projectResult.error };
   }
+
+  const rateLimit = await enforceRateLimit(params.context, {
+    scope: "chat",
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return { ok: false, response: rateLimit.response };
+  }
+
+  let images: ChatApiImageReference[];
+  try {
+    images = await readChatInputImages({
+      body,
+      context: params.context,
+      requestUrl: params.request.url,
+      projectId: projectResult.project.id,
+    });
+  } catch {
+    return { ok: false, response: badRequest("One or more chat images are invalid or unavailable.") };
+  }
+
+  const messageContent =
+    content ??
+    rawPrompt ??
+    (images.length > 0 ? "Describe these image references for landscape design context." : undefined);
 
   const generationContext = objectValue(body.canvasGraphContext);
   const imageReferenceCount =
@@ -620,11 +698,17 @@ export async function sendChatMessage(params: {
   try {
     const history = await listProjectChatMessages(params.context.supabase, projectResult.project.id);
 
-    const creditReservation = await reserveUserCredits(params.context, AI_CREDIT_COSTS.chat);
+    const creditOperationKey = `chat:${params.context.requestId}`;
+    const creditReservation = await reserveUserCredits(
+      params.context,
+      AI_CREDIT_COSTS.chat,
+      creditOperationKey,
+      "chat",
+    );
     if ("error" in creditReservation) {
       return { ok: false, response: creditReservation.error };
     }
-    reservedCredits = true;
+    reservedCredits = creditReservation.applied;
     creditsRemaining = creditReservation.creditsRemaining;
 
     const assistantContent = await createChatCompletion({
@@ -660,10 +744,21 @@ export async function sendChatMessage(params: {
     };
   } catch (error) {
     if (reservedCredits) {
-      await restoreUserCredits(params.context, AI_CREDIT_COSTS.chat).catch(() => undefined);
+      await restoreUserCredits(
+        params.context,
+        AI_CREDIT_COSTS.chat,
+        `chat:${params.context.requestId}`,
+      ).catch(() => undefined);
     }
-    const message = error instanceof Error ? error.message : "Carver AI could not answer right now.";
-    return { ok: false, response: NextResponse.json({ error: message }, { status: 500 }) };
+    return {
+      ok: false,
+      response: apiFailure(
+        "CHAT_PROVIDER_FAILED",
+        "Carver AI could not answer right now.",
+        502,
+        params.context.requestId,
+      ),
+    };
   }
 }
 
@@ -681,7 +776,14 @@ export async function clearProjectChatHistory(params: {
 
     return { ok: true, data: { ok: true } };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to clear chat history right now.";
-    return { ok: false, response: NextResponse.json({ error: message }, { status: 500 }) };
+    return {
+      ok: false,
+      response: apiFailure(
+        "CHAT_HISTORY_CLEAR_FAILED",
+        "Unable to clear chat history right now.",
+        500,
+        params.context.requestId,
+      ),
+    };
   }
 }

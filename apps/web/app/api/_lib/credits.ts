@@ -1,5 +1,6 @@
 import { apiFailure } from "./http";
 import type { RequestContext } from "./authz";
+import { getSupabaseAdmin } from "@carver/db/server";
 
 export const AI_CREDIT_COSTS = {
   chat: 2,
@@ -9,7 +10,7 @@ export const AI_CREDIT_COSTS = {
 } as const;
 
 type CreditMutationResult =
-  | { creditsRemaining: number }
+  | { creditsRemaining: number; applied: boolean }
   | { error: ReturnType<typeof apiFailure> };
 
 function creditFailureCode(message: string) {
@@ -59,15 +60,23 @@ function creditFailureMessage(message: string) {
 export async function reserveUserCredits(
   context: RequestContext,
   amount: number,
+  operationKey: string,
+  reason: "chat" | "prompt_enhance" | "generation",
 ): Promise<CreditMutationResult> {
   const rpcClient = context.supabase as typeof context.supabase & {
-    rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+    rpc: (fn: string, params?: Record<string, unknown>) => Promise<{
+      data: { credits_remaining?: unknown; applied?: unknown }[] | null;
+      error: { message?: string } | null;
+    }>;
   };
   const { data, error } = await rpcClient.rpc("consume_profile_credits", {
     p_amount: amount,
+    p_idempotency_key: operationKey,
+    p_reason: reason,
   });
 
-  if (error || typeof data !== "number") {
+  const result = data?.[0];
+  if (error || typeof result?.credits_remaining !== "number" || typeof result.applied !== "boolean") {
     const message = error?.message || "Unable to update credits.";
     return {
       error: apiFailure(
@@ -79,17 +88,29 @@ export async function reserveUserCredits(
     };
   }
 
-  return { creditsRemaining: data };
+  return {
+    creditsRemaining: result.credits_remaining,
+    applied: result.applied,
+  };
 }
 
 export async function restoreUserCredits(
   context: RequestContext,
   amount: number,
+  operationKey: string,
 ) {
-  const rpcClient = context.supabase as typeof context.supabase & {
+  const supabase = getSupabaseAdmin();
+  const rpcClient = supabase as typeof supabase & {
     rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
   };
-  await rpcClient.rpc("restore_profile_credits", {
+  const { error } = await rpcClient.rpc("restore_profile_credits", {
+    p_user_id: context.user.id,
     p_amount: amount,
+    p_idempotency_key: `refund:${operationKey}`,
+    p_reason: "refund",
   });
+
+  if (error) {
+    throw new Error(error.message || "Unable to restore credits.");
+  }
 }

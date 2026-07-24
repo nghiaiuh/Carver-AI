@@ -19,15 +19,19 @@ import type {
 } from "@carver/shared";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
-import { AI_CREDIT_COSTS, reserveUserCredits, restoreUserCredits } from "../../app/api/_lib/credits";
+import { AI_CREDIT_COSTS, restoreUserCredits } from "../../app/api/_lib/credits";
+import { getSupabaseAdmin } from "@carver/db/server";
 import { apiFailure, badRequest } from "../../app/api/_lib/http";
-import { checkRateLimit } from "../../app/api/_lib/rateLimit";
+import { enforceRateLimit } from "../../app/api/_lib/rateLimit";
 import { resolveAiJobResultAssetUrls } from "./assetService";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,
 } from "./canvasSnapshotValidation";
-import { persistTemporaryProjectImageAsset } from "./projectInputAssets";
+import {
+  deletePersistedProjectImageAssets,
+  persistTemporaryProjectImageAsset,
+} from "./projectInputAssets";
 
 const JOB_TYPES: CreateAiJobRequest["jobType"][] = [
   "generate_concept",
@@ -50,8 +54,7 @@ const SIMULATION_SCENARIOS = [
 ] as const;
 const INLINE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
 const logger = createSafeLogger("web.ai-jobs");
-const AI_JOB_SIMULATION_ENABLED =
-  process.env.CARVER_ENABLE_AI_JOB_SIMULATION === "true" || process.env.NODE_ENV !== "production";
+const AI_JOB_SIMULATION_ENABLED = process.env.NODE_ENV !== "production";
 
 type CreateAiJobWithCheckpointRpcRow = {
   id: string;
@@ -69,6 +72,9 @@ type CreateAiJobWithCheckpointRpcRow = {
   created_at: string;
   updated_at: string;
   job_result?: unknown;
+  created: boolean;
+  credit_applied: boolean;
+  credits_remaining: number | null;
 };
 
 type AiJobCheckpointRpcClient = {
@@ -286,16 +292,13 @@ export async function createProjectAiJob(params: {
   const { supabase, user } = context;
   const { project } = projectResult;
 
-  const rateLimit = checkRateLimit({
-    key: `ai-job:${user.id}:${projectId}`,
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "ai-job",
     limit: 10,
     windowMs: 60_000,
   });
-  if (!rateLimit.allowed) {
-    return {
-      ok: false,
-      response: apiFailure("RATE_LIMITED", "Too many generation requests", 429, context.requestId),
-    };
+  if (!rateLimit.ok) {
+    return { ok: false, response: rateLimit.response };
   }
 
   const resolvedSnapshotId = inputSnapshotId ?? project.current_canvas_snapshot_id;
@@ -312,7 +315,7 @@ export async function createProjectAiJob(params: {
   if (resolvedSnapshotId && (snapshotRow?.error || !loadedSnapshot)) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Snapshot not found" }, { status: 404 }),
+      response: apiFailure("SNAPSHOT_NOT_FOUND", "Snapshot not found.", 404, context.requestId),
     };
   }
 
@@ -379,6 +382,7 @@ export async function createProjectAiJob(params: {
   }
 
   const inputAssetIds = new Set<string>(referenceAssetIds);
+  const persistedInputAssets: Array<{ assetId: string; storagePath: string }> = [];
 
   const persistInlineImage = async (persistParams: {
     label: string;
@@ -413,6 +417,7 @@ export async function createProjectAiJob(params: {
       metadata: persistParams.metadata,
     });
 
+    persistedInputAssets.push({ assetId: persisted.assetId, storagePath: persisted.storagePath });
     inputAssetIds.add(persisted.assetId);
     return persisted.assetId;
   };
@@ -513,6 +518,12 @@ export async function createProjectAiJob(params: {
           })
         : undefined);
   } catch (error) {
+    await deletePersistedProjectImageAssets({
+      supabase,
+      projectId,
+      ownerId: user.id,
+      assets: persistedInputAssets,
+    }).catch(() => undefined);
     return {
       ok: false,
       response: badRequest(
@@ -579,12 +590,23 @@ export async function createProjectAiJob(params: {
   }
 
   if (existingJob) {
+    await deletePersistedProjectImageAssets({
+      supabase,
+      projectId,
+      ownerId: user.id,
+      assets: persistedInputAssets,
+    }).catch(() => undefined);
     return {
       ok: true,
       data: {
         created: false,
         idempotent: true,
-        job: mapAiJobRecord(existingJob, request.url),
+        job: await mapAiJobRecord(existingJob, {
+          requestUrl: request.url,
+          supabase,
+          userId: user.id,
+          projectId,
+        }),
       },
     };
   }
@@ -617,12 +639,6 @@ export async function createProjectAiJob(params: {
 
   const generationCreditCost =
     jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept;
-  const creditReservation = simulation
-    ? null
-    : await reserveUserCredits(context, generationCreditCost);
-  if (creditReservation && "error" in creditReservation) {
-    return { ok: false, response: creditReservation.error };
-  }
 
   const jobPayload = {
     executionMode,
@@ -648,9 +664,11 @@ export async function createProjectAiJob(params: {
     canvasGraphContext: sanitizedCanvasGraphContext,
   } as const;
 
-  const rpcClient = supabase as unknown as AiJobCheckpointRpcClient;
+  const adminSupabase = getSupabaseAdmin();
+  const rpcClient = adminSupabase as unknown as AiJobCheckpointRpcClient;
   const { data: createdRows, error: aiJobError } = await rpcClient.rpc("create_ai_job_with_checkpoint", {
     target_project_id: projectId,
+    target_created_by: user.id,
     target_thread_id: threadId ?? null,
     target_job_type: jobType,
     target_prompt: prompt,
@@ -660,6 +678,8 @@ export async function createProjectAiJob(params: {
     target_job_payload: jobPayload,
     checkpoint_snapshot_json: clientSnapshot ? mergedSnapshot : null,
     checkpoint_document_hash: clientSnapshot ? mergedSnapshotHash : null,
+    target_credit_amount: simulation ? 0 : generationCreditCost,
+    target_credit_idempotency_key: simulation ? null : `generation:${idempotencyKey}`,
   });
   const aiJob = createdRows?.[0] ?? null;
 
@@ -679,25 +699,65 @@ export async function createProjectAiJob(params: {
       .maybeSingle();
 
     if (racedJob) {
-      if (!simulation) {
-        await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
-      }
+      await deletePersistedProjectImageAssets({
+        supabase,
+        projectId,
+        ownerId: user.id,
+        assets: persistedInputAssets,
+      }).catch(() => undefined);
       return {
         ok: true,
         data: {
           created: false,
           idempotent: true,
-          job: mapAiJobRecord(racedJob, request.url),
+          job: await mapAiJobRecord(racedJob, {
+            requestUrl: request.url,
+            supabase,
+            userId: user.id,
+            projectId,
+          }),
         },
       };
     }
 
-    if (!simulation) {
-      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    if (/INSUFFICIENT_CREDITS/i.test(aiJobError?.message ?? "")) {
+      await deletePersistedProjectImageAssets({
+        supabase,
+        projectId,
+        ownerId: user.id,
+        assets: persistedInputAssets,
+      }).catch(() => undefined);
+      return {
+        ok: false,
+        response: apiFailure("INSUFFICIENT_CREDITS", "Not enough credits.", 403, context.requestId),
+      };
     }
+    await deletePersistedProjectImageAssets({
+      supabase,
+      projectId,
+      ownerId: user.id,
+      assets: persistedInputAssets,
+    }).catch(() => undefined);
     return {
       ok: false,
       response: apiFailure("AI_JOB_CREATE_FAILED", "Unable to create AI job", 500, context.requestId),
+    };
+  }
+
+  if (!aiJob.created) {
+    return {
+      ok: true,
+      data: {
+        created: false,
+        idempotent: true,
+        job: await mapAiJobRecord(aiJob, {
+          requestUrl: request.url,
+          supabase,
+          userId: user.id,
+          projectId,
+        }),
+        creditsRemaining: aiJob.credits_remaining ?? undefined,
+      },
     };
   }
 
@@ -722,10 +782,10 @@ export async function createProjectAiJob(params: {
       projectId,
       jobId: aiJob.id,
     });
-    if (!simulation) {
-      await restoreUserCredits(context, generationCreditCost).catch(() => undefined);
+    if (!simulation && aiJob.credit_applied) {
+      await restoreUserCredits(context, generationCreditCost, `generation:${idempotencyKey}`).catch(() => undefined);
     }
-    await supabase
+    await adminSupabase
       .from("ai_jobs")
       .update({
         status: "enqueue_failed",
@@ -747,13 +807,18 @@ export async function createProjectAiJob(params: {
     data: {
       created: true,
       idempotent: false,
-      job: mapAiJobRecord(aiJob, request.url),
-      creditsRemaining: creditReservation?.creditsRemaining,
+      job: await mapAiJobRecord(aiJob, {
+        requestUrl: request.url,
+        supabase,
+        userId: user.id,
+        projectId,
+      }),
+      creditsRemaining: aiJob.credits_remaining ?? undefined,
     },
   };
 }
 
-function mapAiJobRecord(row: {
+async function mapAiJobRecord(row: {
   id: string;
   project_id: string;
   thread_id: string | null;
@@ -769,7 +834,12 @@ function mapAiJobRecord(row: {
   created_at: string;
   updated_at: string;
   job_result?: unknown;
-}, requestUrl?: string): CarverAiJobRecord {
+}, params?: {
+  requestUrl: string;
+  supabase: RequestContext["supabase"];
+  userId: string;
+  projectId: string;
+}): Promise<CarverAiJobRecord> {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -785,12 +855,15 @@ function mapAiJobRecord(row: {
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    jobResult: requestUrl
-      ? resolveAiJobResultAssetUrls(
-          requestUrl,
-          isCarverAiJobResult(row.job_result) ? row.job_result : null,
-          row.status as CarverAiJobRecord["status"],
-        )
+    jobResult: params
+      ? await resolveAiJobResultAssetUrls({
+          requestUrl: params.requestUrl,
+          result: isCarverAiJobResult(row.job_result) ? row.job_result : null,
+          jobStatus: row.status as CarverAiJobRecord["status"],
+          supabase: params.supabase,
+          userId: params.userId,
+          projectId: params.projectId,
+        })
       : isCarverAiJobResult(row.job_result) ? row.job_result : null,
   };
 }

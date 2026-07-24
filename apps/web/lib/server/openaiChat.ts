@@ -3,6 +3,7 @@ import "server-only";
 import { DEFAULT_OPENAI_CHAT_MODEL } from "../openaiChatModels";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const OPENAI_CHAT_TIMEOUT_MS = 45_000;
 
 const SYSTEM_PROMPT = [
   "You are Carver AI, an AI landscape architect co-pilot.",
@@ -82,17 +83,30 @@ export async function createOpenAITextResponse(params: {
     throw new Error("Missing OPENAI_API_KEY. Add it to your environment before using OpenAI-powered features.");
   }
 
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: params.model ?? DEFAULT_OPENAI_CHAT_MODEL,
-      input: params.input,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_CHAT_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: params.model ?? DEFAULT_OPENAI_CHAT_MODEL,
+        input: params.input,
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("OpenAI chat request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payload = (await response.json().catch(() => ({}))) as OpenAIResponse;
 
