@@ -67,7 +67,9 @@ export function redactLogValue(value: unknown, keyHint = "", depth = 0): Jsonish
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: value.message,
+      // Error messages often contain provider payloads, SQL details, URLs, or
+      // user supplied text. Keep the type, not the potentially sensitive body.
+      message: "[REDACTED_ERROR_MESSAGE]",
     };
   }
 
