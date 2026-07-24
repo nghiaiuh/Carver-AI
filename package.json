@@ -15,7 +15,8 @@
     "storage:landing:dry-run": "node scripts/upload-landing-assets.mjs --dry-run",
     "storage:landing:upload": "node scripts/upload-landing-assets.mjs",
     "storage:orphan-r2:dry-run": "node scripts/orphan-r2-cleanup.mjs",
-    "storage:orphan-r2:delete": "node scripts/orphan-r2-cleanup.mjs --delete"
+    "storage:orphan-r2:delete": "node scripts/orphan-r2-cleanup.mjs --delete",
+    "security:env": "node scripts/verify-security-env.mjs"
   },
   "devDependencies": {
     "turbo": "latest"

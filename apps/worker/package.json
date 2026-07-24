@@ -14,7 +14,8 @@
     "@carver/db": "*",
     "@carver/queue": "*",
     "@carver/shared": "*",
-    "@carver/storage": "*"
+    "@carver/storage": "*",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",
