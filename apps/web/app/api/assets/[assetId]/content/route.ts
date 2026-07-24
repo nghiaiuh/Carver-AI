@@ -75,14 +75,29 @@ function classifyR2AccessError(error: unknown) {
 function corsHeaders(request: Request, contentType: string) {
   const headers = new Headers({
     "Content-Type": contentType,
-    "Cache-Control": "private, max-age=300",
+    "Cache-Control": "private, max-age=60",
     "Cross-Origin-Resource-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
   });
   const origin = request.headers.get("origin");
-  if (origin) {
+  const allowedOrigins = new Set(
+    (process.env.CARVER_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.add("http://localhost:3000");
+    allowedOrigins.add("http://127.0.0.1:3000");
+  }
+
+  if (origin && allowedOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Vary", "Origin");
+    headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type");
   }
 
   return headers;

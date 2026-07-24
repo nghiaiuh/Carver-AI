@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Database } from "@carver/db";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CanvasSnapshotDocument, CarverAiJobResult } from "@carver/shared";
 import type { ProjectChatHistoryRecord } from "./chatService";
 
@@ -21,9 +23,9 @@ const DEFAULT_TTL_SECONDS = 15 * 60;
 const VARIANTS = new Set<AssetDeliveryVariant>(["thumb", "preview", "original"]);
 
 const getSigningSecret = () => {
-  const secret = process.env.ASSET_GATEWAY_SIGNING_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secret = process.env.ASSET_GATEWAY_SIGNING_SECRET;
   if (!secret) {
-    throw new Error("Missing ASSET_GATEWAY_SIGNING_SECRET or SUPABASE_SERVICE_ROLE_KEY.");
+    throw new Error("Missing ASSET_GATEWAY_SIGNING_SECRET.");
   }
 
   return secret;
@@ -103,14 +105,81 @@ export function buildAssetContentUrl(
   };
 }
 
-function resolveAssetUrl(requestUrl: string, assetId: string) {
-  return buildAssetContentUrl(requestUrl, {
-    assetId,
-    variant: "original",
-  }).url;
+export type AssetDeliveryUrls = {
+  thumbUrl: string;
+  previewUrl: string;
+  originalUrl: string;
+  expiresAt: string;
+};
+
+type OwnedAssetUrlParams = {
+  requestUrl: string;
+  supabase: SupabaseClient<Database>;
+  userId: string;
+  projectId?: string;
+  assetIds: Iterable<string | null | undefined>;
+};
+
+const uniqueAssetIds = (assetIds: Iterable<string | null | undefined>) =>
+  [...new Set([...assetIds].filter((assetId): assetId is string => Boolean(assetId && /^[0-9a-f-]{36}$/i.test(assetId))))]
+    .slice(0, 200);
+
+/**
+ * Mint runtime URLs only after the metadata row proves ownership. JSON embedded
+ * in snapshots, chat messages, and job results is untrusted until this lookup.
+ */
+export async function resolveOwnedAssetUrls(params: OwnedAssetUrlParams) {
+  const assetIds = uniqueAssetIds(params.assetIds);
+  const resolved = new Map<string, AssetDeliveryUrls>();
+  if (assetIds.length === 0) {
+    return resolved;
+  }
+
+  let projectAssetsQuery = params.supabase
+    .from("assets")
+    .select("id")
+    .eq("owner_id", params.userId)
+    .in("id", assetIds);
+
+  if (params.projectId) {
+    projectAssetsQuery = projectAssetsQuery.eq("project_id", params.projectId);
+  }
+
+  const [{ data: projectAssets, error: projectAssetsError }, { data: libraryAssets, error: libraryAssetsError }] =
+    await Promise.all([
+      projectAssetsQuery,
+      params.supabase
+        .from("library_assets")
+        .select("id")
+        .eq("owner_id", params.userId)
+        .in("id", assetIds),
+    ]);
+
+  if (projectAssetsError || libraryAssetsError) {
+    throw new Error("Unable to verify asset ownership.");
+  }
+
+  const ownedIds = new Set([
+    ...(projectAssets ?? []).map((asset) => asset.id),
+    ...(libraryAssets ?? []).map((asset) => asset.id),
+  ]);
+
+  for (const assetId of ownedIds) {
+    const thumb = buildAssetContentUrl(params.requestUrl, { assetId, variant: "thumb" });
+    const preview = buildAssetContentUrl(params.requestUrl, { assetId, variant: "preview" });
+    const original = buildAssetContentUrl(params.requestUrl, { assetId, variant: "original" });
+    resolved.set(assetId, {
+      thumbUrl: thumb.url,
+      previewUrl: preview.url,
+      originalUrl: original.url,
+      expiresAt: original.expiresAt,
+    });
+  }
+
+  return resolved;
 }
 
-function extractAssetIdFromGatewayUrl(value: string | undefined) {
+export function extractAssetIdFromGatewayUrl(value: string | undefined) {
   if (!value) {
     return undefined;
   }
@@ -124,10 +193,21 @@ function extractAssetIdFromGatewayUrl(value: string | undefined) {
   }
 }
 
-export function resolveCanvasSnapshotAssetUrls(
-  requestUrl: string,
-  document: CanvasSnapshotDocument,
-): CanvasSnapshotDocument {
+export async function resolveCanvasSnapshotAssetUrls(params: {
+  requestUrl: string;
+  document: CanvasSnapshotDocument;
+  supabase: SupabaseClient<Database>;
+  userId: string;
+  projectId: string;
+}): Promise<CanvasSnapshotDocument> {
+  const { document } = params;
+  const assetIds = document.graph.nodes.flatMap((node) => [
+    (node as MaybeAssetRef).assetId,
+    node.sourceImage?.assetId,
+    ...(node.presetGroup?.children.flatMap((child) => [child.assetId, child.sourceImage?.assetId]) ?? []),
+  ]);
+  const resolvedUrls = await resolveOwnedAssetUrls({ ...params, assetIds });
+
   return {
     ...document,
     graph: {
@@ -141,17 +221,16 @@ export function resolveCanvasSnapshotAssetUrls(
           extractAssetIdFromGatewayUrl(node.sourceImage?.url);
         const nextNode = {
           ...node,
-          imageUrl:
-            nodeAssetId
-              ? resolveAssetUrl(requestUrl, nodeAssetId)
-              : sourceAssetId
-                ? resolveAssetUrl(requestUrl, sourceAssetId)
-                : node.imageUrl,
+          imageUrl: nodeAssetId
+            ? (resolvedUrls.get(nodeAssetId)?.originalUrl ?? "")
+            : sourceAssetId
+              ? (resolvedUrls.get(sourceAssetId)?.originalUrl ?? "")
+              : node.imageUrl,
           sourceImage: node.sourceImage
             ? {
                 ...node.sourceImage,
                 url: sourceAssetId
-                  ? resolveAssetUrl(requestUrl, sourceAssetId)
+                  ? (resolvedUrls.get(sourceAssetId)?.originalUrl ?? "")
                   : node.sourceImage.url,
               }
             : undefined,
@@ -178,20 +257,18 @@ export function resolveCanvasSnapshotAssetUrls(
               return {
                 ...child,
                 assetId: childAssetId,
-                imageSrc:
-                  childAssetId
-                    ? resolveAssetUrl(requestUrl, childAssetId)
-                    : childSourceAssetId
-                      ? resolveAssetUrl(requestUrl, childSourceAssetId)
-                      : child.imageSrc,
+                imageSrc: childAssetId
+                  ? (resolvedUrls.get(childAssetId)?.originalUrl ?? "")
+                  : childSourceAssetId
+                    ? (resolvedUrls.get(childSourceAssetId)?.originalUrl ?? "")
+                    : child.imageSrc,
                 sourceImage: child.sourceImage
                   ? {
                       ...child.sourceImage,
                       assetId: childSourceAssetId,
-                      url:
-                        childSourceAssetId
-                          ? resolveAssetUrl(requestUrl, childSourceAssetId)
-                          : child.sourceImage.url,
+                      url: childSourceAssetId
+                        ? (resolvedUrls.get(childSourceAssetId)?.originalUrl ?? "")
+                        : child.sourceImage.url,
                     }
                   : undefined,
               };
@@ -203,11 +280,15 @@ export function resolveCanvasSnapshotAssetUrls(
   };
 }
 
-export function resolveAiJobResultAssetUrls(
-  requestUrl: string,
-  result: CarverAiJobResult | null,
-  jobStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "enqueue_failed",
-): CarverAiJobResult | null {
+export async function resolveAiJobResultAssetUrls(params: {
+  requestUrl: string;
+  result: CarverAiJobResult | null;
+  jobStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "enqueue_failed";
+  supabase: SupabaseClient<Database>;
+  userId: string;
+  projectId: string;
+}): Promise<CarverAiJobResult | null> {
+  const { result, jobStatus } = params;
   if (!result) {
     return null;
   }
@@ -216,19 +297,24 @@ export function resolveAiJobResultAssetUrls(
     return result;
   }
 
+  const assetIds = [
+    ...result.generatedImages.map((image) => image.assetId),
+    ...(result.assistantMessage?.generatedImages.map((image) => image.assetId) ?? []),
+  ];
+  const resolvedUrls = await resolveOwnedAssetUrls({ ...params, assetIds });
+
   const resolveImage = <T extends { assetId?: string; imageUrl: string }>(image: T): T => {
     if (!image.assetId) {
       return image;
     }
-
-    const signed = buildAssetContentUrl(requestUrl, {
-      assetId: image.assetId,
-      variant: "original",
-    });
+    const signed = resolvedUrls.get(image.assetId);
+    if (!signed) {
+      return { ...image, imageUrl: "" };
+    }
 
     return {
       ...image,
-      imageUrl: signed.url,
+      imageUrl: signed.originalUrl,
       expiresAt: signed.expiresAt,
     };
   };
@@ -245,10 +331,17 @@ export function resolveAiJobResultAssetUrls(
   };
 }
 
-export function resolveProjectChatMessageAssetUrls(
-  requestUrl: string,
-  messages: ProjectChatHistoryRecord[],
-): ProjectChatHistoryRecord[] {
+export async function resolveProjectChatMessageAssetUrls(params: {
+  requestUrl: string;
+  messages: ProjectChatHistoryRecord[];
+  supabase: SupabaseClient<Database>;
+  userId: string;
+  projectId: string;
+}): Promise<ProjectChatHistoryRecord[]> {
+  const { messages } = params;
+  const assetIds = messages.flatMap((message) => message.generatedImages?.map((image) => image.assetId) ?? []);
+  const resolvedUrls = await resolveOwnedAssetUrls({ ...params, assetIds });
+
   return messages.map((message) => ({
     ...message,
     generatedImages: message.generatedImages?.map((image) => {
@@ -256,14 +349,14 @@ export function resolveProjectChatMessageAssetUrls(
         return image;
       }
 
-      const signed = buildAssetContentUrl(requestUrl, {
-        assetId: image.assetId,
-        variant: "original",
-      });
+      const signed = resolvedUrls.get(image.assetId);
+      if (!signed) {
+        return { ...image, imageUrl: "" };
+      }
 
       return {
         ...image,
-        imageUrl: signed.url,
+        imageUrl: signed.originalUrl,
         expiresAt: signed.expiresAt,
       };
     }),

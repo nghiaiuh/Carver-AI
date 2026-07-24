@@ -1,38 +1,70 @@
+import type { Database } from "@carver/db";
 import type { LibraryAssetRecord, LibraryFolderRecord } from "@carver/storage";
-import { buildAssetContentUrl } from "../../../../lib/server/assetService";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  resolveOwnedAssetUrls,
+  type AssetDeliveryUrls,
+} from "../../../../lib/server/assetService";
 
-export function withGatewayLibraryAssetUrls(
-  requestUrl: string,
-  asset: LibraryAssetRecord,
-): LibraryAssetRecord {
-  const thumb = buildAssetContentUrl(requestUrl, { assetId: asset.id, variant: "thumb" });
-  const preview = buildAssetContentUrl(requestUrl, { assetId: asset.id, variant: "preview" });
-  const original = buildAssetContentUrl(requestUrl, { assetId: asset.id, variant: "original" });
+function applyGatewayUrls(asset: LibraryAssetRecord, urls: AssetDeliveryUrls | undefined): LibraryAssetRecord {
+  if (!urls) {
+    return {
+      ...asset,
+      src: "",
+      originalSrc: "",
+      thumbnailSrc: "",
+      previewSrc: "",
+    };
+  }
 
   return {
     ...asset,
-    src: original.url,
-    originalSrc: original.url,
-    thumbnailSrc: thumb.url,
-    previewSrc: preview.url,
+    src: urls.originalUrl,
+    originalSrc: urls.originalUrl,
+    thumbnailSrc: urls.thumbUrl,
+    previewSrc: urls.previewUrl,
     metadata: {
       ...asset.metadata,
       imageUrls: {
-        thumb: thumb.url,
-        preview: preview.url,
-        original: original.url,
-        expiresAt: original.expiresAt,
+        thumb: urls.thumbUrl,
+        preview: urls.previewUrl,
+        original: urls.originalUrl,
+        expiresAt: urls.expiresAt,
       },
     },
   };
 }
 
-export function withGatewayLibraryFolderUrls(
-  requestUrl: string,
-  folder: LibraryFolderRecord,
-): LibraryFolderRecord {
+export async function withGatewayLibraryAssetUrls(params: {
+  requestUrl: string;
+  asset: LibraryAssetRecord;
+  supabase: SupabaseClient<Database>;
+  userId: string;
+}): Promise<LibraryAssetRecord> {
+  const urls = await resolveOwnedAssetUrls({
+    requestUrl: params.requestUrl,
+    supabase: params.supabase,
+    userId: params.userId,
+    assetIds: [params.asset.id],
+  });
+  return applyGatewayUrls(params.asset, urls.get(params.asset.id));
+}
+
+export async function withGatewayLibraryFolderUrls(params: {
+  requestUrl: string;
+  folder: LibraryFolderRecord;
+  supabase: SupabaseClient<Database>;
+  userId: string;
+}): Promise<LibraryFolderRecord> {
+  const urls = await resolveOwnedAssetUrls({
+    requestUrl: params.requestUrl,
+    supabase: params.supabase,
+    userId: params.userId,
+    assetIds: params.folder.assets.map((asset) => asset.id),
+  });
+
   return {
-    ...folder,
-    assets: folder.assets.map((asset) => withGatewayLibraryAssetUrls(requestUrl, asset)),
+    ...params.folder,
+    assets: params.folder.assets.map((asset) => applyGatewayUrls(asset, urls.get(asset.id))),
   };
 }

@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage";
 import { getRequestContext } from "../../_lib/auth";
-import { badRequest, readJsonObject } from "../../_lib/http";
+import { apiFailure, badRequest, readJsonObject } from "../../_lib/http";
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
@@ -19,9 +19,8 @@ export async function POST(request: Request) {
 
   const body = await readJsonObject(request);
   const title = typeof body.title === "string" ? body.title.trim() : "";
-  const createdBy = body.createdBy === "ai" ? "ai" : "user";
 
-  if (!title) {
+  if (!title || title.length > 240) {
     return badRequest("title is required");
   }
 
@@ -29,14 +28,12 @@ export async function POST(request: Request) {
     const folder = await createLibraryFolder({
       ownerId: context.user.id,
       title,
-      createdBy,
+      // Client callers cannot forge system/AI audit metadata.
+      createdBy: "user",
     });
 
     return NextResponse.json({ folder: buildLibraryFolderRecord(folder) }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to create folder." },
-      { status: 500 },
-    );
+    return apiFailure("LIBRARY_FOLDER_CREATE_FAILED", "Unable to create the folder.", 500, context.requestId);
   }
 }

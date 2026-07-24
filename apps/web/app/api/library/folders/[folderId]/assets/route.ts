@@ -15,10 +15,12 @@ import {
 } from "@carver/storage";
 import { getRequestContext } from "../../../../_lib/auth";
 import { apiFailure, badRequest } from "../../../../_lib/http";
-import { checkRateLimit } from "../../../../_lib/rateLimit";
+import { enforceRateLimit } from "../../../../_lib/rateLimit";
 import { withGatewayLibraryAssetUrls } from "../../../_lib/libraryAssetUrls";
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const MAX_UPLOAD_TOTAL_BYTES = 24 * 1024 * 1024;
+const MAX_UPLOAD_FILE_COUNT = 5;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function hasAllowedMagicBytes(buffer: Buffer, mimeType: string) {
@@ -88,13 +90,18 @@ export async function POST(
     return badRequest("folderId is required");
   }
 
-  const rateLimit = checkRateLimit({
-    key: `library-upload:${context.user.id}:${folderId}`,
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "library-upload",
     limit: 20,
     windowMs: 60_000,
   });
-  if (!rateLimit.allowed) {
-    return apiFailure("RATE_LIMITED", "Too many upload requests", 429, context.requestId);
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_TOTAL_BYTES + 256 * 1024) {
+    return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
   }
 
   const formData = await request.formData().catch(() => null);
@@ -115,9 +122,17 @@ export async function POST(
     return badRequest("files are required");
   }
 
-  const title = typeof rawTitle === "string" ? rawTitle.trim() : undefined;
-  const prompt = typeof rawPrompt === "string" ? rawPrompt.trim() : undefined;
-  const category = typeof rawCategory === "string" ? rawCategory.trim() : undefined;
+  if (files.length > MAX_UPLOAD_FILE_COUNT) {
+    return apiFailure("UPLOAD_TOO_MANY_FILES", "Too many files in one upload.", 400, context.requestId);
+  }
+
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_UPLOAD_TOTAL_BYTES) {
+    return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
+  }
+
+  const title = typeof rawTitle === "string" ? rawTitle.trim().slice(0, 240) : undefined;
+  const prompt = typeof rawPrompt === "string" ? rawPrompt.trim().slice(0, 12_000) : undefined;
+  const category = typeof rawCategory === "string" ? rawCategory.trim().slice(0, 240) : undefined;
   const sourceType =
     rawSourceType === "ai-chat" || rawSourceType === "manual" || rawSourceType === "upload"
       ? (rawSourceType as "ai-chat" | "manual" | "upload")
@@ -139,18 +154,29 @@ export async function POST(
 
     return NextResponse.json(
       {
-        assets: assets
-          .map((asset) => buildLibraryAssetRecord(asset))
-          .map((asset) => withGatewayLibraryAssetUrls(request.url, asset)),
+        assets: await Promise.all(
+          assets
+            .map((asset) => buildLibraryAssetRecord(asset))
+            .map((asset) =>
+              withGatewayLibraryAssetUrls({
+                requestUrl: request.url,
+                asset,
+                supabase: context.supabase,
+                userId: context.user.id,
+              }),
+            ),
+        ),
       },
       { status: 201 },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to upload images.";
-    const status = message === "Upload file is too large." ? 413 : message.includes("file") || message.includes("type") ? 400 : 500;
-    return NextResponse.json(
-      { error: message },
-      { status },
-    );
+    const message = error instanceof Error ? error.message : "";
+    if (message === "Upload file is too large.") {
+      return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
+    }
+    if (/unsupported|content does not match|dimensions|image/i.test(message)) {
+      return apiFailure("UNSUPPORTED_FILE_TYPE", "One or more files are invalid.", 400, context.requestId);
+    }
+    return apiFailure("UPLOAD_FAILED", "Unable to upload images.", 500, context.requestId);
   }
 }

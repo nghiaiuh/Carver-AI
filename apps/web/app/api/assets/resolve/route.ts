@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  buildAssetContentUrl,
-  type AssetDeliveryVariant,
-} from "../../../../lib/server/assetService";
+import { resolveOwnedAssetUrls } from "../../../../lib/server/assetService";
 import { requireRequestContext } from "../../_lib/authz";
 import { apiFailure, apiSuccess, readJsonObject } from "../../_lib/http";
-
-const VARIANTS: AssetDeliveryVariant[] = ["thumb", "preview", "original"];
 
 function assetIdsValue(value: unknown) {
   if (!Array.isArray(value)) {
@@ -29,50 +24,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [{ data: assets, error: assetsError }, { data: libraryAssets, error: libraryAssetsError }] =
-      await Promise.all([
-        context.supabase
-          .from("assets")
-          .select("id")
-          .eq("owner_id", context.user.id)
-          .in("id", assetIds),
-        context.supabase
-          .from("library_assets")
-          .select("id")
-          .eq("owner_id", context.user.id)
-          .in("id", assetIds),
-      ]);
-
-    if (assetsError || libraryAssetsError) {
-      return apiFailure("ASSET_RESOLVE_FAILED", "Unable to resolve assets", 500, context.requestId);
-    }
-
-    const ownedIds = new Set([
-      ...(assets ?? []).map((asset) => asset.id),
-      ...(libraryAssets ?? []).map((asset) => asset.id),
-    ]);
-
+    const ownedUrls = await resolveOwnedAssetUrls({
+      requestUrl: request.url,
+      supabase: context.supabase,
+      userId: context.user.id,
+      assetIds,
+    });
     const resolved = Object.fromEntries(
-      [...ownedIds].map((assetId) => {
-        const urls = Object.fromEntries(
-          VARIANTS.map((variant) => {
-            const signed = buildAssetContentUrl(request.url, { assetId, variant });
-            return [`${variant}Url`, signed.url];
-          }),
-        );
-        const expiresAt = buildAssetContentUrl(request.url, { assetId, variant: "original" }).expiresAt;
-
-        return [
+      [...ownedUrls.entries()].map(([assetId, urls]) => [
+        assetId,
+        {
           assetId,
-          {
-            assetId,
-            expiresAt,
-            thumbUrl: urls.thumbUrl,
-            previewUrl: urls.previewUrl,
-            originalUrl: urls.originalUrl,
-          },
-        ];
-      }),
+          ...urls,
+        },
+      ]),
     );
 
     return apiSuccess({ assets: resolved });

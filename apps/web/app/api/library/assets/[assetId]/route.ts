@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { deleteLibraryAsset } from "@carver/storage";
 import { getRequestContext } from "../../../_lib/auth";
-import { badRequest } from "../../../_lib/http";
+import { apiFailure, badRequest } from "../../../_lib/http";
 
 export async function DELETE(
   request: Request,
@@ -33,9 +33,10 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to delete asset." },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "";
+    if (/not found/i.test(message)) {
+      return apiFailure("LIBRARY_ASSET_NOT_FOUND", "Library asset not found.", 404, context.requestId);
+    }
+    return apiFailure("LIBRARY_ASSET_DELETE_FAILED", "Unable to delete the library asset.", 500, context.requestId);
   }
 }

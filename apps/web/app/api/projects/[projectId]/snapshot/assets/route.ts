@@ -1,7 +1,22 @@
-import { apiSuccess, badRequestResponse, createRequestId, readJsonObject, serverErrorResponse } from "../../../../_lib/http";
+import {
+  apiFailure,
+  apiSuccess,
+  badRequestResponse,
+  createRequestId,
+  readJsonObject,
+  serverErrorResponse,
+} from "../../../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../../../_lib/authz";
-import { persistTemporaryProjectImageAsset } from "../../../../../../lib/server/projectInputAssets";
-import { buildAssetContentUrl } from "../../../../../../lib/server/assetService";
+import {
+  deletePersistedProjectImageAssets,
+  persistTemporaryProjectImageAsset,
+} from "../../../../../../lib/server/projectInputAssets";
+import { resolveOwnedAssetUrls } from "../../../../../../lib/server/assetService";
+import { enforceRateLimit } from "../../../../_lib/rateLimit";
+
+const MAX_SNAPSHOT_IMAGE_COUNT = 2;
+const MAX_SNAPSHOT_IMAGE_REQUEST_BYTES = 24 * 1024 * 1024;
+const MAX_SNAPSHOT_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 
 type SnapshotAssetRequestItem = {
   nodeId: string;
@@ -15,7 +30,7 @@ function readSnapshotAssetItems(body: Record<string, unknown>) {
     return [] as SnapshotAssetRequestItem[];
   }
 
-  return value.flatMap((item) => {
+  return value.slice(0, MAX_SNAPSHOT_IMAGE_COUNT).flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return [];
     }
@@ -25,7 +40,14 @@ function readSnapshotAssetItems(body: Record<string, unknown>) {
     const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
     const dataUrl = typeof candidate.dataUrl === "string" ? candidate.dataUrl.trim() : "";
 
-    if (!nodeId || !title || !dataUrl.startsWith("data:")) {
+    if (
+      !nodeId ||
+      nodeId.length > 240 ||
+      !title ||
+      title.length > 240 ||
+      !dataUrl.startsWith("data:") ||
+      dataUrl.length > MAX_SNAPSHOT_IMAGE_DATA_URL_LENGTH
+    ) {
       return [];
     }
 
@@ -57,49 +79,89 @@ export async function POST(
     return projectResult.error;
   }
 
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "snapshot-asset-upload",
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_SNAPSHOT_IMAGE_REQUEST_BYTES) {
+    return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
+  }
+
   const body = await readJsonObject(request);
+  if (Array.isArray(body.images) && body.images.length > MAX_SNAPSHOT_IMAGE_COUNT) {
+    return apiFailure("UPLOAD_TOO_MANY_FILES", "Too many images in one upload.", 400, context.requestId);
+  }
   const images = readSnapshotAssetItems(body);
   if (images.length === 0) {
     return badRequestResponse("images are required", requestId);
   }
 
-  try {
-    const persistedImages = await Promise.all(
-      images.map(async (image, index) => {
-        const persisted = await persistTemporaryProjectImageAsset({
-          supabase: context.supabase,
-          projectId: projectResult.project.id,
-          ownerId: context.user.id,
-          requestId: `${requestId}-${index}`,
-          label: image.title,
-          dataUrl: image.dataUrl,
-          kind: "upload",
-          metadata: {
-            temporary: false,
-            snapshotSource: "canvas-node",
-            nodeId: image.nodeId,
-          },
-        });
-        const signed = buildAssetContentUrl(request.url, {
-          assetId: persisted.assetId,
-          variant: "original",
-        });
+  const persistedImages: Array<{
+    nodeId: string;
+    assetId: string;
+    storagePath: string;
+    mimeType: string | null;
+    sizeBytes: number | null;
+  }> = [];
 
-        return {
+  try {
+    for (const [index, image] of images.entries()) {
+      const persisted = await persistTemporaryProjectImageAsset({
+        supabase: context.supabase,
+        projectId: projectResult.project.id,
+        ownerId: context.user.id,
+        requestId: `${requestId}-${index}`,
+        label: image.title,
+        dataUrl: image.dataUrl,
+        kind: "upload",
+        metadata: {
+          temporary: false,
+          snapshotSource: "canvas-node",
           nodeId: image.nodeId,
-          assetId: persisted.assetId,
-          imageUrl: signed.url,
-          expiresAt: signed.expiresAt,
-          mimeType: persisted.mimeType,
-          sizeBytes: persisted.sizeBytes,
-        };
-      }),
-    );
+        },
+      });
+      persistedImages.push({
+        nodeId: image.nodeId,
+        assetId: persisted.assetId,
+        storagePath: persisted.storagePath,
+        mimeType: persisted.mimeType,
+        sizeBytes: persisted.sizeBytes,
+      });
+    }
+    const resolvedUrls = await resolveOwnedAssetUrls({
+      requestUrl: request.url,
+      supabase: context.supabase,
+      userId: context.user.id,
+      projectId: projectResult.project.id,
+      assetIds: persistedImages.map((image) => image.assetId),
+    });
 
     return apiSuccess({
-      images: persistedImages,
+      images: persistedImages.map(({ storagePath: _storagePath, ...image }) => {
+        const urls = resolvedUrls.get(image.assetId);
+        if (!urls) {
+          throw new Error("Unable to resolve persisted image asset.");
+        }
+        return {
+          ...image,
+          imageUrl: urls.originalUrl,
+          expiresAt: urls.expiresAt,
+        };
+      }),
     });
   } catch {
+    await deletePersistedProjectImageAssets({
+      supabase: context.supabase,
+      projectId: projectResult.project.id,
+      ownerId: context.user.id,
+      assets: persistedImages,
+    }).catch(() => undefined);
     return serverErrorResponse(requestId);
   }
 }

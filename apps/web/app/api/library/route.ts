@@ -22,12 +22,21 @@ export async function GET(request: Request) {
     const library = await listLibrary(context.user.id);
     return NextResponse.json({
       ...library,
-      folders: library.folders.map((folder) => withGatewayLibraryFolderUrls(request.url, folder)),
+      folders: await Promise.all(
+        library.folders.map((folder) =>
+          withGatewayLibraryFolderUrls({
+            requestUrl: request.url,
+            folder,
+            supabase: context.supabase,
+            userId: context.user.id,
+          }),
+        ),
+      ),
     });
-  } catch (error) {
+  } catch {
     return apiFailure(
       "LIBRARY_LOAD_FAILED",
-      error instanceof Error ? error.message : "Unable to load the library.",
+      "Unable to load the library.",
       500,
       context.requestId,
     );

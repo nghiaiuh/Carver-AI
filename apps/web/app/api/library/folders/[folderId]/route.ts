@@ -14,7 +14,7 @@ import {
   renameLibraryFolder,
 } from "@carver/storage";
 import { getRequestContext } from "../../../_lib/auth";
-import { badRequest, readJsonObject } from "../../../_lib/http";
+import { apiFailure, badRequest, readJsonObject } from "../../../_lib/http";
 
 export async function PATCH(
   request: Request,
@@ -32,7 +32,7 @@ export async function PATCH(
 
   const body = await readJsonObject(request);
   const title = typeof body.title === "string" ? body.title.trim() : "";
-  if (!title) {
+  if (!title || title.length > 240) {
     return badRequest("title is required");
   }
 
@@ -45,10 +45,11 @@ export async function PATCH(
 
     return NextResponse.json({ folder: buildLibraryFolderRecord(folder) });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to rename folder." },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "";
+    if (/not found/i.test(message)) {
+      return apiFailure("LIBRARY_FOLDER_NOT_FOUND", "Library folder not found.", 404, context.requestId);
+    }
+    return apiFailure("LIBRARY_FOLDER_UPDATE_FAILED", "Unable to rename the folder.", 500, context.requestId);
   }
 }
 
@@ -74,9 +75,6 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to delete folder." },
-      { status: 500 },
-    );
+    return apiFailure("LIBRARY_FOLDER_DELETE_FAILED", "Unable to delete the folder.", 500, context.requestId);
   }
 }
