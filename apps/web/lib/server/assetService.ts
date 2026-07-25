@@ -201,10 +201,19 @@ export async function resolveCanvasSnapshotAssetUrls(params: {
   projectId: string;
 }): Promise<CanvasSnapshotDocument> {
   const { document } = params;
+  // Legacy snapshots may only contain an older gateway URL. Recover its stable
+  // asset reference before resolving fresh, short-lived delivery URLs.
   const assetIds = document.graph.nodes.flatMap((node) => [
     (node as MaybeAssetRef).assetId,
+    extractAssetIdFromGatewayUrl((node as MaybeAssetRef).imageUrl),
     node.sourceImage?.assetId,
-    ...(node.presetGroup?.children.flatMap((child) => [child.assetId, child.sourceImage?.assetId]) ?? []),
+    extractAssetIdFromGatewayUrl(node.sourceImage?.url),
+    ...(node.presetGroup?.children.flatMap((child) => [
+      child.assetId,
+      extractAssetIdFromGatewayUrl(child.imageSrc),
+      child.sourceImage?.assetId,
+      extractAssetIdFromGatewayUrl(child.sourceImage?.url),
+    ]) ?? []),
   ]);
   const resolvedUrls = await resolveOwnedAssetUrls({ ...params, assetIds });
 
@@ -218,7 +227,8 @@ export async function resolveCanvasSnapshotAssetUrls(params: {
           extractAssetIdFromGatewayUrl((node as MaybeAssetRef).imageUrl);
         const sourceAssetId =
           (node.sourceImage as MaybeAssetRef | undefined)?.assetId ??
-          extractAssetIdFromGatewayUrl(node.sourceImage?.url);
+          extractAssetIdFromGatewayUrl(node.sourceImage?.url) ??
+          nodeAssetId;
         const nextNode = {
           ...node,
           imageUrl: nodeAssetId
@@ -229,11 +239,18 @@ export async function resolveCanvasSnapshotAssetUrls(params: {
           sourceImage: node.sourceImage
             ? {
                 ...node.sourceImage,
+                assetId: sourceAssetId,
                 url: sourceAssetId
                   ? (resolvedUrls.get(sourceAssetId)?.originalUrl ?? "")
                   : node.sourceImage.url,
               }
-            : undefined,
+            : sourceAssetId
+              ? {
+                  assetId: sourceAssetId,
+                  url: resolvedUrls.get(sourceAssetId)?.originalUrl ?? "",
+                  quality: "original" as const,
+                }
+              : undefined,
         };
 
         if (!node.presetGroup) {

@@ -10,6 +10,19 @@ type ResolvedAssetUrlMap = Record<
   }
 >;
 
+function extractAssetIdFromGatewayUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(value, "https://carver.local");
+    return parsed.pathname.match(/^\/api\/assets\/([0-9a-f-]{36})\/content$/i)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
   const assetIds = new Set<string>();
 
@@ -31,6 +44,8 @@ export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
 
   for (const node of document.graph.nodes) {
     add(node.sourceImage?.assetId);
+    add(extractAssetIdFromGatewayUrl(node.imageUrl));
+    add(extractAssetIdFromGatewayUrl(node.sourceImage?.url));
 
     if (!node.presetGroup) {
       continue;
@@ -39,6 +54,8 @@ export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
     for (const child of node.presetGroup.children) {
       add(child.assetId);
       add(child.sourceImage?.assetId);
+      add(extractAssetIdFromGatewayUrl(child.imageSrc));
+      add(extractAssetIdFromGatewayUrl(child.sourceImage?.url));
     }
   }
 
@@ -54,21 +71,27 @@ export function applyResolvedAssetUrlsToSnapshot(
     graph: {
       ...document.graph,
       nodes: document.graph.nodes.map((node) => {
+        const nodeAssetId =
+          node.sourceImage?.assetId ??
+          extractAssetIdFromGatewayUrl(node.sourceImage?.url) ??
+          extractAssetIdFromGatewayUrl(node.imageUrl);
+        const resolvedNodeUrl = nodeAssetId ? assets[nodeAssetId]?.originalUrl : undefined;
         const nextNode = {
           ...node,
-          imageUrl:
-            node.sourceImage?.assetId && assets[node.sourceImage.assetId]?.originalUrl
-              ? assets[node.sourceImage.assetId]!.originalUrl!
-              : node.imageUrl,
+          imageUrl: resolvedNodeUrl ?? node.imageUrl,
           sourceImage: node.sourceImage
             ? {
                 ...node.sourceImage,
-                url:
-                  node.sourceImage.assetId && assets[node.sourceImage.assetId]?.originalUrl
-                    ? assets[node.sourceImage.assetId]!.originalUrl!
-                    : node.sourceImage.url,
+                assetId: nodeAssetId,
+                url: resolvedNodeUrl ?? node.sourceImage.url,
               }
-            : undefined,
+            : nodeAssetId
+              ? {
+                  assetId: nodeAssetId,
+                  url: resolvedNodeUrl ?? node.imageUrl,
+                  quality: "original" as const,
+                }
+              : undefined,
         };
 
         if (!node.presetGroup) {
@@ -80,7 +103,11 @@ export function applyResolvedAssetUrlsToSnapshot(
           presetGroup: {
             ...node.presetGroup,
             children: node.presetGroup.children.map((child) => {
-              const resolvedChildAssetId = child.assetId ?? child.sourceImage?.assetId;
+              const resolvedChildAssetId =
+                child.assetId ??
+                child.sourceImage?.assetId ??
+                extractAssetIdFromGatewayUrl(child.sourceImage?.url) ??
+                extractAssetIdFromGatewayUrl(child.imageSrc);
               const resolvedChildUrl =
                 resolvedChildAssetId && assets[resolvedChildAssetId]?.originalUrl
                   ? assets[resolvedChildAssetId]!.originalUrl!
@@ -88,10 +115,12 @@ export function applyResolvedAssetUrlsToSnapshot(
 
               return {
                 ...child,
+                assetId: resolvedChildAssetId,
                 imageSrc: resolvedChildUrl ?? child.imageSrc,
                 sourceImage: child.sourceImage
                   ? {
                       ...child.sourceImage,
+                      assetId: resolvedChildAssetId,
                       url: resolvedChildUrl ?? child.sourceImage.url,
                     }
                   : undefined,
