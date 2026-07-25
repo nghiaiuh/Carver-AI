@@ -14,6 +14,7 @@ type IntegrationConfig = {
 type TenantFixture = {
   admin: SupabaseClient<Database>;
   userAId: string;
+  userAAccessToken: string;
   userBId: string;
   userBAccessToken: string;
   projectId: string;
@@ -269,6 +270,7 @@ async function createFixture(): Promise<TenantFixture> {
     return {
       admin,
       userAId: userA.id,
+      userAAccessToken: userA.accessToken,
       userBId: userB.id,
       userBAccessToken: userB.accessToken,
       projectId: project.id,
@@ -328,9 +330,27 @@ async function assertApiNotFound(response: Response) {
 
 test("tenant isolation hides User A data from User B through RLS and API routes", async () => {
   const fixture = await createFixture();
+  const userA = createUserClient(fixture.userAAccessToken);
   const userB = createUserClient(fixture.userBAccessToken);
 
   try {
+    const { data: allowedRateLimit, error: allowedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
+      p_scope: "chat",
+      p_limit: 5,
+      p_window_seconds: 60,
+    });
+    assertNoDatabaseError(allowedRateLimitError);
+    assert.ok(Array.isArray(allowedRateLimit));
+    assert.equal(allowedRateLimit[0]?.allowed, true);
+
+    const { error: rejectedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
+      p_scope: `unapproved-scope-${randomUUID()}`,
+      p_limit: 5,
+      p_window_seconds: 60,
+    });
+    assert.ok(rejectedRateLimitError, "The rate-limit RPC must reject an unapproved scope.");
+    assert.match(rejectedRateLimitError.message, /INVALID_RATE_LIMIT_INPUT/i);
+
     await Promise.all([
       assertHidden(userB.from("projects").select("id").eq("id", fixture.projectId)),
       assertHidden(userB.from("canvas_snapshots").select("id").eq("id", fixture.snapshotId)),

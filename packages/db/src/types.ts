@@ -679,6 +679,18 @@ export interface Database {
           updated_at: string;
         }[];
       };
+      consume_api_rate_limit: {
+        Args: {
+          p_limit: number;
+          p_scope: string;
+          p_window_seconds: number;
+        };
+        Returns: {
+          allowed: boolean;
+          remaining: number;
+          reset_at: string;
+        }[];
+      };
     };
     Enums: {
       plan_type: PlanType;

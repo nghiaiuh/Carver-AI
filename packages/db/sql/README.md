@@ -55,6 +55,36 @@ npm run test:tenant-isolation --workspace @carver/db
 `CARVER_TEST_WEB_BASE_URL` must point to a web instance configured against the
 same test database. Do not reuse production credentials for any `*_TEST_*` variable.
 
+## Staging Release Smoke: Migrations 011-016
+
+Use both checks below before deploying these security migrations to production.
+They deliberately target a separate staging Supabase project and never accept a
+`production` test environment value.
+
+1. Apply migrations `001` through `016` in the exact order above to staging.
+2. In the staging Supabase SQL Editor, run
+   `staging_release_smoke_011_016.sql`. It is read-only and verifies the
+   required tables, RLS, policies, constraints, triggers, RPCs, revoked table
+   grants, and the fixed rate-limit scope allowlist.
+3. Start a web instance using that same staging Supabase project, then run the
+   two-user test from PowerShell:
+
+```powershell
+$env:CARVER_RUN_INTEGRATION_TESTS = "1"
+$env:CARVER_TEST_ENVIRONMENT = "staging"
+$env:SUPABASE_TEST_URL = "https://your-staging-project.supabase.co"
+$env:SUPABASE_TEST_ANON_KEY = "your-staging-anon-key"
+$env:SUPABASE_TEST_SERVICE_ROLE_KEY = "your-staging-service-role-key"
+$env:CARVER_TEST_WEB_BASE_URL = "https://your-staging-web.example"
+npm run test:tenant-isolation --workspace @carver/db
+```
+
+The integration test creates and deletes two temporary Auth users. It checks
+that User B cannot read or mutate User A's project, snapshot, draft, assets,
+chat, AI job, or library records through either RLS or sensitive web API routes.
+Keep all `*_TEST_*` secrets in a local, ignored environment file; never paste a
+service-role key into source control or a terminal recording.
+
 ## Known Cleanup
 
 The duplicate `003` and `004` prefixes should be renumbered in a future migration cleanup once existing environments agree on applied history. Until then, this README is the source of truth for manual apply order.
