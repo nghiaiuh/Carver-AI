@@ -33,6 +33,28 @@ Apply these SQL files in the exact order below. The numeric prefixes are histori
 - Run User A/User B smoke tests after RLS-related migrations.
 - Do not apply destructive schema changes directly in production without a backup or forward-fix plan.
 
+## Tenant Isolation Integration Test
+
+The test creates two temporary Supabase Auth users, seeds User A-owned records,
+and verifies that User B cannot read or mutate them through RLS or web API routes.
+It never uploads an object to R2 or calls an AI provider.
+
+Run it only against a local or staging environment with the same migrations as
+the web app. The explicit environment gate prevents accidental production use:
+
+```bash
+CARVER_RUN_INTEGRATION_TESTS=1
+CARVER_TEST_ENVIRONMENT=local # or staging
+SUPABASE_TEST_URL=https://your-test-project.supabase.co
+SUPABASE_TEST_ANON_KEY=...
+SUPABASE_TEST_SERVICE_ROLE_KEY=...
+CARVER_TEST_WEB_BASE_URL=http://localhost:3000
+npm run test:tenant-isolation --workspace @carver/db
+```
+
+`CARVER_TEST_WEB_BASE_URL` must point to a web instance configured against the
+same test database. Do not reuse production credentials for any `*_TEST_*` variable.
+
 ## Known Cleanup
 
 The duplicate `003` and `004` prefixes should be renumbered in a future migration cleanup once existing environments agree on applied history. Until then, this README is the source of truth for manual apply order.
