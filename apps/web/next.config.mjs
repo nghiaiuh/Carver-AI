@@ -1,6 +1,21 @@
 /** @type {import('next').NextConfig} */
 const isProduction = process.env.NODE_ENV === "production";
 
+function getLandingAssetOrigin() {
+  const baseUrl = process.env.NEXT_PUBLIC_LANDING_ASSET_BASE_URL?.trim();
+  if (!baseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_LANDING_ASSET_BASE_URL.");
+  }
+
+  try {
+    return new URL(baseUrl).origin;
+  } catch {
+    throw new Error("NEXT_PUBLIC_LANDING_ASSET_BASE_URL must be a valid absolute URL.");
+  }
+}
+
+const landingAssetOrigin = getLandingAssetOrigin();
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -10,7 +25,7 @@ const securityHeaders = [
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      "img-src 'self' data: blob: https://images.unsplash.com",
+      `img-src 'self' data: blob: https://images.unsplash.com ${landingAssetOrigin}`,
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
