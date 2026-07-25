@@ -5,9 +5,9 @@ import {
   Eraser,
   Hand,
   Link2,
-  Maximize2,
   MousePointer2,
   PenLine,
+  Plus,
   Ruler,
   Shapes,
   Type,
@@ -26,6 +26,7 @@ type StudioToolRailProps = {
 
 const toolGroups: Array<Array<{ id: EditorTool | "upload" | "measure"; label: string; icon: LucideIcon }>> = [
   [
+    { id: "add-object", label: "Add object", icon: Plus },
     { id: "select", label: "Select", icon: MousePointer2 },
     { id: "move-object", label: "Pan / move", icon: Hand },
   ],
@@ -43,15 +44,20 @@ const toolGroups: Array<Array<{ id: EditorTool | "upload" | "measure"; label: st
   ],
   [
     { id: "upload", label: "Upload / add image", icon: Upload },
-    { id: "add-object", label: "Add object", icon: Maximize2 },
   ],
 ];
 
 export default function StudioToolRail({ activeTool, onTool, onAddObject, onUpload }: StudioToolRailProps) {
   return (
-    <aside className="z-[80] flex w-[70px] shrink-0 flex-col items-center gap-4 bg-[#173225] px-3 py-4 text-[#B8C9B8] shadow-[8px_0_28px_rgba(23,50,37,0.12)]">
+    <aside
+      className="absolute left-3 top-4 z-[90] flex w-[48px] flex-col items-center rounded-[26px] border border-[#E6E4DD] bg-[#FFFEFA]/95 px-2 py-2 text-[#365744] shadow-[0_10px_28px_rgba(35,54,42,0.12)] backdrop-blur"
+      data-canvas-ui="true"
+    >
       {toolGroups.map((group, groupIndex) => (
-        <div key={groupIndex} className="flex w-full flex-col items-center gap-2 border-b border-white/10 pb-4 last:border-b-0">
+        <div
+          key={groupIndex}
+          className="flex w-full flex-col items-center gap-1.5 border-b border-[#E8E7E0] py-1.5 last:border-b-0"
+        >
           {group.map((tool) => {
             const Icon = tool.icon;
             const selected = activeTool === tool.id;
@@ -78,13 +84,13 @@ export default function StudioToolRail({ activeTool, onTool, onAddObject, onUplo
                   onTool(tool.id);
                 }}
                 className={[
-                  "grid h-11 w-11 place-items-center rounded-[16px] transition",
+                  "grid h-8 w-8 place-items-center rounded-full transition duration-150",
                   selected
-                    ? "bg-[#5D8067] text-white shadow-[0_10px_20px_rgba(0,0,0,0.18)]"
-                    : "text-[#B8C9B8] hover:bg-white/8 hover:text-white",
+                    ? "bg-[#244B38] text-white shadow-[0_5px_12px_rgba(36,75,56,0.26)]"
+                    : "text-[#41614B] hover:bg-[#E9F0E8] hover:text-[#173225]",
                 ].join(" ")}
               >
-                <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
               </button>
             );
           })}
