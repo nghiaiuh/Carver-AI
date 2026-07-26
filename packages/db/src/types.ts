@@ -599,6 +599,7 @@ export interface Database {
     Functions: {
       save_project_canvas_snapshot: {
         Args: {
+          actor_user_id: string;
           snapshot_canvas_json: Json;
           snapshot_document_hash?: string | null;
           snapshot_reason?: string | null;
@@ -615,6 +616,7 @@ export interface Database {
       };
       upsert_project_canvas_draft: {
         Args: {
+          actor_user_id: string;
           draft_base_snapshot_id?: string | null;
           draft_canvas_json: Json;
           draft_document_hash?: string | null;
@@ -634,6 +636,7 @@ export interface Database {
       };
       finalize_project_canvas_draft: {
         Args: {
+          actor_user_id: string;
           expected_revision: number;
           snapshot_reason?: string | null;
           target_project_id: string;

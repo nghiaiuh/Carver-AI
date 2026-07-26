@@ -24,6 +24,8 @@ Apply these SQL files in the exact order below. The numeric prefixes are histori
 | 16 | `014_project_workspace_rpc.sql` | Atomic project, initial snapshot, brief, and chat-thread creation. |
 | 17 | `015_tenant_integrity_constraints.sql` | Draft tenant binding and validated legacy ownership constraints. |
 | 18 | `016_rate_limit_scope_allowlist.sql` | Fixed allowlist for public rate-limit RPC scopes. |
+| 19 | `017_draft_snapshot_service_boundary.sql` | Moves draft/snapshot write RPCs behind the service-role API boundary. |
+| 20 | `018_service_role_draft_trigger_fix.sql` | Allows service-boundary draft writes while preserving project-owner integrity. |
 
 ## Manual Apply Checklist
 
@@ -84,6 +86,11 @@ that User B cannot read or mutate User A's project, snapshot, draft, assets,
 chat, AI job, or library records through either RLS or sensitive web API routes.
 Keep all `*_TEST_*` secrets in a local, ignored environment file; never paste a
 service-role key into source control or a terminal recording.
+
+After applying migrations `017` and `018`, also run
+`staging_release_smoke_018_service_boundary.sql` in the staging SQL Editor.
+It verifies that browser roles cannot execute the legacy or new draft/snapshot
+RPCs, while `service_role` alone can call the new actor-bound signatures.
 
 ## Known Cleanup
 
