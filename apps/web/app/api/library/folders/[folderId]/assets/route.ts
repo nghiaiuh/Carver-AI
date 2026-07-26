@@ -7,14 +7,13 @@
  *   sau do luu metadata va URL vao Supabase.
  */
 
-import { NextResponse } from "next/server";
 import {
   buildLibraryAssetRecord,
   type LibraryUploadInputFile,
   uploadLibraryAssets,
 } from "@carver/storage";
 import { getRequestContext } from "../../../../_lib/auth";
-import { apiFailure, badRequest } from "../../../../_lib/http";
+import { apiFailure, apiSuccess, badRequest } from "../../../../_lib/http";
 import { enforceRateLimit } from "../../../../_lib/rateLimit";
 import { withGatewayLibraryAssetUrls } from "../../../_lib/libraryAssetUrls";
 
@@ -152,7 +151,7 @@ export async function POST(
       sourceType,
     });
 
-    return NextResponse.json(
+    return apiSuccess(
       {
         assets: await Promise.all(
           assets

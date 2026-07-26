@@ -6,10 +6,9 @@
  * - `GET`: lay danh sach folder va asset de sidebar/flyout hien thi.
  */
 
-import { NextResponse } from "next/server";
 import { listLibrary } from "@carver/storage";
 import { getRequestContext } from "../_lib/auth";
-import { apiFailure } from "../_lib/http";
+import { apiFailure, apiSuccess } from "../_lib/http";
 import { withGatewayLibraryFolderUrls } from "./_lib/libraryAssetUrls";
 
 export async function GET(request: Request) {
@@ -20,8 +19,7 @@ export async function GET(request: Request) {
 
   try {
     const library = await listLibrary(context.user.id);
-    return NextResponse.json({
-      ...library,
+    return apiSuccess({
       folders: await Promise.all(
         library.folders.map((folder) =>
           withGatewayLibraryFolderUrls({

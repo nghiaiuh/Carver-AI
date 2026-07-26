@@ -6,10 +6,14 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 const shouldDelete = process.argv.includes("--delete");
 const ttlHoursArg = process.argv.find((arg) => arg.startsWith("--ttl-hours="));
 const ttlHours = Number(ttlHoursArg?.split("=")[1] ?? 24);
+if (!Number.isFinite(ttlHours) || ttlHours < 1 || ttlHours > 24 * 30) {
+  throw new Error("--ttl-hours must be between 1 and 720.");
+}
 const cutoff = Date.now() - ttlHours * 60 * 60 * 1000;
 
 const required = [
@@ -68,27 +72,41 @@ async function listR2Keys() {
 }
 
 async function listKnownStoragePaths() {
+  const selectAll = async (table, columns) => {
+    const pageSize = 1000;
+    const rows = [];
+
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(columns)
+        .range(from, from + pageSize - 1);
+
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if ((data ?? []).length < pageSize) return rows;
+    }
+  };
+
   const known = new Set();
 
-  const [{ data: assets, error: assetsError }, { data: libraryAssets, error: libraryAssetsError }] =
-    await Promise.all([
-      supabase.from("assets").select("storage_path"),
-      supabase
-        .from("library_assets")
-        .select("thumb_storage_path, preview_storage_path, original_storage_path"),
-    ]);
-
-  if (assetsError) throw assetsError;
-  if (libraryAssetsError) throw libraryAssetsError;
+  const [assets, libraryAssets] = await Promise.all([
+    selectAll("assets", "storage_path"),
+    selectAll("library_assets", "thumb_storage_path, preview_storage_path, original_storage_path"),
+  ]);
 
   for (const asset of assets ?? []) {
-    known.add(asset.storage_path);
+    if (typeof asset.storage_path === "string" && asset.storage_path) {
+      known.add(asset.storage_path);
+    }
   }
 
   for (const asset of libraryAssets ?? []) {
-    known.add(asset.thumb_storage_path);
-    known.add(asset.preview_storage_path);
-    known.add(asset.original_storage_path);
+    for (const path of [asset.thumb_storage_path, asset.preview_storage_path, asset.original_storage_path]) {
+      if (typeof path === "string" && path) {
+        known.add(path);
+      }
+    }
   }
 
   return known;
@@ -115,6 +133,7 @@ const [r2Keys, knownStoragePaths] = await Promise.all([
 ]);
 
 const orphanKeys = r2Keys.filter((key) => !knownStoragePaths.has(key));
+const hashObjectKey = (key) => createHash("sha256").update(key).digest("hex").slice(0, 12);
 
 console.log(
   JSON.stringify(
@@ -124,7 +143,9 @@ console.log(
       scannedR2Objects: r2Keys.length,
       knownStoragePaths: knownStoragePaths.size,
       orphanCount: orphanKeys.length,
-      orphanKeys,
+      // Object paths are private metadata. Hashes retain enough correlation for
+      // a cleanup audit without leaking a user/project storage hierarchy.
+      orphanKeyHashes: orphanKeys.slice(0, 25).map(hashObjectKey),
     },
     null,
     2,
@@ -132,6 +153,10 @@ console.log(
 );
 
 if (shouldDelete && orphanKeys.length > 0) {
-  await deleteKeys(orphanKeys);
-  console.log(JSON.stringify({ deleted: orphanKeys.length }, null, 2));
+  // Re-read metadata immediately before mutation so a concurrent upload cannot
+  // be deleted merely because it appeared after the initial scan.
+  const currentKnownStoragePaths = await listKnownStoragePaths();
+  const keysStillOrphaned = orphanKeys.filter((key) => !currentKnownStoragePaths.has(key));
+  await deleteKeys(keysStillOrphaned);
+  console.log(JSON.stringify({ deleted: keysStillOrphaned.length }, null, 2));
 }

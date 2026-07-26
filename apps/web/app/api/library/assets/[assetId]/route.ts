@@ -6,10 +6,10 @@
  * - `DELETE`: xoa asset metadata trong Supabase va xoa cac file lien quan tren R2.
  */
 
-import { NextResponse } from "next/server";
 import { deleteLibraryAsset } from "@carver/storage";
+import { notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
-import { apiFailure, badRequest } from "../../../_lib/http";
+import { apiFailure, apiSuccess, badRequest } from "../../../_lib/http";
 
 export async function DELETE(
   request: Request,
@@ -26,12 +26,21 @@ export async function DELETE(
   }
 
   try {
-    await deleteLibraryAsset({
+    const result = await deleteLibraryAsset({
       ownerId: context.user.id,
       assetId,
     });
 
-    return NextResponse.json({ ok: true });
+    if (result.r2CleanupPending) {
+      void notifyOperationalAlert({
+        event: "library_asset_r2_cleanup_pending",
+        severity: "warning",
+        cooldownKey: "library_asset_r2_cleanup_pending",
+        metadata: { requestId: context.requestId, userId: context.user.id, assetId },
+      });
+    }
+
+    return apiSuccess({ deleted: true, r2CleanupPending: result.r2CleanupPending });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (/not found/i.test(message)) {

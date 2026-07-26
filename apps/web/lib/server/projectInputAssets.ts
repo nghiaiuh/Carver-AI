@@ -129,5 +129,7 @@ export async function deletePersistedProjectImageAssets(params: {
     throw new Error("Unable to remove temporary AI input metadata.");
   }
 
+  // Keep metadata authoritative. A storage cleanup miss becomes an orphan that
+  // the scheduled cleanup pass can remove safely later.
   await deleteR2Objects([...new Set(params.assets.map((asset) => asset.storagePath))]);
 }

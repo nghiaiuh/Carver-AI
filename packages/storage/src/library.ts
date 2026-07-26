@@ -202,14 +202,26 @@ export const renameLibraryFolder = async (params: {
 export const deleteLibraryFolder = async (params: {
   ownerId: string;
   folderId: string;
-}) => {
+}): Promise<{ r2CleanupPending: boolean }> => {
   const supabase = getSupabaseAdmin();
+
+  // Verify ownership before listing or deleting binaries. A silent zero-row
+  // delete made foreign/nonexistent folder IDs look like successful deletes.
+  const { data: folder, error: folderError } = await supabase
+    .from("library_folders")
+    .select("id, owner_id")
+    .eq("id", params.folderId)
+    .single();
+
+  if (folderError || !folder || folder.owner_id !== params.ownerId) {
+    throw new Error("Folder not found.");
+  }
 
   const { data: folderAssets, error: assetsError } = await supabase
     .from("library_assets")
     .select("thumb_storage_path, preview_storage_path, original_storage_path")
     .eq("owner_id", params.ownerId)
-    .eq("folder_id", params.folderId);
+    .eq("folder_id", folder.id);
 
   if (assetsError) {
     throw new Error(assetsError.message);
@@ -220,16 +232,24 @@ export const deleteLibraryFolder = async (params: {
     asset.preview_storage_path,
     asset.original_storage_path,
   ]);
-  await deleteR2Objects(keys);
-
   const { error } = await supabase
     .from("library_folders")
     .delete()
-    .eq("id", params.folderId)
+    .eq("id", folder.id)
     .eq("owner_id", params.ownerId);
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  // Metadata deletion is authoritative. Deleting R2 first could leave a live
+  // DB record pointing at a missing image if the subsequent DB operation fails.
+  // A failed best-effort deletion is safely handled by the orphan cleanup job.
+  try {
+    await deleteR2Objects(keys);
+    return { r2CleanupPending: false };
+  } catch {
+    return { r2CleanupPending: true };
   }
 };
 
@@ -414,7 +434,7 @@ export const uploadLibraryAssets = async (params: {
 export const deleteLibraryAsset = async (params: {
   ownerId: string;
   assetId: string;
-}) => {
+}): Promise<{ r2CleanupPending: boolean }> => {
   const supabase = getSupabaseAdmin();
 
   const { data: asset, error } = await supabase
@@ -427,12 +447,6 @@ export const deleteLibraryAsset = async (params: {
     throw new Error("Asset not found.");
   }
 
-  await deleteR2Objects([
-    asset.thumb_storage_path,
-    asset.preview_storage_path,
-    asset.original_storage_path,
-  ]);
-
   const { error: deleteError } = await supabase
     .from("library_assets")
     .delete()
@@ -441,5 +455,16 @@ export const deleteLibraryAsset = async (params: {
 
   if (deleteError) {
     throw new Error(deleteError.message);
+  }
+
+  try {
+    await deleteR2Objects([
+      asset.thumb_storage_path,
+      asset.preview_storage_path,
+      asset.original_storage_path,
+    ]);
+    return { r2CleanupPending: false };
+  } catch {
+    return { r2CleanupPending: true };
   }
 };

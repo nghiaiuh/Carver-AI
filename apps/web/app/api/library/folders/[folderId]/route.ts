@@ -7,14 +7,14 @@
  * - `DELETE`: xoa folder va toan bo asset ben trong.
  */
 
-import { NextResponse } from "next/server";
 import {
   buildLibraryFolderRecord,
   deleteLibraryFolder,
   renameLibraryFolder,
 } from "@carver/storage";
+import { notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
-import { apiFailure, badRequest, readJsonObject } from "../../../_lib/http";
+import { apiFailure, apiSuccess, badRequest, readJsonObject } from "../../../_lib/http";
 
 export async function PATCH(
   request: Request,
@@ -43,7 +43,7 @@ export async function PATCH(
       title,
     });
 
-    return NextResponse.json({ folder: buildLibraryFolderRecord(folder) });
+    return apiSuccess({ folder: buildLibraryFolderRecord(folder) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (/not found/i.test(message)) {
@@ -68,13 +68,26 @@ export async function DELETE(
   }
 
   try {
-    await deleteLibraryFolder({
+    const result = await deleteLibraryFolder({
       ownerId: context.user.id,
       folderId,
     });
 
-    return NextResponse.json({ ok: true });
+    if (result.r2CleanupPending) {
+      void notifyOperationalAlert({
+        event: "library_folder_r2_cleanup_pending",
+        severity: "warning",
+        cooldownKey: "library_folder_r2_cleanup_pending",
+        metadata: { requestId: context.requestId, userId: context.user.id, folderId },
+      });
+    }
+
+    return apiSuccess({ deleted: true, r2CleanupPending: result.r2CleanupPending });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/not found/i.test(message)) {
+      return apiFailure("LIBRARY_FOLDER_NOT_FOUND", "Library folder not found.", 404, context.requestId);
+    }
     return apiFailure("LIBRARY_FOLDER_DELETE_FAILED", "Unable to delete the folder.", 500, context.requestId);
   }
 }

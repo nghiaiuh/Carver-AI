@@ -35,11 +35,35 @@ const expired = (candidates ?? []).filter((asset) => asset.metadata?.temporary =
 console.log(JSON.stringify({ mode: shouldDelete ? "delete" : "dry-run", ttlHours, candidateCount: expired.length, assetIds: expired.map((asset) => asset.id) }, null, 2));
 
 if (shouldDelete && expired.length) {
+  let deletedCount = 0;
+  let r2CleanupPendingCount = 0;
   for (let index = 0; index < expired.length; index += 1000) {
     const batch = expired.slice(index, index + 1000);
-    await r2.send(new DeleteObjectsCommand({ Bucket: process.env.CLOUDFLARE_R2_BUCKET, Delete: { Objects: batch.map((asset) => ({ Key: asset.storage_path })), Quiet: true } }));
-    const { error } = await supabase.from("assets").delete().in("id", batch.map((asset) => asset.id));
+    const { data: currentActiveJobs, error: currentJobsError } = await supabase
+      .from("ai_jobs")
+      .select("input_asset_ids")
+      .in("status", ["queued", "running"]);
+    if (currentJobsError) throw currentJobsError;
+
+    const currentlyProtectedAssetIds = new Set(
+      (currentActiveJobs ?? []).flatMap((job) => Array.isArray(job.input_asset_ids) ? job.input_asset_ids : []),
+    );
+    const deletableBatch = batch.filter((asset) => !currentlyProtectedAssetIds.has(asset.id));
+    if (deletableBatch.length === 0) continue;
+
+    // The database row is authoritative. If R2 is unavailable after the row is
+    // gone, the orphan cleanup pass can safely remove the binary later.
+    const { error } = await supabase.from("assets").delete().in("id", deletableBatch.map((asset) => asset.id));
     if (error) throw error;
+    deletedCount += deletableBatch.length;
+
+    try {
+      await r2.send(new DeleteObjectsCommand({ Bucket: process.env.CLOUDFLARE_R2_BUCKET, Delete: { Objects: deletableBatch.map((asset) => ({ Key: asset.storage_path })), Quiet: true } }));
+    } catch {
+      // The metadata is already gone, so a future orphan pass can delete these
+      // objects safely. Do not report this durable cleanup as a failed DB job.
+      r2CleanupPendingCount += deletableBatch.length;
+    }
   }
-  console.log(JSON.stringify({ deleted: expired.length }, null, 2));
+  console.log(JSON.stringify({ deleted: deletedCount, r2CleanupPendingCount, note: "Rows protected by newly active jobs were skipped." }, null, 2));
 }

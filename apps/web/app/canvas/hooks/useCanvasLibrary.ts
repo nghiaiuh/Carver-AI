@@ -98,6 +98,7 @@ async function authedFetch(
 async function refreshLibrary(supabase: BrowserSupabaseClient) {
   const response = await authedFetch(supabase, "/api/library");
   const payload = (await response.json().catch(() => ({}))) as {
+    data?: { folders?: LibraryFolder[] };
     folders?: LibraryFolder[];
     error?: string;
   };
@@ -106,7 +107,8 @@ async function refreshLibrary(supabase: BrowserSupabaseClient) {
     throw new Error(payload.error || "Unable to load the library.");
   }
 
-  return Array.isArray(payload.folders) ? payload.folders : [];
+  const folders = payload.data?.folders ?? payload.folders;
+  return Array.isArray(folders) ? folders : [];
 }
 
 export function getOrCreateFolderForAiResult({
@@ -192,7 +194,11 @@ export function useCanvasLibrary() {
       },
       body: JSON.stringify({ title: trimmedTitle, createdBy }),
     });
-    const payload = (await response.json().catch(() => ({}))) as { folder?: LibraryFolder; error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      data?: { folder?: LibraryFolder };
+      folder?: LibraryFolder;
+      error?: string;
+    };
 
     if (!response.ok) {
       throw new Error(payload.error || "Unable to create folder.");
@@ -200,9 +206,10 @@ export function useCanvasLibrary() {
 
     const nextFolders = await refreshLibrary(client);
     setFolders(nextFolders);
-    setActiveFolderId(payload.folder?.id || nextFolders[nextFolders.length - 1]?.id || "");
+    const createdFolder = payload.data?.folder ?? payload.folder;
+    setActiveFolderId(createdFolder?.id || nextFolders[nextFolders.length - 1]?.id || "");
 
-    return payload.folder ?? nextFolders[nextFolders.length - 1] ?? null;
+    return createdFolder ?? nextFolders[nextFolders.length - 1] ?? null;
   }, [supabase]);
 
   useEffect(() => {
@@ -290,6 +297,7 @@ export function useCanvasLibrary() {
       body: formData,
     });
     const payload = (await response.json().catch(() => ({}))) as {
+      data?: { assets?: LibraryAsset[] };
       assets?: LibraryAsset[];
       error?: string;
     };
@@ -301,7 +309,7 @@ export function useCanvasLibrary() {
     const nextFolders = await refreshLibrary(client);
     setFolders(nextFolders);
 
-    return payload.assets ?? [];
+    return payload.data?.assets ?? payload.assets ?? [];
   };
 
   const removeAssetFromFolder = async (folderId: string, assetId: string) => {

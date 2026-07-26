@@ -6,10 +6,9 @@
  * - `POST`: tao folder moi va tra ve metadata de client cap nhat sidebar.
  */
 
-import { NextResponse } from "next/server";
 import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage";
 import { getRequestContext } from "../../_lib/auth";
-import { apiFailure, badRequest, readJsonObject } from "../../_lib/http";
+import { apiFailure, apiSuccess, badRequest, readJsonObject } from "../../_lib/http";
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
@@ -32,8 +31,8 @@ export async function POST(request: Request) {
       createdBy: "user",
     });
 
-    return NextResponse.json({ folder: buildLibraryFolderRecord(folder) }, { status: 201 });
-  } catch (error) {
+    return apiSuccess({ folder: buildLibraryFolderRecord(folder) }, { status: 201 });
+  } catch {
     return apiFailure("LIBRARY_FOLDER_CREATE_FAILED", "Unable to create the folder.", 500, context.requestId);
   }
 }
