@@ -43,6 +43,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:prompt-engine
       - run: npm run test --workspace @carver/shared
+      - run: npm run security:api-boundaries
       - run: npm run test --workspace @carver/queue
       - run: npm run test --workspace @carver/worker
       - run: npm run migration:validate
