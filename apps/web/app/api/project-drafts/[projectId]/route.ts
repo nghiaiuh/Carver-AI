@@ -18,6 +18,7 @@ import {
 } from "../../../../lib/server/canvasSnapshotValidation";
 import { resolveCanvasSnapshotAssetUrls } from "../../../../lib/server/assetService";
 import { createSafeLogger } from "@carver/shared";
+import { getSupabaseAdmin } from "@carver/db/server";
 import { enforceRateLimit } from "../../_lib/rateLimit";
 
 const logger = createSafeLogger("web.project-drafts");
@@ -179,7 +180,8 @@ export async function PUT(
   }
 
   try {
-    const savedDraft = await saveProjectCanvasDraft(context.supabase, {
+    const savedDraft = await saveProjectCanvasDraft(getSupabaseAdmin(), {
+      actorUserId: context.user.id,
       projectId: projectResult.project.id,
       expectedRevision,
       document,

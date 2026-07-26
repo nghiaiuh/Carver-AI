@@ -7,6 +7,7 @@ import {
   getProjectCanvasDraftErrorStatus,
 } from "../../../../../lib/server/draftService";
 import { createSafeLogger } from "@carver/shared";
+import { getSupabaseAdmin } from "@carver/db/server";
 import { enforceRateLimit } from "../../../_lib/rateLimit";
 
 const logger = createSafeLogger("web.project-drafts.finalize");
@@ -59,7 +60,8 @@ export async function POST(
   const reason = reasonValue(body.reason) ?? "manual";
 
   try {
-    const finalized = await finalizeProjectCanvasDraft(context.supabase, {
+    const finalized = await finalizeProjectCanvasDraft(getSupabaseAdmin(), {
+      actorUserId: context.user.id,
       projectId: projectResult.project.id,
       expectedRevision,
       reason,

@@ -236,6 +236,7 @@ export async function loadProjectCanvasDraft(
 export async function saveProjectCanvasDraft(
   supabase: SupabaseClient<Database>,
   params: {
+    actorUserId: string;
     projectId: string;
     expectedRevision: number | null;
     document: CanvasSnapshotDocument;
@@ -246,6 +247,7 @@ export async function saveProjectCanvasDraft(
 ) {
   const rpcClient = supabase as unknown as DraftRpcClient;
   const { data, error } = await rpcClient.rpc("upsert_project_canvas_draft", {
+    actor_user_id: params.actorUserId,
     target_project_id: params.projectId,
     expected_revision: params.expectedRevision,
     draft_canvas_json: params.document,
@@ -277,6 +279,7 @@ export async function saveProjectCanvasDraft(
 export async function finalizeProjectCanvasDraft(
   supabase: SupabaseClient<Database>,
   params: {
+    actorUserId: string;
     projectId: string;
     expectedRevision: number;
     reason: "manual" | "close" | "job_checkpoint";
@@ -284,6 +287,7 @@ export async function finalizeProjectCanvasDraft(
 ) {
   const rpcClient = supabase as unknown as DraftRpcClient;
   const { data, error } = await rpcClient.rpc("finalize_project_canvas_draft", {
+    actor_user_id: params.actorUserId,
     target_project_id: params.projectId,
     expected_revision: params.expectedRevision,
     snapshot_reason: params.reason,

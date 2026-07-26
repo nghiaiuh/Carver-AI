@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@carver/db/server";
 import {
   coerceCanvasSnapshotDocument,
   type CanvasSnapshotDocument,
 } from "@carver/shared";
-import { badRequest, readJsonObject, serverError } from "../../../_lib/http";
+import { apiFailure, badRequest, readJsonObject, serverError } from "../../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../../_lib/authz";
+import { enforceRateLimit } from "../../../_lib/rateLimit";
 import {
   loadCurrentProjectSnapshot,
   saveProjectSnapshot,
@@ -14,6 +16,8 @@ import {
   validateSnapshotAssetOwnership,
 } from "../../../../../lib/server/canvasSnapshotValidation";
 import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/assetService";
+
+const MAX_SNAPSHOT_REQUEST_BYTES = 5 * 1024 * 1024;
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -113,6 +117,21 @@ export async function POST(
     return projectResult.error;
   }
 
+  const rateLimit = await enforceRateLimit(context, {
+    // A snapshot creates an immutable version, equivalent in cost to draft finalization.
+    scope: "project-draft-finalize",
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_SNAPSHOT_REQUEST_BYTES) {
+    return apiFailure("PAYLOAD_TOO_LARGE", "Canvas snapshot is too large.", 413, context.requestId);
+  }
+
   const body = await readJsonObject(request);
   const snapshot = snapshotValue(body.snapshot ?? body.document);
   if (!snapshot) {
@@ -121,6 +140,9 @@ export async function POST(
 
   const reason = snapshotReasonValue(body.reason) ?? "manual";
   const documentHash = typeof body.documentHash === "string" ? body.documentHash.trim() : "";
+  if (documentHash && (documentHash.length < 32 || documentHash.length > 128)) {
+    return apiFailure("BAD_REQUEST", "documentHash is invalid", 400, context.requestId);
+  }
   const validationError = validateCanvasSnapshotDocument(snapshot);
   if (validationError) {
     return badRequest(validationError);
@@ -141,7 +163,8 @@ export async function POST(
   }
 
   try {
-    const savedSnapshot = await saveProjectSnapshot(context.supabase, {
+    const savedSnapshot = await saveProjectSnapshot(getSupabaseAdmin(), {
+      actorUserId: context.user.id,
       projectId: projectResult.project.id,
       snapshot,
       reason,

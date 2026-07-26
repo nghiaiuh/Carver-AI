@@ -89,6 +89,7 @@ export async function loadCurrentProjectSnapshot(
 export async function saveProjectSnapshot(
   supabase: SupabaseClient<Database>,
   params: {
+    actorUserId: string;
     projectId: string;
     snapshot: CanvasSnapshotDocument;
     reason?: "initial" | "manual" | "close" | "job_checkpoint";
@@ -97,6 +98,7 @@ export async function saveProjectSnapshot(
 ): Promise<ProjectCanvasSnapshotMeta> {
   const rpcClient = supabase as unknown as ProjectSnapshotRpcClient;
   const { data, error } = await rpcClient.rpc("save_project_canvas_snapshot", {
+    actor_user_id: params.actorUserId,
     target_project_id: params.projectId,
     snapshot_canvas_json: params.snapshot,
     snapshot_reason: params.reason ?? "manual",
