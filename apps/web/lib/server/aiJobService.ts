@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   createAiJobBodySchema,
   createSafeLogger,
+  notifyOperationalAlert,
   coerceCanvasSnapshotDocument,
   formatZodError,
 } from "@carver/shared";
@@ -781,6 +782,17 @@ export async function createProjectAiJob(params: {
       userId: user.id,
       projectId,
       jobId: aiJob.id,
+    });
+    void notifyOperationalAlert({
+      event: "ai_job_enqueue_failed",
+      severity: "error",
+      cooldownKey: "ai_job_enqueue_failed",
+      metadata: {
+        requestId: context.requestId,
+        userId: user.id,
+        projectId,
+        jobId: aiJob.id,
+      },
     });
     if (!simulation && aiJob.credit_applied) {
       await restoreUserCredits(context, generationCreditCost, `generation:${idempotencyKey}`).catch(() => undefined);

@@ -1,6 +1,9 @@
 import { apiFailure } from "./http";
 import type { RequestContext } from "./authz";
 import { getSupabaseAdmin } from "@carver/db/server";
+import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
+
+const logger = createSafeLogger("api.credits");
 
 export const AI_CREDIT_COSTS = {
   chat: 2,
@@ -78,11 +81,33 @@ export async function reserveUserCredits(
   const result = data?.[0];
   if (error || typeof result?.credits_remaining !== "number" || typeof result.applied !== "boolean") {
     const message = error?.message || "Unable to update credits.";
+    const code = creditFailureCode(message);
+    const status = creditFailureStatus(message);
+    logger.error("credit mutation failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      operation: reason,
+      errorCode: code,
+      error,
+    });
+    if (status >= 500) {
+      void notifyOperationalAlert({
+        event: "credit_mutation_failed",
+        severity: "error",
+        cooldownKey: `credit_mutation_failed:${code}`,
+        metadata: {
+          requestId: context.requestId,
+          userId: context.user.id,
+          operation: reason,
+          errorCode: code,
+        },
+      });
+    }
     return {
       error: apiFailure(
-        creditFailureCode(message),
+        code,
         creditFailureMessage(message),
-        creditFailureStatus(message),
+        status,
         context.requestId,
       ),
     };
