@@ -222,7 +222,7 @@ const LABEL_TRANSLATIONS: Record<string, { en: string; vi: string }> = {
   // ── Menu / Project ───────────────────────────────────────────────────────
   Home: { en: "Home", vi: "Trang chủ" },
   "New Project": { en: "New Project", vi: "Dự án mới" },
-  "Delete Project": { en: "Delete Project", vi: "Xóa dự án" },
+  "Clear Canvas": { en: "Clear Canvas", vi: "Xóa canvas" },
   "Import Images": { en: "Import Images", vi: "Nhập ảnh" },
   Undo: { en: "Undo", vi: "Hoàn tác" },
   Redo: { en: "Redo", vi: "Làm lại" },
@@ -311,7 +311,7 @@ export function getCanvasText(language: CanvasLanguage) {
     menu: {
       home: translateCanvasLabel("Home", language),
       newProject: translateCanvasLabel("New Project", language),
-      deleteProject: translateCanvasLabel("Delete Project", language),
+      clearCanvas: translateCanvasLabel("Clear Canvas", language),
       importImages: translateCanvasLabel("Import Images", language),
       undo: translateCanvasLabel("Undo", language),
       redo: translateCanvasLabel("Redo", language),

@@ -45,8 +45,6 @@ type AiChatSidebarProps = {
   targetNodeId?: string | null;
   targetTitle?: string | null;
   targetImageUrl?: string | null;
-  targetReferenceCount?: number;
-  targetPresetCount?: number;
   generationContext?: CanvasGenerationContext | null;
   generationSnapshot?: CanvasSnapshotDocument | null;
   connectedImageReferences?: CanvasGenerationImageReference[];
@@ -295,14 +293,23 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function getInitialChatModel() {
+  if (typeof window === "undefined") {
+    return DEFAULT_OPENAI_CHAT_MODEL;
+  }
+
+  const savedModel = window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY);
+  return savedModel && OPENAI_CHAT_MODEL_OPTIONS.some((option) => option.value === savedModel)
+    ? savedModel
+    : DEFAULT_OPENAI_CHAT_MODEL;
+}
+
 export default function AiChatSidebar({
   canvasId = DEFAULT_CANVAS_ID,
   projectId,
   targetNodeId,
   targetTitle,
   targetImageUrl,
-  targetReferenceCount = 0,
-  targetPresetCount = 0,
   generationContext = null,
   generationSnapshot = null,
   connectedImageReferences = [],
@@ -321,7 +328,7 @@ export default function AiChatSidebar({
   const [historyLoading, setHistoryLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_OPENAI_CHAT_MODEL);
+  const [selectedModel, setSelectedModel] = useState(getInitialChatModel);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastOriginalPrompt, setLastOriginalPrompt] = useState<string | null>(null);
   const [enhanceMeta, setEnhanceMeta] = useState<EnhancePromptResult | null>(null);
@@ -351,28 +358,27 @@ export default function AiChatSidebar({
       return;
     }
 
-    const savedModel = window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY);
-    if (!savedModel) {
-      return;
-    }
-
-    const matchedOption = OPENAI_CHAT_MODEL_OPTIONS.find((option) => option.value === savedModel);
-    if (matchedOption) {
-      setSelectedModel(matchedOption.value);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
     window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
   }, [selectedModel]);
 
+  const displayedMessages = useMemo(() => {
+    const existingIds = new Set(messages.map((message) => message.id));
+    const generatedMessages: ChatMessage[] = generationAssistantMessages
+      .filter((message) => !existingIds.has(message.id))
+      .map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+        generatedImages: message.generatedImages,
+      }));
+
+    return generatedMessages.length > 0 ? [...messages, ...generatedMessages] : messages;
+  }, [generationAssistantMessages, messages]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [isSending, messages.length]);
+  }, [displayedMessages.length, isSending]);
 
   useEffect(() => {
     let active = true;
@@ -427,25 +433,6 @@ export default function AiChatSidebar({
       active = false;
     };
   }, [canvasId, projectId]);
-
-  useEffect(() => {
-    if (generationAssistantMessages.length === 0) return;
-
-    setMessages((current) => {
-      const existingIds = new Set(current.map((message) => message.id));
-      const nextMessages = generationAssistantMessages
-        .filter((message) => !existingIds.has(message.id))
-        .map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          createdAt: message.createdAt,
-          generatedImages: message.generatedImages,
-        }));
-      if (nextMessages.length === 0) return current;
-      return [...current, ...nextMessages];
-    });
-  }, [generationAssistantMessages]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -1015,7 +1002,7 @@ export default function AiChatSidebar({
               Loading chat history...
             </div>
           </div>
-        ) : messages.length === 0 ? (
+        ) : displayedMessages.length === 0 ? (
           <div className="grid place-items-center py-10">
             <div className="max-w-[280px] text-center">
               <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--canvas-theme-text)]">Ask Carver AI</h3>
@@ -1028,7 +1015,7 @@ export default function AiChatSidebar({
           </div>
         ) : (
           <div className="grid gap-4">
-            {messages.map((message) => (
+            {displayedMessages.map((message) => (
               <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[86%]" : "mr-auto max-w-[92%]"}>
                 <div
                   className={[

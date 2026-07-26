@@ -416,8 +416,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                   targetNodeId={state.activeGenerationTarget?.id ?? null}
                   targetTitle={state.activeGenerationTarget?.title ?? null}
                   targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
-                  targetReferenceCount={state.activeGenerationContext?.imageReferences.length ?? 0}
-                  targetPresetCount={state.activeGenerationContext?.presetReferences.length ?? 0}
                   generationContext={state.activeGenerationContext}
                   generationSnapshot={buildCanvasSnapshotWithGraph({
                     nodes: state.nodes,

@@ -292,6 +292,8 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
 
 const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 1000;
 const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 1500;
+const CLOUD_DRAFT_SYNC_RETRY_LIMIT = 4;
+const CLOUD_DRAFT_SYNC_RETRY_BASE_MS = 2_000;
 const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
 
 function createDraftMutationId() {
@@ -474,6 +476,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const snapshotSaveInFlightRef = useRef(false);
   const draftSaveTimeoutRef = useRef<number | null>(null);
   const cloudDraftSyncTimeoutRef = useRef<number | null>(null);
+  const cloudDraftRetryTimeoutRef = useRef<number | null>(null);
+  const cloudDraftRetryAttemptRef = useRef(0);
   const cloudDraftSyncInFlightRef = useRef(false);
   const latestDraftMutationIdRef = useRef<string | null>(null);
   const latestSnapshotDocumentRef = useRef<CanvasSnapshotDocument>(coerceCanvasSnapshotDocument(undefined));
@@ -990,6 +994,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
       };
       latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? mutationId;
+      cloudDraftRetryAttemptRef.current = 0;
+      if (cloudDraftRetryTimeoutRef.current !== null) {
+        window.clearTimeout(cloudDraftRetryTimeoutRef.current);
+        cloudDraftRetryTimeoutRef.current = null;
+      }
 
       await recordCanvasDraftCloudSync(currentUserId, projectId, {
         cloudDraftRevision: payload.data.draft.revision,
@@ -1013,12 +1022,38 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       return true;
     } catch (error) {
+      const retryAttempt = cloudDraftRetryAttemptRef.current + 1;
+      cloudDraftRetryAttemptRef.current = retryAttempt;
       if (!syncParams.quiet) {
         setDraftWarning(
           error instanceof Error
             ? `${error.message} Changes are still saved locally on this device.`
             : "Unable to sync the project draft. Changes are still saved locally on this device.",
         );
+      }
+
+      // A failed cloud write must not silently stop autosave. Local IndexedDB
+      // remains the recovery source, while a bounded retry restores cloud sync
+      // after short network/token/provider interruptions. Conflicts return
+      // before this catch and intentionally require user resolution instead.
+      if (
+        retryAttempt <= CLOUD_DRAFT_SYNC_RETRY_LIMIT &&
+        typeof window !== "undefined" &&
+        cloudDraftRetryTimeoutRef.current === null &&
+        (syncParams.allowNonLeader || isCloudDraftSyncLeader)
+      ) {
+        const retryDelayMs = Math.min(
+          CLOUD_DRAFT_SYNC_RETRY_BASE_MS * 2 ** (retryAttempt - 1),
+          30_000,
+        );
+        cloudDraftRetryTimeoutRef.current = window.setTimeout(() => {
+          cloudDraftRetryTimeoutRef.current = null;
+          void syncCloudDraft({
+            projectId,
+            quiet: false,
+            allowNonLeader: syncParams.allowNonLeader,
+          });
+        }, retryDelayMs);
       }
       recordCanvasPersistenceBenchmarkEvent({
         operation: "cloud-draft-sync",
@@ -1404,6 +1439,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         window.clearTimeout(cloudDraftSyncTimeoutRef.current);
         cloudDraftSyncTimeoutRef.current = null;
       }
+      if (cloudDraftRetryTimeoutRef.current !== null) {
+        window.clearTimeout(cloudDraftRetryTimeoutRef.current);
+        cloudDraftRetryTimeoutRef.current = null;
+      }
+      cloudDraftRetryAttemptRef.current = 0;
       queueMicrotask(() => {
         setIsSnapshotLoading(false);
         setCurrentSnapshotMeta(null);
@@ -1652,6 +1692,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       if (cloudDraftSyncTimeoutRef.current !== null) {
         window.clearTimeout(cloudDraftSyncTimeoutRef.current);
         cloudDraftSyncTimeoutRef.current = null;
+      }
+      if (cloudDraftRetryTimeoutRef.current !== null) {
+        window.clearTimeout(cloudDraftRetryTimeoutRef.current);
+        cloudDraftRetryTimeoutRef.current = null;
       }
     };
   }, [

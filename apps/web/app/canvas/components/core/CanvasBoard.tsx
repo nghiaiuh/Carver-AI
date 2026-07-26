@@ -1914,7 +1914,7 @@ export default function CanvasBoard({
                     },
                   },
                   {
-                    label: "Delete Project",
+                    label: "Clear Canvas",
                     tone: "danger",
                     onSelect: () => {
                       onNodesChange([]);
@@ -2094,7 +2094,7 @@ export default function CanvasBoard({
                   },
                 },
                 {
-                  label: text.menu.deleteProject,
+                  label: text.menu.clearCanvas,
                   tone: "danger",
                   onSelect: () => {
                     onNodesChange([]);
