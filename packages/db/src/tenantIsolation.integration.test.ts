@@ -425,7 +425,7 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
     );
     assert.equal(ownerSnapshotResponse.status, 201, await ownerSnapshotResponse.text());
 
-    for (const scope of ["chat", "ai-job-poll"] as const) {
+    for (const scope of ["chat", "ai-job-poll", "asset-resolve"] as const) {
       const { data: allowedRateLimit, error: allowedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
         p_scope: scope,
         p_limit: 5,

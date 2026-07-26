@@ -186,6 +186,7 @@ begin
   foreach table_name in array array[
     'ai-job',
     'ai-job-poll',
+    'asset-resolve',
     'chat',
     'library-upload',
     'project-create',
@@ -201,7 +202,7 @@ begin
   end loop;
 
   if array_length(missing, 1) is not null then
-    raise exception 'Release smoke check for migrations 011-021 failed: %', array_to_string(missing, '; ');
+    raise exception 'Release smoke check for migrations 011-022 failed: %', array_to_string(missing, '; ');
   end if;
 end;
 $$;
@@ -209,4 +210,4 @@ $$;
 select
   true as passed,
   now() as checked_at,
-  'Migrations 011-021 schema, RLS, grants, triggers, constraints, RPCs, and rate-limit scopes are present.' as summary;
+  'Migrations 011-022 schema, RLS, grants, triggers, constraints, RPCs, and rate-limit scopes are present.' as summary;
