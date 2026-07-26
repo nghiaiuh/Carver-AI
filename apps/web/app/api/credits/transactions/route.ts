@@ -1,8 +1,10 @@
 import { apiFailure, apiSuccess } from "../../_lib/http";
 import { requireRequestContext } from "../../_lib/authz";
+import { createSafeLogger } from "@carver/shared";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const logger = createSafeLogger("web.credit-history");
 
 function pageSize(value: string | null) {
   if (!value) return DEFAULT_PAGE_SIZE;
@@ -43,6 +45,11 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) {
+    logger.error("credit history load failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      error,
+    });
     return apiFailure("CREDIT_HISTORY_UNAVAILABLE", "Unable to load credit history.", 500, context.requestId);
   }
 

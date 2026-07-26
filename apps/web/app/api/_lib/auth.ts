@@ -9,7 +9,10 @@ import {
   createUserSupabaseClient,
   getAuthenticatedUser,
 } from "@carver/db/server";
+import { createSafeLogger } from "@carver/shared";
 import { apiFailure, createRequestId } from "./http";
+
+const logger = createSafeLogger("web.api.auth");
 
 export const getBearerToken = (request: Request): string | null => {
   const authorization = request.headers.get("authorization");
@@ -29,16 +32,30 @@ export const getRequestContext = async (request: Request) => {
     };
   }
 
-  const user = await getAuthenticatedUser(accessToken);
-  if (!user) {
+  try {
+    const user = await getAuthenticatedUser(accessToken);
+    if (!user) {
+      return {
+        error: apiFailure("AUTH_REQUIRED", "Unauthorized", 401, requestId),
+      };
+    }
+
     return {
-      error: apiFailure("AUTH_REQUIRED", "Unauthorized", 401, requestId),
+      user,
+      supabase: createUserSupabaseClient(accessToken),
+      requestId,
+    };
+  } catch (error) {
+    // Do not turn an Auth infrastructure outage into a raw framework error or
+    // a misleading 401. The safe logger keeps only redacted diagnostics.
+    logger.error("request authentication service failed", { requestId, error });
+    return {
+      error: apiFailure(
+        "AUTH_SERVICE_UNAVAILABLE",
+        "Authentication is temporarily unavailable.",
+        503,
+        requestId,
+      ),
     };
   }
-
-  return {
-    user,
-    supabase: createUserSupabaseClient(accessToken),
-    requestId,
-  };
 };

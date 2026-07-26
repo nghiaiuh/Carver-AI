@@ -12,7 +12,9 @@ import {
   type LibraryUploadInputFile,
   uploadLibraryAssets,
 } from "@carver/storage";
+import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../../../../_lib/auth";
+import { isUuidLike } from "../../../../_lib/authz";
 import { apiFailure, apiSuccess, badRequest } from "../../../../_lib/http";
 import { enforceRateLimit } from "../../../../_lib/rateLimit";
 import { withGatewayLibraryAssetUrls } from "../../../_lib/libraryAssetUrls";
@@ -21,6 +23,15 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_UPLOAD_TOTAL_BYTES = 24 * 1024 * 1024;
 const MAX_UPLOAD_FILE_COUNT = 5;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const logger = createSafeLogger("web.library-upload");
+
+function isKnownUploadValidationMessage(message: string) {
+  return (
+    message === "Unsupported file type." ||
+    message === "Upload file is too large." ||
+    message === "File content does not match the declared image type."
+  );
+}
 
 function hasAllowedMagicBytes(buffer: Buffer, mimeType: string) {
   if (mimeType === "image/jpeg") {
@@ -87,6 +98,9 @@ export async function POST(
   const { folderId } = await params;
   if (!folderId) {
     return badRequest("folderId is required");
+  }
+  if (!isUuidLike(folderId)) {
+    return badRequest("folderId is invalid");
   }
 
   const rateLimit = await enforceRateLimit(context, {
@@ -173,9 +187,16 @@ export async function POST(
     if (message === "Upload file is too large.") {
       return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
     }
-    if (/unsupported|content does not match|dimensions|image/i.test(message)) {
+    if (isKnownUploadValidationMessage(message)) {
       return apiFailure("UNSUPPORTED_FILE_TYPE", "One or more files are invalid.", 400, context.requestId);
     }
+    logger.error("library image upload failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      folderId,
+      fileCount: files.length,
+      error,
+    });
     return apiFailure("UPLOAD_FAILED", "Unable to upload images.", 500, context.requestId);
   }
 }

@@ -44,17 +44,28 @@ function creditFailureStatus(message: string) {
   return 500;
 }
 
-function creditFailureMessage(message: string) {
-  if (/insufficient_credits/i.test(message)) {
+function publicCreditFailureCode(code: ReturnType<typeof creditFailureCode>) {
+  if (code === "INSUFFICIENT_CREDITS" || code === "PROFILE_NOT_INITIALIZED") {
+    return code;
+  }
+
+  // Keep database/RPC implementation details in logs and alerts only.
+  return "CREDIT_SERVICE_UNAVAILABLE";
+}
+
+function creditFailureMessage(code: ReturnType<typeof creditFailureCode>) {
+  if (code === "INSUFFICIENT_CREDITS") {
     return "Not enough credits.";
   }
 
-  if (/profile_not_found/i.test(message)) {
+  if (code === "PROFILE_NOT_INITIALIZED") {
     return "Profile credits are not initialized for this account.";
   }
 
-  if (/consume_profile_credits|restore_profile_credits|schema cache|does not exist/i.test(message)) {
-    return "Credits system is not initialized on the database yet. Apply migration 006_profile_credit_rpcs.sql.";
+  if (code === "CREDIT_RPC_MISSING") {
+    // Schema/RPC names are operational detail. The safe logger retains the
+    // original database error with the requestId for support investigation.
+    return "Credits are temporarily unavailable. Please try again later.";
   }
 
   return "Unable to update credits.";
@@ -82,6 +93,7 @@ export async function reserveUserCredits(
   if (error || typeof result?.credits_remaining !== "number" || typeof result.applied !== "boolean") {
     const message = error?.message || "Unable to update credits.";
     const code = creditFailureCode(message);
+    const publicCode = publicCreditFailureCode(code);
     const status = creditFailureStatus(message);
     logger.error("credit mutation failed", {
       requestId: context.requestId,
@@ -105,8 +117,8 @@ export async function reserveUserCredits(
     }
     return {
       error: apiFailure(
-        code,
-        creditFailureMessage(message),
+        publicCode,
+        creditFailureMessage(code),
         status,
         context.requestId,
       ),

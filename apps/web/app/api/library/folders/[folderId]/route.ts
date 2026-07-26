@@ -12,9 +12,12 @@ import {
   deleteLibraryFolder,
   renameLibraryFolder,
 } from "@carver/storage";
-import { notifyOperationalAlert } from "@carver/shared";
+import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
+import { isUuidLike } from "../../../_lib/authz";
 import { apiFailure, apiSuccess, badRequest, readJsonObject } from "../../../_lib/http";
+
+const logger = createSafeLogger("web.library-folder");
 
 export async function PATCH(
   request: Request,
@@ -28,6 +31,9 @@ export async function PATCH(
   const { folderId } = await params;
   if (!folderId) {
     return badRequest("folderId is required");
+  }
+  if (!isUuidLike(folderId)) {
+    return badRequest("folderId is invalid");
   }
 
   const body = await readJsonObject(request);
@@ -49,6 +55,12 @@ export async function PATCH(
     if (/not found/i.test(message)) {
       return apiFailure("LIBRARY_FOLDER_NOT_FOUND", "Library folder not found.", 404, context.requestId);
     }
+    logger.error("library folder rename failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      folderId,
+      error,
+    });
     return apiFailure("LIBRARY_FOLDER_UPDATE_FAILED", "Unable to rename the folder.", 500, context.requestId);
   }
 }
@@ -65,6 +77,9 @@ export async function DELETE(
   const { folderId } = await params;
   if (!folderId) {
     return badRequest("folderId is required");
+  }
+  if (!isUuidLike(folderId)) {
+    return badRequest("folderId is invalid");
   }
 
   try {
@@ -88,6 +103,12 @@ export async function DELETE(
     if (/not found/i.test(message)) {
       return apiFailure("LIBRARY_FOLDER_NOT_FOUND", "Library folder not found.", 404, context.requestId);
     }
+    logger.error("library folder deletion failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      folderId,
+      error,
+    });
     return apiFailure("LIBRARY_FOLDER_DELETE_FAILED", "Unable to delete the folder.", 500, context.requestId);
   }
 }

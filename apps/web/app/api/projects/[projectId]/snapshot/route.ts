@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@carver/db/server";
+import { createSafeLogger } from "@carver/shared";
 import {
   coerceCanvasSnapshotDocument,
   type CanvasSnapshotDocument,
 } from "@carver/shared";
-import { apiFailure, badRequest, readJsonObject, serverError } from "../../../_lib/http";
+import { apiFailure, badRequest, readJsonObject, serverErrorResponse } from "../../../_lib/http";
 import { requireProjectOwner, requireRequestContext } from "../../../_lib/authz";
 import { enforceRateLimit } from "../../../_lib/rateLimit";
 import {
@@ -18,6 +19,7 @@ import {
 import { resolveCanvasSnapshotAssetUrls } from "../../../../../lib/server/assetService";
 
 const MAX_SNAPSHOT_REQUEST_BYTES = 5 * 1024 * 1024;
+const logger = createSafeLogger("web.project-snapshots");
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -93,8 +95,14 @@ export async function GET(
         snapshot: loaded.snapshot,
       },
     });
-  } catch {
-    return serverError();
+  } catch (error) {
+    logger.error("current project snapshot load failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      projectId: projectResult.project.id,
+      error,
+    });
+    return serverErrorResponse(context.requestId);
   }
 }
 
@@ -182,7 +190,14 @@ export async function POST(
       },
       { status: 201 },
     );
-  } catch {
-    return serverError();
+  } catch (error) {
+    logger.error("project snapshot save failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      projectId: projectResult.project.id,
+      reason,
+      error,
+    });
+    return serverErrorResponse(context.requestId);
   }
 }

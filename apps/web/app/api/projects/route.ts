@@ -9,12 +9,14 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
+import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
-import { apiFailure, readJsonObject, serverError, stringValue } from "../_lib/http";
+import { apiFailure, readJsonObject, serverErrorResponse, stringValue } from "../_lib/http";
 import { enforceRateLimit } from "../_lib/rateLimit";
 
 const MAX_PROJECT_NAME_LENGTH = 160;
 const MAX_PROJECT_TEXT_LENGTH = 4_000;
+const logger = createSafeLogger("web.projects");
 
 export async function GET(request: Request) {
   const context = await getRequestContext(request);
@@ -30,7 +32,12 @@ export async function GET(request: Request) {
     .order("updated_at", { ascending: false });
 
   if (error) {
-    return serverError();
+    logger.error("project list failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      error,
+    });
+    return serverErrorResponse(context.requestId);
   }
 
   return NextResponse.json({
@@ -87,6 +94,11 @@ export async function POST(request: Request) {
   });
 
   if (error || !data) {
+    logger.error("project workspace creation failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      error,
+    });
     return apiFailure("PROJECT_CREATE_FAILED", "Unable to create the project.", 500, context.requestId);
   }
 

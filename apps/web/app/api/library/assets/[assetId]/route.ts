@@ -7,9 +7,12 @@
  */
 
 import { deleteLibraryAsset } from "@carver/storage";
-import { notifyOperationalAlert } from "@carver/shared";
+import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
+import { isUuidLike } from "../../../_lib/authz";
 import { apiFailure, apiSuccess, badRequest } from "../../../_lib/http";
+
+const logger = createSafeLogger("web.library-assets");
 
 export async function DELETE(
   request: Request,
@@ -23,6 +26,9 @@ export async function DELETE(
   const { assetId } = await params;
   if (!assetId) {
     return badRequest("assetId is required");
+  }
+  if (!isUuidLike(assetId)) {
+    return badRequest("assetId is invalid");
   }
 
   try {
@@ -46,6 +52,12 @@ export async function DELETE(
     if (/not found/i.test(message)) {
       return apiFailure("LIBRARY_ASSET_NOT_FOUND", "Library asset not found.", 404, context.requestId);
     }
+    logger.error("library asset deletion failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      assetId,
+      error,
+    });
     return apiFailure("LIBRARY_ASSET_DELETE_FAILED", "Unable to delete the library asset.", 500, context.requestId);
   }
 }

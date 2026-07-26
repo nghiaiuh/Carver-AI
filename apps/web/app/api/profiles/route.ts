@@ -7,8 +7,11 @@
  */
 
 import { NextResponse } from "next/server";
+import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
-import { serverError } from "../_lib/http";
+import { serverErrorResponse } from "../_lib/http";
+
+const logger = createSafeLogger("web.profile");
 
 export async function GET(request: Request) {
   const context = await getRequestContext(request);
@@ -25,7 +28,12 @@ export async function GET(request: Request) {
     .single();
 
   if (error) {
-    return serverError();
+    logger.error("profile load failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      error,
+    });
+    return serverErrorResponse(context.requestId);
   }
 
   return NextResponse.json({ profile });

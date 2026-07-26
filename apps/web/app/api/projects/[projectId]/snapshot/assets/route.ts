@@ -2,10 +2,10 @@ import {
   apiFailure,
   apiSuccess,
   badRequestResponse,
-  createRequestId,
   readJsonObject,
   serverErrorResponse,
 } from "../../../../_lib/http";
+import { createSafeLogger } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext } from "../../../../_lib/authz";
 import {
   deletePersistedProjectImageAssets,
@@ -17,6 +17,7 @@ import { enforceRateLimit } from "../../../../_lib/rateLimit";
 const MAX_SNAPSHOT_IMAGE_COUNT = 2;
 const MAX_SNAPSHOT_IMAGE_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_SNAPSHOT_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
+const logger = createSafeLogger("web.snapshot-assets");
 
 type SnapshotAssetRequestItem = {
   nodeId: string;
@@ -68,7 +69,7 @@ export async function POST(
     return context.error;
   }
 
-  const requestId = createRequestId(request);
+  const requestId = context.requestId;
   const { projectId } = await params;
   if (!projectId) {
     return badRequestResponse("projectId is required", requestId);
@@ -155,7 +156,14 @@ export async function POST(
         };
       }),
     });
-  } catch {
+  } catch (error) {
+    logger.error("snapshot image persistence failed", {
+      requestId,
+      userId: context.user.id,
+      projectId: projectResult.project.id,
+      imageCount: images.length,
+      error,
+    });
     await deletePersistedProjectImageAssets({
       supabase: context.supabase,
       projectId: projectResult.project.id,

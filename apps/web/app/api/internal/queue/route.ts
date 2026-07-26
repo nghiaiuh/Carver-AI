@@ -19,11 +19,13 @@ export async function GET(request: Request) {
     return apiFailure("RESOURCE_NOT_FOUND", "Resource not found", 404, context.requestId);
   }
 
-  const queue = createAiJobQueue();
+  let queue: ReturnType<typeof createAiJobQueue> | null = null;
   try {
+    const activeQueue = createAiJobQueue();
+    queue = activeQueue;
     const [counts, jobsByState] = await Promise.all([
-      queue.getJobCounts(...STATES),
-      Promise.all(STATES.map((state) => queue.getJobs([state], 0, 24, true))),
+      activeQueue.getJobCounts(...STATES),
+      Promise.all(STATES.map((state) => activeQueue.getJobs([state], 0, 24, true))),
     ]);
     const now = Date.now();
     const jobs = jobsByState.flatMap((jobs, stateIndex) =>
@@ -64,6 +66,6 @@ export async function GET(request: Request) {
     });
     return apiFailure("QUEUE_UNAVAILABLE", "Queue observability is unavailable", 503, context.requestId);
   } finally {
-    await queue.close().catch(() => undefined);
+    await queue?.close().catch(() => undefined);
   }
 }

@@ -7,8 +7,11 @@
  */
 
 import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage";
+import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../../_lib/auth";
 import { apiFailure, apiSuccess, badRequest, readJsonObject } from "../../_lib/http";
+
+const logger = createSafeLogger("web.library-folders");
 
 export async function POST(request: Request) {
   const context = await getRequestContext(request);
@@ -32,7 +35,12 @@ export async function POST(request: Request) {
     });
 
     return apiSuccess({ folder: buildLibraryFolderRecord(folder) }, { status: 201 });
-  } catch {
+  } catch (error) {
+    logger.error("library folder creation failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      error,
+    });
     return apiFailure("LIBRARY_FOLDER_CREATE_FAILED", "Unable to create the folder.", 500, context.requestId);
   }
 }

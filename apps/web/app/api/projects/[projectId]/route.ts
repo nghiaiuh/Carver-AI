@@ -1,4 +1,4 @@
-import { notifyOperationalAlert } from "@carver/shared";
+import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext } from "../../_lib/authz";
 import { apiFailure, apiSuccess } from "../../_lib/http";
 import { enforceRateLimit } from "../../_lib/rateLimit";
@@ -7,6 +7,8 @@ import {
   ProjectDeleteNotFoundError,
   ProjectHasActiveJobsError,
 } from "../../../../lib/server/projectLifecycleService";
+
+const logger = createSafeLogger("web.project-lifecycle");
 
 export async function DELETE(
   request: Request,
@@ -65,6 +67,12 @@ export async function DELETE(
     if (error instanceof ProjectDeleteNotFoundError) {
       return apiFailure("PROJECT_NOT_FOUND", "Project not found.", 404, context.requestId);
     }
+    logger.error("project deletion failed", {
+      requestId: context.requestId,
+      userId: context.user.id,
+      projectId: projectResult.project.id,
+      error,
+    });
     return apiFailure("PROJECT_DELETE_FAILED", "Unable to delete the project.", 500, context.requestId);
   }
 }
