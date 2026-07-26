@@ -256,8 +256,8 @@ async function createFixture(): Promise<TenantFixture> {
     assertNoDatabaseError(libraryAssetError);
     assert.ok(libraryAsset, "Library asset fixture was not created.");
 
-    const userAClient = createUserClient(userA.accessToken);
-    const { error: draftError } = await userAClient.rpc("upsert_project_canvas_draft", {
+    const { error: draftError } = await admin.rpc("upsert_project_canvas_draft", {
+      actor_user_id: userA.id,
       target_project_id: project.id,
       expected_revision: 0,
       draft_canvas_json: {},
@@ -305,6 +305,27 @@ async function deleteFixture(fixture: TenantFixture) {
   }
 }
 
+function createEmptyCanvasDocument() {
+  return {
+    schema: "carver-canvas-v4",
+    schemaVersion: 4,
+    snapshotVersion: 4,
+    camera: {},
+    objects: [],
+    regions: [],
+    locks: [],
+    references: [],
+    selection: { objectIds: [], regionIds: [], activeAssetIds: [] },
+    graph: { nodes: [], edges: [], activeGenerationTargetId: null },
+    markers: [],
+    addedObjects: [],
+    sketchLines: [],
+    sketchGroups: [],
+    penStrokes: [],
+    metadata: {},
+  };
+}
+
 function createUserClient(accessToken: string) {
   return createClient<Database>(config.url, config.anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -312,14 +333,18 @@ function createUserClient(accessToken: string) {
   });
 }
 
-async function apiRequest(fixture: TenantFixture, path: string, init: RequestInit = {}) {
+async function apiRequestForUser(accessToken: string, path: string, init: RequestInit = {}) {
   return fetch(`${config.webBaseUrl}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${fixture.userBAccessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       ...(init.headers ?? {}),
     },
   });
+}
+
+async function apiRequest(fixture: TenantFixture, path: string, init: RequestInit = {}) {
+  return apiRequestForUser(fixture.userBAccessToken, path, init);
 }
 
 async function assertApiNotFound(response: Response) {
@@ -334,6 +359,56 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
   const userB = createUserClient(fixture.userBAccessToken);
 
   try {
+    const ownerDraftResponse = await apiRequestForUser(
+      fixture.userAAccessToken,
+      `/api/project-drafts/${fixture.projectId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document: createEmptyCanvasDocument(),
+          expectedRevision: 1,
+          documentHash: "f".repeat(64),
+          mutationId: `service-boundary-${randomUUID()}`,
+          baseSnapshotId: fixture.snapshotId,
+        }),
+      },
+    );
+    const ownerDraftBody = (await ownerDraftResponse.json()) as {
+      success?: boolean;
+      data?: { draft?: { revision?: number } };
+    };
+    assert.equal(ownerDraftResponse.status, 200, JSON.stringify(ownerDraftBody));
+    assert.equal(ownerDraftBody.success, true);
+    const ownerDraftRevision = ownerDraftBody.data?.draft?.revision;
+    assert.equal(typeof ownerDraftRevision, "number");
+
+    const ownerFinalizeResponse = await apiRequestForUser(
+      fixture.userAAccessToken,
+      `/api/project-drafts/${fixture.projectId}/finalize`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: ownerDraftRevision, reason: "manual" }),
+      },
+    );
+    assert.equal(ownerFinalizeResponse.status, 200, await ownerFinalizeResponse.text());
+
+    const ownerSnapshotResponse = await apiRequestForUser(
+      fixture.userAAccessToken,
+      `/api/projects/${fixture.projectId}/snapshot`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          snapshot: createEmptyCanvasDocument(),
+          reason: "manual",
+          documentHash: "a".repeat(64),
+        }),
+      },
+    );
+    assert.equal(ownerSnapshotResponse.status, 201, await ownerSnapshotResponse.text());
+
     const { data: allowedRateLimit, error: allowedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
       p_scope: "chat",
       p_limit: 5,
@@ -383,6 +458,7 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
     assert.ok(draftInsertError, "User B must not create a draft for User A's project.");
 
     const { error: draftRpcError } = await userB.rpc("upsert_project_canvas_draft", {
+      actor_user_id: fixture.userBId,
       target_project_id: fixture.projectId,
       expected_revision: 0,
       draft_canvas_json: {},
@@ -390,8 +466,27 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
       draft_last_mutation_id: `attack-${randomUUID()}`,
       draft_base_snapshot_id: fixture.snapshotId,
     });
-    assert.ok(draftRpcError, "User B must not call the draft RPC for User A's project.");
-    assert.match(draftRpcError.message, /PROJECT_NOT_FOUND|permission denied/i);
+    assert.ok(draftRpcError, "Browser user tokens must not call the draft RPC directly.");
+    assert.match(draftRpcError.message, /permission denied|not allowed/i);
+
+    const { error: snapshotRpcError } = await userB.rpc("save_project_canvas_snapshot", {
+      actor_user_id: fixture.userBId,
+      target_project_id: fixture.projectId,
+      snapshot_canvas_json: {},
+      snapshot_reason: "manual",
+      snapshot_document_hash: "e".repeat(64),
+    });
+    assert.ok(snapshotRpcError, "Browser user tokens must not call the snapshot RPC directly.");
+    assert.match(snapshotRpcError.message, /permission denied|not allowed/i);
+
+    const { error: finalizeRpcError } = await userB.rpc("finalize_project_canvas_draft", {
+      actor_user_id: fixture.userBId,
+      target_project_id: fixture.projectId,
+      expected_revision: 1,
+      snapshot_reason: "manual",
+    });
+    assert.ok(finalizeRpcError, "Browser user tokens must not call the draft finalize RPC directly.");
+    assert.match(finalizeRpcError.message, /permission denied|not allowed/i);
 
     await assertMutationBlocked(userB.from("ai_jobs").delete().eq("id", fixture.jobId).select("id"));
     await assertMutationBlocked(userB.from("chat_messages").delete().eq("id", fixture.messageId).select("id"));
