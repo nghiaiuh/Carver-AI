@@ -16,9 +16,15 @@
     "storage:landing:upload": "node scripts/upload-landing-assets.mjs",
     "storage:orphan-r2:dry-run": "node scripts/orphan-r2-cleanup.mjs",
     "storage:orphan-r2:delete": "node scripts/orphan-r2-cleanup.mjs --delete",
-    "security:env": "node scripts/verify-security-env.mjs"
+    "storage:temp-assets:dry-run": "node scripts/temp-asset-cleanup.mjs",
+    "storage:temp-assets:delete": "node scripts/temp-asset-cleanup.mjs --delete",
+    "security:env": "node scripts/verify-security-env.mjs",
+    "test:prompt-engine": "node scripts/run-prompt-engine-tests.mjs",
+    "migration:validate": "node scripts/validate-sql-migrations.mjs"
+    ,"test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "supabase": "^2.109.1",
     "turbo": "latest"
   },

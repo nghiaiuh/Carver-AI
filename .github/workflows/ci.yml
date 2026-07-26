@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      # Build-time placeholders only. CI never receives production credentials.
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+      SUPABASE_URL: https://ci.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
+      REDIS_URL: rediss://default:ci-password@localhost:6379
+      OPENAI_API_KEY: ci-openai-key
+      ASSET_GATEWAY_SIGNING_SECRET: ci-signing-secret-at-least-32-characters
+      CLOUDFLARE_R2_ACCOUNT_ID: ci-account
+      CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: ci-secret-key
+      CLOUDFLARE_R2_BUCKET: ci-bucket
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:prompt-engine
+      - run: npm run test --workspace @carver/shared
+      - run: npm run migration:validate
+      - run: npm run build --workspace @carver/web
+
+  tenant-isolation-staging:
+    # This job is deliberately opt-in. It requires a disposable staging project,
+    # never production Supabase keys.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dev --workspace @carver/web > /tmp/carver-web.log 2>&1 &
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          REDIS_URL: rediss://default:ci-password@localhost:6379
+          OPENAI_API_KEY: ci-openai-key
+          ASSET_GATEWAY_SIGNING_SECRET: ci-signing-secret-at-least-32-characters
+          CLOUDFLARE_R2_ACCOUNT_ID: ci-account
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ci-secret-key
+          CLOUDFLARE_R2_BUCKET: ci-bucket
+      - run: for i in {1..60}; do curl -fsS http://127.0.0.1:3000 > /dev/null && exit 0; sleep 1; done; cat /tmp/carver-web.log; exit 1
+      - run: npm run test:tenant-isolation --workspace @carver/db
+        env:
+          CARVER_RUN_INTEGRATION_TESTS: "1"
+          CARVER_TEST_ENVIRONMENT: staging
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          CARVER_TEST_WEB_BASE_URL: http://127.0.0.1:3000
+
+  e2e-staging:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node -e "require('node:fs').writeFileSync('/tmp/carver-e2e-storage-state.json', process.env.E2E_STORAGE_STATE_JSON)"
+        env:
+          E2E_STORAGE_STATE_JSON: ${{ secrets.CARVER_E2E_STORAGE_STATE_JSON }}
+      - run: npm run test:e2e
+        env:
+          CARVER_RUN_E2E: "1"
+          CARVER_E2E_BASE_URL: ${{ vars.CARVER_E2E_BASE_URL }}
+          CARVER_E2E_PROJECT_ID: ${{ vars.CARVER_E2E_PROJECT_ID }}
+          CARVER_E2E_STORAGE_STATE_PATH: /tmp/carver-e2e-storage-state.json
