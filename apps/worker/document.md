@@ -207,6 +207,18 @@ The expected lifecycle is:
 
 Every failure path should still leave the job in a valid persisted state.
 
+## Production runtime
+
+- Production Redis is authenticated TLS (`rediss://`) and is rejected otherwise.
+- BullMQ owns retry/backoff. The worker keeps retryable jobs `running` while a
+  retry is pending, but persists final failure metadata.
+- Railway can probe `/healthz` for liveness and `/readyz` for Redis/Supabase
+  readiness. Neither endpoint calls a paid AI provider.
+- `SIGTERM` triggers a bounded graceful shutdown: stop schedulers, pause intake,
+  close queue events and health server, then close the worker.
+- A periodic reconciliation pass compares stale `running` rows to BullMQ so a
+  crash cannot leave the UI polling a job forever.
+
 ## Standard result contract
 
 `job_result` should be stable enough for web to render without guessing.

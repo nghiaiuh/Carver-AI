@@ -6,7 +6,7 @@
  */
 
 import { UnrecoverableError, type Job } from "bullmq";
-import { createSafeLogger, type QueuedCarverAiJobPayload } from "@carver/shared";
+import { createSafeLogger, notifyOperationalAlert, type QueuedCarverAiJobPayload } from "@carver/shared";
 import { handleGenerateConceptJob } from "./handlers/generate-concept";
 import { handleRefineConceptJob } from "./handlers/refine-concept";
 import {
@@ -19,6 +19,29 @@ import { buildJobError, toWorkerError } from "../mappers/build-job-error";
 import { aiJobRepository } from "../repositories/ai-job-repository";
 
 const logger = createSafeLogger("worker.process-ai-job");
+
+const emitTerminalFailureAlert = (
+  params: {
+    jobId: string;
+    bullJobId: string;
+    errorCode: string;
+    currentAttempt: number;
+    maxAttempts: number;
+  },
+) => {
+  const event = params.errorCode.startsWith("storage_")
+    ? "r2_generation_failure"
+    : params.errorCode.startsWith("provider_")
+      ? "openai_generation_failure"
+      : "ai_job_failed";
+
+  void notifyOperationalAlert({
+    event,
+    severity: "error",
+    cooldownKey: `${event}:${params.errorCode}`,
+    metadata: params,
+  });
+};
 
 function getAttemptsStarted(job: Job<QueuedCarverAiJobPayload>) {
   const candidate = (job as Job<QueuedCarverAiJobPayload> & { attemptsStarted?: number }).attemptsStarted;
@@ -64,6 +87,13 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
         bullJobId,
         ...mappedError,
       }).catch(() => undefined);
+      emitTerminalFailureAlert({
+        jobId: job.data.jobId,
+        bullJobId,
+        errorCode: mappedError.errorCode,
+        currentAttempt: attemptContext.currentAttempt,
+        maxAttempts: attemptContext.maxAttempts,
+      });
     } else {
       await recordRetryableFailure(job.data.jobId, bullJobId, mappedError).catch(() => undefined);
     }
@@ -159,6 +189,13 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
         bullJobId,
         ...mappedError,
       }).catch(() => undefined);
+      emitTerminalFailureAlert({
+        jobId: job.data.jobId,
+        bullJobId,
+        errorCode: mappedError.errorCode,
+        currentAttempt: attemptContext.currentAttempt,
+        maxAttempts: attemptContext.maxAttempts,
+      });
     } else {
       await recordRetryableFailure(job.data.jobId, bullJobId, mappedError).catch(() => undefined);
     }

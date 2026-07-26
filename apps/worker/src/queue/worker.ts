@@ -5,12 +5,17 @@
  * 3. Keep startup wiring separate from job orchestration.
  */
 
-import { AI_JOB_QUEUE_NAME, Worker, defaultQueueOptions } from "@carver/queue";
+import {
+  AI_JOB_QUEUE_NAME,
+  Worker,
+  defaultQueueOptions,
+  getAiWorkerRuntimeOptions,
+} from "@carver/queue";
 import type { QueuedCarverAiJobPayload } from "@carver/shared";
 import { processAiJob } from "../jobs/process-ai-job";
 
 export const createAiJobWorker = () =>
   new Worker<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, processAiJob, {
     ...defaultQueueOptions,
-    concurrency: Number(process.env.AI_WORKER_CONCURRENCY ?? 2),
+    ...getAiWorkerRuntimeOptions(),
   });

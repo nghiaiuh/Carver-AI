@@ -50,6 +50,12 @@ export type LoadedForProcessingJob =
       kind: "missing";
     };
 
+export type StaleRunningJob = {
+  id: string;
+  bullJobId: string | null;
+  lastAttemptAt: string | null;
+};
+
 type StartJobResult =
   | { kind: "started" | "resumed"; status: "running" }
   | { kind: "terminal"; status: AiJobStatus }
@@ -357,6 +363,59 @@ const reconcileExhaustedFailure = async (
   }
 };
 
+const listStaleRunningJobs = async (olderThan: Date, limit: number): Promise<StaleRunningJob[]> => {
+  const supabase = getSupabaseAdmin();
+  const aiJobsTable = supabase.from("ai_jobs") as any;
+  const { data, error } = await aiJobsTable
+    .select("id, bull_job_id, last_attempt_at")
+    .eq("status", "running")
+    .or(`last_attempt_at.lt.${olderThan.toISOString()},last_attempt_at.is.null`)
+    .order("last_attempt_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((job: { id: string; bull_job_id?: string | null; last_attempt_at?: string | null }) => ({
+    id: job.id,
+    bullJobId: job.bull_job_id ?? null,
+    lastAttemptAt: job.last_attempt_at ?? null,
+  }));
+};
+
+const reconcileStalledFailure = async (
+  jobId: string,
+  bullJobId: string | null,
+  params: {
+    errorCode: string;
+    errorMessage: string;
+  },
+) => {
+  const supabase = getSupabaseAdmin();
+  const aiJobsTable = supabase.from("ai_jobs") as any;
+  let query = aiJobsTable
+    .update({
+      status: "failed",
+      error_code: params.errorCode,
+      error_message: params.errorMessage,
+      last_error_code: params.errorCode,
+      last_error_message: params.errorMessage,
+      last_attempt_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("status", "running");
+
+  if (bullJobId) {
+    query = query.eq("bull_job_id", bullJobId);
+  }
+
+  const { error } = await query;
+  if (error) {
+    throw error;
+  }
+};
+
 export const aiJobRepository = {
   loadForProcessing,
   markRunning,
@@ -364,4 +423,6 @@ export const aiJobRepository = {
   markFailed,
   recordRetryableFailure,
   reconcileExhaustedFailure,
+  listStaleRunningJobs,
+  reconcileStalledFailure,
 };

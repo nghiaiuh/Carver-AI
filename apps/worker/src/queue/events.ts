@@ -11,10 +11,15 @@ import {
   defaultQueueOptions,
   type Worker,
 } from "@carver/queue";
-import { createSafeLogger, type QueuedCarverAiJobPayload } from "@carver/shared";
+import { createSafeLogger, notifyOperationalAlert, type QueuedCarverAiJobPayload } from "@carver/shared";
 import { reconcileExhaustedFailure } from "../services/job-status-service";
 
 const logger = createSafeLogger("worker.ai-jobs");
+
+const getQueueWaitAlertThresholdMs = () => {
+  const threshold = Number(process.env.AI_JOB_QUEUE_WAIT_ALERT_MS ?? 120_000);
+  return Number.isFinite(threshold) && threshold >= 10_000 ? threshold : 120_000;
+};
 
 function getAttemptsStarted(job: unknown) {
   const candidate = job as { attemptsStarted?: number };
@@ -27,13 +32,24 @@ export const registerAiJobWorkerEvents = (worker: Worker<QueuedCarverAiJobPayloa
   });
 
   worker.on("active", (job) => {
+    const queueWaitMs = Math.max(0, Date.now() - job.timestamp);
     logger.info("job active", {
       bullJobId: job.id,
       jobId: job.data.jobId,
       attemptsMade: job.attemptsMade,
       attemptsStarted: getAttemptsStarted(job),
       maxAttempts: job.opts.attempts ?? 1,
+      queueWaitMs,
     });
+
+    if (queueWaitMs >= getQueueWaitAlertThresholdMs()) {
+      void notifyOperationalAlert({
+        event: "ai_job_queue_wait_high",
+        severity: "warning",
+        cooldownKey: "ai_job_queue_wait_high",
+        metadata: { jobId: job.data.jobId, bullJobId: job.id, queueWaitMs },
+      });
+    }
   });
 
   worker.on("completed", (job) => {
@@ -61,6 +77,12 @@ export const registerAiJobWorkerEvents = (worker: Worker<QueuedCarverAiJobPayloa
     logger.error("job stalled", {
       bullJobId: jobId,
       previousState: prev,
+    });
+    void notifyOperationalAlert({
+      event: "ai_job_stalled",
+      severity: "error",
+      cooldownKey: `ai_job_stalled:${jobId}`,
+      metadata: { bullJobId: jobId, previousState: prev },
     });
   });
 

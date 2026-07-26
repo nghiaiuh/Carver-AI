@@ -13,6 +13,21 @@ export { Queue, Worker, QueueEvents };
 export const AI_JOB_QUEUE_NAME = "carver-ai-jobs";
 export const AI_JOB_QUEUE_EVENT_NAME = "carver-ai-job";
 
+const readBoundedInteger = (
+  rawValue: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  name: string,
+) => {
+  const value = Number(rawValue ?? fallback);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
+  }
+
+  return value;
+};
+
 const resolveRedisConnection = () => {
   if (process.env.REDIS_URL) {
     const redisUrl = new URL(process.env.REDIS_URL);
@@ -68,15 +83,52 @@ export const describeRedisConnection = () => {
 export const defaultQueueOptions = {
   connection: resolveRedisConnection(),
   defaultJobOptions: {
-    attempts: Number(process.env.AI_JOB_ATTEMPTS ?? 3),
+    attempts: readBoundedInteger(process.env.AI_JOB_ATTEMPTS, 3, 1, 10, "AI_JOB_ATTEMPTS"),
     backoff: {
       type: "exponential",
-      delay: Number(process.env.AI_JOB_BACKOFF_MS ?? 10_000),
+      delay: readBoundedInteger(process.env.AI_JOB_BACKOFF_MS, 10_000, 1_000, 3_600_000, "AI_JOB_BACKOFF_MS"),
     },
-    removeOnComplete: Number(process.env.AI_JOB_REMOVE_ON_COMPLETE ?? 100),
-    removeOnFail: Number(process.env.AI_JOB_REMOVE_ON_FAIL ?? 100),
+    removeOnComplete: readBoundedInteger(
+      process.env.AI_JOB_REMOVE_ON_COMPLETE,
+      100,
+      0,
+      10_000,
+      "AI_JOB_REMOVE_ON_COMPLETE",
+    ),
+    removeOnFail: readBoundedInteger(
+      process.env.AI_JOB_REMOVE_ON_FAIL,
+      100,
+      0,
+      10_000,
+      "AI_JOB_REMOVE_ON_FAIL",
+    ),
   },
 };
+
+export const getAiWorkerRuntimeOptions = () => ({
+  concurrency: readBoundedInteger(process.env.AI_WORKER_CONCURRENCY, 2, 1, 32, "AI_WORKER_CONCURRENCY"),
+  lockDuration: readBoundedInteger(
+    process.env.AI_JOB_LOCK_DURATION_MS,
+    60_000,
+    10_000,
+    600_000,
+    "AI_JOB_LOCK_DURATION_MS",
+  ),
+  stalledInterval: readBoundedInteger(
+    process.env.AI_JOB_STALLED_INTERVAL_MS,
+    30_000,
+    5_000,
+    300_000,
+    "AI_JOB_STALLED_INTERVAL_MS",
+  ),
+  maxStalledCount: readBoundedInteger(
+    process.env.AI_JOB_MAX_STALLED_COUNT,
+    1,
+    0,
+    5,
+    "AI_JOB_MAX_STALLED_COUNT",
+  ),
+});
 
 export const createAiJobQueue = () =>
   new Queue<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, defaultQueueOptions);
