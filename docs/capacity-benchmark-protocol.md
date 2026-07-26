@@ -19,7 +19,7 @@ TLS Redis, private R2, and a separate Supabase project.
 
 1. Run autosave and asset benchmarks from internal Field Notes dashboards.
 2. Run AI simulation scenarios (`success`, `slow_success`, transient failure,
-   permanent failure) without OpenAI cost.
+   post-persist retry reuse, and permanent failure) without OpenAI cost.
 3. Load API/upload/asset endpoints only with dedicated staging test users.
 4. Increase concurrent users in steps: 1, 5, 10, 25, 50. Stop on sustained
    errors, queue wait SLO breach, Supabase saturation, or budget threshold.

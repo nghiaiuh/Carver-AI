@@ -51,6 +51,50 @@ The queue package rejects an unauthenticated or non-TLS Redis URL when
 5. Do not manually set a job to `succeeded`. Retry only after determining that
    its input assets and output path are safe to reuse.
 
+### Staging end-to-end verification
+
+The Playwright staging flow creates a disposable project, uploads a one-pixel
+PNG to the private library, saves and reloads a cloud draft, and verifies the
+canvas hydrates the asset through the gateway. It then creates a simulated AI
+job and polls it to `succeeded`; no OpenAI image request is made.
+
+Before running it, configure a disposable staging user session as
+`CARVER_E2E_STORAGE_STATE_JSON`, set `CARVER_E2E_BASE_URL` to the staging web
+origin, and set `CARVER_ENABLE_AI_JOB_SIMULATION=true` on both the staging web
+and worker services. Simulation must remain disabled in production. The test intentionally creates
+its own project and does not accept a shared project ID, so test runs cannot
+mutate a project selected by a developer or user.
+
+The GitHub Actions staging jobs deliberately do **not** apply SQL migrations:
+they receive API keys, not a database connection string. Apply and review
+migrations in the Supabase staging project first, then run the opt-in workflow.
+The tenant-isolation job builds every workspace package before it starts the
+web server, so it exercises the same `dist/` exports as a clean deployment.
+
+Run the database/API ownership smoke test from a developer machine after the
+staging web server is available:
+
+```powershell
+$env:CARVER_RUN_INTEGRATION_TESTS = "1"
+$env:CARVER_TEST_ENVIRONMENT = "staging"
+$env:SUPABASE_TEST_URL = "https://<staging-ref>.supabase.co"
+$env:SUPABASE_TEST_ANON_KEY = "<staging-publishable-key>"
+$env:SUPABASE_TEST_SERVICE_ROLE_KEY = "<staging-service-role-key>"
+$env:CARVER_TEST_WEB_BASE_URL = "https://<staging-web-origin>"
+npm run test:tenant-isolation --workspace @carver/db
+```
+
+Run the browser flow only against the deployed staging web/worker pair. The
+stored session must belong to a disposable staging account:
+
+```powershell
+$env:CARVER_RUN_E2E = "1"
+$env:CARVER_E2E_RUN_GENERATION = "1"
+$env:CARVER_E2E_BASE_URL = "https://<staging-web-origin>"
+$env:CARVER_E2E_STORAGE_STATE_PATH = "C:\secure\carver-staging-state.json"
+npm run test:e2e
+```
+
 ## 2. Error tracking and alerts
 
 ### Baseline implementation
@@ -97,7 +141,7 @@ Configure these in the **production Supabase Dashboard**, not in source code:
    refresh. Verify the deployed proxy preserves end-user IP behavior.
 5. Restrict redirect URLs to exact production origins. Do not leave wildcard
    callback URLs enabled.
-6. Use short access-token lifetime (start at 30–60 minutes), enable refresh
+6. Use short access-token lifetime (start at 30-60 minutes), enable refresh
    token rotation/reuse detection, and verify session revocation behavior.
 7. Require MFA for every internal admin account and remove former team members.
 8. Run a staging test for password signup, confirmation, login throttling,
@@ -171,9 +215,13 @@ Keep a release record containing:
   It considers only assets marked `metadata.temporary=true`, older than 24
   hours, and excludes inputs referenced by queued/running jobs.
 - Run `npm run storage:orphan-r2:dry-run` before any deletion. It finds old R2
-  objects that have no asset/library metadata row.
+  objects that have no asset/library metadata row. The report intentionally
+  contains only object-key hashes, never private storage paths.
 - Use the corresponding `:delete` command only after reviewing dry-run output.
   Keep deletion logs as release/operations evidence.
-- Failed job output and project deletion cleanup remain dependent on the same
-  orphan pass until a dedicated soft-delete/outbox lifecycle table is added.
-  Do not bulk-delete project prefixes without a verified DB ownership query.
+- Project deletion removes owned DB metadata first and then attempts R2 cleanup.
+  It rejects projects with queued or running AI jobs. A storage failure returns
+  `r2CleanupPending` and is recovered by the orphan pass; do not bulk-delete
+  project prefixes without a verified DB ownership query.
+- Failed job output cleanup remains dependent on the same orphan pass until a
+  dedicated soft-delete/outbox lifecycle table is added.
