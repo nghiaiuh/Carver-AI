@@ -4,9 +4,11 @@ import { apiFailure } from "./http";
 
 export const API_RATE_LIMIT_SCOPES = [
   "ai-job",
+  "ai-job-poll",
   "chat",
   "library-upload",
   "project-create",
+  "project-delete",
   "project-draft-finalize",
   "project-draft-save",
   "prompt-enhance",

@@ -5,7 +5,7 @@ const migrationDirectory = path.resolve("packages/db/sql");
 const entries = (await readdir(migrationDirectory))
   .filter((name) => /^\d{3}_.+\.sql$/u.test(name))
   .sort();
-const expectedPrefixes = Array.from({ length: 18 }, (_, index) => String(index + 1).padStart(3, "0"));
+const expectedPrefixes = Array.from({ length: 21 }, (_, index) => String(index + 1).padStart(3, "0"));
 
 for (const prefix of expectedPrefixes) {
   if (!entries.some((name) => name.startsWith(`${prefix}_`))) {

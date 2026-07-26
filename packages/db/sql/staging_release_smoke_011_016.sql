@@ -1,4 +1,4 @@
--- Read-only release smoke check for migrations 011 through 016.
+-- Read-only release smoke check for the release-hardening migrations 011 through 021.
 --
 -- Run this in the Supabase SQL Editor for STAGING only, after applying the
 -- migration order documented in README.md. It queries PostgreSQL catalogs and
@@ -152,6 +152,15 @@ begin
     missing := array_append(missing, 'missing security-definer create_ai_job_with_checkpoint RPC');
   end if;
 
+  if not exists (
+    select 1
+    from pg_indexes as indexes
+    where indexes.schemaname = 'public'
+      and indexes.indexname = 'chat_messages_ai_job_message_once'
+  ) then
+    missing := array_append(missing, 'missing ai-job chat message idempotency index');
+  end if;
+
   if has_table_privilege('authenticated', 'public.ai_jobs', 'insert')
     or has_table_privilege('authenticated', 'public.ai_jobs', 'update')
     or has_table_privilege('authenticated', 'public.ai_jobs', 'delete') then
@@ -176,9 +185,11 @@ begin
 
   foreach table_name in array array[
     'ai-job',
+    'ai-job-poll',
     'chat',
     'library-upload',
     'project-create',
+    'project-delete',
     'project-draft-finalize',
     'project-draft-save',
     'prompt-enhance',
@@ -190,7 +201,7 @@ begin
   end loop;
 
   if array_length(missing, 1) is not null then
-    raise exception 'Release smoke check for migrations 011-016 failed: %', array_to_string(missing, '; ');
+    raise exception 'Release smoke check for migrations 011-021 failed: %', array_to_string(missing, '; ');
   end if;
 end;
 $$;
@@ -198,4 +209,4 @@ $$;
 select
   true as passed,
   now() as checked_at,
-  'Migrations 011-016 schema, RLS, grants, triggers, constraints, RPCs, and rate-limit scopes are present.' as summary;
+  'Migrations 011-021 schema, RLS, grants, triggers, constraints, RPCs, and rate-limit scopes are present.' as summary;

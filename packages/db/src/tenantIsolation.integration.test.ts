@@ -25,6 +25,7 @@ type TenantFixture = {
   jobId: string;
   libraryFolderId: string;
   libraryAssetId: string;
+  creditLedgerId: string;
 };
 
 type DatabaseResponse = {
@@ -139,6 +140,20 @@ async function createFixture(): Promise<TenantFixture> {
       { id: userB.id, display_name: "Tenant B" },
     ]);
     assertNoDatabaseError(profileError);
+
+    const { data: creditLedger, error: creditLedgerError } = await admin
+      .from("credit_ledger")
+      .insert({
+        profile_id: userA.id,
+        amount: 5,
+        balance_after: 5,
+        reason: "admin_adjustment",
+        idempotency_key: `tenant-credit-${suffix}`,
+      })
+      .select("id")
+      .single();
+    assertNoDatabaseError(creditLedgerError);
+    assert.ok(creditLedger, "Credit ledger fixture was not created.");
 
     const { data: project, error: projectError } = await admin
       .from("projects")
@@ -281,6 +296,7 @@ async function createFixture(): Promise<TenantFixture> {
       jobId: job.id,
       libraryFolderId: folder.id,
       libraryAssetId: libraryAsset.id,
+      creditLedgerId: creditLedger.id,
     };
   } catch (error) {
     await Promise.allSettled(
@@ -409,14 +425,16 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
     );
     assert.equal(ownerSnapshotResponse.status, 201, await ownerSnapshotResponse.text());
 
-    const { data: allowedRateLimit, error: allowedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
-      p_scope: "chat",
-      p_limit: 5,
-      p_window_seconds: 60,
-    });
-    assertNoDatabaseError(allowedRateLimitError);
-    assert.ok(Array.isArray(allowedRateLimit));
-    assert.equal(allowedRateLimit[0]?.allowed, true);
+    for (const scope of ["chat", "ai-job-poll"] as const) {
+      const { data: allowedRateLimit, error: allowedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
+        p_scope: scope,
+        p_limit: 5,
+        p_window_seconds: 60,
+      });
+      assertNoDatabaseError(allowedRateLimitError);
+      assert.ok(Array.isArray(allowedRateLimit));
+      assert.equal(allowedRateLimit[0]?.allowed, true);
+    }
 
     const { error: rejectedRateLimitError } = await userA.rpc("consume_api_rate_limit", {
       p_scope: `unapproved-scope-${randomUUID()}`,
@@ -436,6 +454,7 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
       assertHidden(userB.from("ai_jobs").select("id").eq("id", fixture.jobId)),
       assertHidden(userB.from("library_folders").select("id").eq("id", fixture.libraryFolderId)),
       assertHidden(userB.from("library_assets").select("id").eq("id", fixture.libraryAssetId)),
+      assertHidden(userB.from("credit_ledger").select("id").eq("id", fixture.creditLedgerId)),
     ]);
 
     await Promise.all([
@@ -500,10 +519,12 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
 
     await Promise.all([
       assertApiNotFound(await apiRequest(fixture, `/api/projects/${fixture.projectId}/snapshot`)),
+      assertApiNotFound(await apiRequest(fixture, `/api/projects/${fixture.projectId}`, { method: "DELETE" })),
       assertApiNotFound(await apiRequest(fixture, `/api/project-drafts/${fixture.projectId}`)),
       assertApiNotFound(await apiRequest(fixture, `/api/projects/${fixture.projectId}/ai-jobs/${fixture.jobId}`)),
       assertApiNotFound(await apiRequest(fixture, `/api/chat?projectId=${fixture.projectId}&canvasId=tenant-isolation`)),
       assertApiNotFound(await apiRequest(fixture, `/api/library/assets/${fixture.libraryAssetId}`, { method: "DELETE" })),
+      assertApiNotFound(await apiRequest(fixture, `/api/library/folders/${fixture.libraryFolderId}`, { method: "DELETE" })),
     ]);
 
     const assetResolve = await apiRequest(fixture, "/api/assets/resolve", {
@@ -519,11 +540,52 @@ test("tenant isolation hides User A data from User B through RLS and API routes"
     assert.equal(assetResolveBody.success, true);
     assert.equal(assetResolveBody.data?.assets?.[fixture.assetId], undefined);
 
+    // The content gateway must not accept a raw asset ID without a URL token
+    // minted after ownership verification.
+    await assertApiNotFound(
+      await fetch(`${config.webBaseUrl}/api/assets/${fixture.assetId}/content`),
+    );
+
+    const legacyGenerate = await fetch(`${config.webBaseUrl}/api/generate`, { method: "POST" });
+    const legacyGenerateBody = (await legacyGenerate.json()) as {
+      success?: boolean;
+      code?: string;
+      requestId?: string;
+    };
+    assert.equal(legacyGenerate.status, 410);
+    assert.equal(legacyGenerateBody.success, false);
+    assert.equal(legacyGenerateBody.code, "LEGACY_GENERATE_DISABLED");
+    assert.equal(typeof legacyGenerateBody.requestId, "string");
+
+    const legacyLibrarySync = await fetch(`${config.webBaseUrl}/api/library/sync`, { method: "POST" });
+    const legacyLibrarySyncBody = (await legacyLibrarySync.json()) as {
+      success?: boolean;
+      code?: string;
+      requestId?: string;
+    };
+    assert.equal(legacyLibrarySync.status, 410);
+    assert.equal(legacyLibrarySyncBody.success, false);
+    assert.equal(legacyLibrarySyncBody.code, "LIBRARY_SYNC_MOVED_TO_WORKER");
+    assert.equal(typeof legacyLibrarySyncBody.requestId, "string");
+
     const libraryResponse = await apiRequest(fixture, "/api/library");
     const libraryBody = await libraryResponse.text();
     assert.equal(libraryResponse.status, 200);
     assert.equal(libraryBody.includes(fixture.libraryFolderId), false);
     assert.equal(libraryBody.includes(fixture.libraryAssetId), false);
+
+    const creditHistoryResponse = await apiRequest(fixture, "/api/credits/transactions");
+    const creditHistoryBody = (await creditHistoryResponse.json()) as {
+      success?: boolean;
+      data?: { entries?: Array<{ id?: string }> };
+    };
+    assert.equal(creditHistoryResponse.status, 200);
+    assert.equal(creditHistoryBody.success, true);
+    assert.equal(
+      creditHistoryBody.data?.entries?.some((entry) => entry.id === fixture.creditLedgerId),
+      false,
+      "User B must not receive User A ledger entries through the credit history API.",
+    );
   } finally {
     await deleteFixture(fixture);
   }

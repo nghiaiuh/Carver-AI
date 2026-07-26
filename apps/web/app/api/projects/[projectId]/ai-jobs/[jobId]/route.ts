@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import type { CarverAiJobRecord, CarverAiJobResult } from "@carver/shared";
 import { requireProjectScopedJob, requireRequestContext, isUuidLike } from "../../../../_lib/authz";
 import { badRequest } from "../../../../_lib/http";
+import { enforceRateLimit } from "../../../../_lib/rateLimit";
 import { resolveAiJobResultAssetUrls } from "../../../../../../lib/server/assetService";
 
 export async function GET(
@@ -42,6 +43,18 @@ export async function GET(
   if ("error" in jobResult) {
     return jobResult.error;
   }
+
+  // Polling is intentionally generous for long image jobs, but still bounded
+  // so an authenticated client cannot turn job status into a DB hot loop.
+  const rateLimit = await enforceRateLimit(context, {
+    scope: "ai-job-poll",
+    limit: 180,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return rateLimit.response;
+  }
+
   const { job } = jobResult;
 
   return NextResponse.json({
@@ -60,6 +73,9 @@ export async function GET(
         provider: job.provider,
         errorCode: job.error_code,
         errorMessage: job.error_message,
+        lastErrorCode: job.last_error_code,
+        lastErrorMessage: job.last_error_message,
+        lastAttemptAt: job.last_attempt_at,
         createdAt: job.created_at,
         updatedAt: job.updated_at,
         jobResult: await resolveAiJobResultAssetUrls({

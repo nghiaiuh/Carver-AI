@@ -26,6 +26,9 @@ Apply these SQL files in the exact order below. The numeric prefixes are histori
 | 18 | `016_rate_limit_scope_allowlist.sql` | Fixed allowlist for public rate-limit RPC scopes. |
 | 19 | `017_draft_snapshot_service_boundary.sql` | Moves draft/snapshot write RPCs behind the service-role API boundary. |
 | 20 | `018_service_role_draft_trigger_fix.sql` | Allows service-boundary draft writes while preserving project-owner integrity. |
+| 21 | `019_project_delete_rate_limit.sql` | Adds the destructive project-delete scope to the fixed rate-limit allowlist. |
+| 22 | `020_ai_job_chat_message_idempotency.sql` | Prevents a BullMQ retry from inserting duplicate generated assistant messages. |
+| 23 | `021_ai_job_poll_rate_limit.sql` | Limits authenticated AI-job polling without disrupting normal long-running job updates. |
 
 ## Manual Apply Checklist
 
@@ -57,13 +60,13 @@ npm run test:tenant-isolation --workspace @carver/db
 `CARVER_TEST_WEB_BASE_URL` must point to a web instance configured against the
 same test database. Do not reuse production credentials for any `*_TEST_*` variable.
 
-## Staging Release Smoke: Migrations 011-016
+## Staging Release Smoke: Migrations 011-021
 
 Use both checks below before deploying these security migrations to production.
 They deliberately target a separate staging Supabase project and never accept a
 `production` test environment value.
 
-1. Apply migrations `001` through `016` in the exact order above to staging.
+1. Apply migrations `001` through `021` in the exact order above to staging.
 2. In the staging Supabase SQL Editor, run
    `staging_release_smoke_011_016.sql`. It is read-only and verifies the
    required tables, RLS, policies, constraints, triggers, RPCs, revoked table
@@ -87,10 +90,10 @@ chat, AI job, or library records through either RLS or sensitive web API routes.
 Keep all `*_TEST_*` secrets in a local, ignored environment file; never paste a
 service-role key into source control or a terminal recording.
 
-After applying migrations `017` and `018`, also run
-`staging_release_smoke_018_service_boundary.sql` in the staging SQL Editor.
-It verifies that browser roles cannot execute the legacy or new draft/snapshot
-RPCs, while `service_role` alone can call the new actor-bound signatures.
+The smoke script also verifies the service-boundary controls introduced in
+`017` and `018`, the `project-delete` rate-limit allowlist entry from `019`,
+the AI-job chat-message idempotency index from `020`, and the bounded
+AI-job polling scope from `021`.
 
 ## Known Cleanup
 
