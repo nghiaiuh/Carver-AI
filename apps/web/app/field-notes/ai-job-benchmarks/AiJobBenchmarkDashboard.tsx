@@ -68,6 +68,7 @@ const SIMULATION_SCENARIOS = [
   "success",
   "slow_success",
   "transient_provider_fail_then_success",
+  "fail_after_asset_persisted_once",
   "permanent_fail",
 ] as const;
 
@@ -106,8 +107,9 @@ function formatDuration(durationMs: number) {
   return `${formatNumber(durationMs)} ms`;
 }
 
-function summarizeByProject(events: AiJobBenchmarkEvent[]) {
-  const store = getAiJobBenchmarkStore();
+type AiJobBenchmarkStore = ReturnType<typeof getAiJobBenchmarkStore>;
+
+function summarizeByProject(store: AiJobBenchmarkStore) {
   const runMap = new Map<string, ReturnType<typeof buildAiJobBenchmarkSummary>>();
   const runsByProject = new Map<string, typeof store.runs[string][]>();
 
@@ -126,8 +128,7 @@ function summarizeByProject(events: AiJobBenchmarkEvent[]) {
   }));
 }
 
-function summarizeBySource() {
-  const store = getAiJobBenchmarkStore();
+function summarizeBySource(store: AiJobBenchmarkStore) {
   const runsBySource = new Map<string, typeof store.runs[string][]>();
 
   Object.values(store.runs).forEach((run) => {
@@ -140,8 +141,35 @@ function summarizeBySource() {
   }));
 }
 
+function createBenchmarkRequestId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `benchmark-${Date.now()}`;
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+function formatApiError(params: {
+  status: number;
+  error?: string;
+  code?: string;
+  requestId?: string;
+  fallback: string;
+}) {
+  const parts = [params.error || params.fallback, `(HTTP ${params.status})`];
+  if (params.code) {
+    parts.push(`[${params.code}]`);
+  }
+  if (params.requestId) {
+    parts.push(`requestId=${params.requestId}`);
+  }
+  return parts.join(" ");
+}
+
 export default function AiJobBenchmarkDashboard() {
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
   const [projectId, setProjectId] = useState("");
   const [runnerMessage, setRunnerMessage] = useState<string | null>(null);
   const [runningScenario, setRunningScenario] = useState<string | null>(null);
@@ -157,28 +185,11 @@ export default function AiJobBenchmarkDashboard() {
     };
   }, []);
 
-  const store = useMemo(() => getAiJobBenchmarkStore(), [version]);
+  const store = getAiJobBenchmarkStore();
   const runs = useMemo(() => Object.values(store.runs), [store.runs]);
   const summary = useMemo(() => buildAiJobBenchmarkSummary(runs), [runs]);
-  const byProject = useMemo(() => summarizeByProject(store.events), [version, store.events]);
-  const bySource = useMemo(() => summarizeBySource(), [version]);
-
-  const formatApiError = (params: {
-    status: number;
-    error?: string;
-    code?: string;
-    requestId?: string;
-    fallback: string;
-  }) => {
-    const parts = [params.error || params.fallback, `(HTTP ${params.status})`];
-    if (params.code) {
-      parts.push(`[${params.code}]`);
-    }
-    if (params.requestId) {
-      parts.push(`requestId=${params.requestId}`);
-    }
-    return parts.join(" ");
-  };
+  const byProject = useMemo(() => summarizeByProject(store), [store]);
+  const bySource = useMemo(() => summarizeBySource(store), [store]);
 
   const runSimulationScenario = async (
     scenario: (typeof SIMULATION_SCENARIOS)[number],
@@ -211,10 +222,7 @@ export default function AiJobBenchmarkDashboard() {
         );
       }
 
-      const requestId =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `benchmark-${Date.now()}`;
+      const requestId = createBenchmarkRequestId();
       const snapshotId = snapshotPayload.data.snapshot?.snapshotId ?? null;
       const createResponse = await fetch(`/api/projects/${normalizedProjectId}/ai-jobs`, {
         method: "POST",
@@ -261,7 +269,7 @@ export default function AiJobBenchmarkDashboard() {
       });
 
       let finished = false;
-      const startedAt = Date.now();
+      const startedAt = nowMs();
       while (!finished) {
         const pollResponse = await fetch(`/api/projects/${normalizedProjectId}/ai-jobs/${job.id}`, {
           cache: "no-store",
@@ -288,7 +296,7 @@ export default function AiJobBenchmarkDashboard() {
 
         const polledJob = pollPayload.data.job;
         if (polledJob.status === "queued" || polledJob.status === "running") {
-          if (Date.now() - startedAt > 120_000) {
+          if (nowMs() - startedAt > 120_000) {
             throw new Error("Benchmark AI job timed out while waiting for a terminal state.");
           }
 

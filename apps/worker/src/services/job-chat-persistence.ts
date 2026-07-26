@@ -69,7 +69,28 @@ function toPersistedGeneratedImages(images: GeneratedCanvasImage[]) {
   }));
 }
 
+const findExistingGeneratedAssistantMessage = async (params: {
+  projectId: string;
+  threadId: string;
+  jobId: string;
+}) => {
+  const { data, error } = await getSupabaseAdmin()
+    .from("chat_messages")
+    .select("id, content, created_at")
+    .eq("project_id", params.projectId)
+    .eq("thread_id", params.threadId)
+    .contains("metadata", { source: "ai-job", jobId: params.jobId })
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
 export async function persistGeneratedAssistantMessage(params: {
+  jobId: string;
   projectId: string;
   threadId?: string | null;
   content: string;
@@ -82,6 +103,22 @@ export async function persistGeneratedAssistantMessage(params: {
     .map((image) => image.assetId)
     .filter((assetId): assetId is string => typeof assetId === "string" && assetId.length > 0);
 
+  const existingMessage = await findExistingGeneratedAssistantMessage({
+    projectId: params.projectId,
+    threadId: resolvedThreadId,
+    jobId: params.jobId,
+  });
+
+  if (existingMessage) {
+    return {
+      id: existingMessage.id,
+      role: "assistant",
+      content: existingMessage.content,
+      createdAt: existingMessage.created_at,
+      generatedImages: persistedImages,
+    } satisfies CanvasGenerationAssistantMessage;
+  }
+
   const { data, error } = await supabase
     .from("chat_messages")
     .insert({
@@ -92,12 +129,30 @@ export async function persistGeneratedAssistantMessage(params: {
       referenced_asset_ids: referencedAssetIds,
       metadata: {
         source: "ai-job",
+        jobId: params.jobId,
         kind: "assistant-generated-image",
         generatedImages: persistedImages,
       } as never,
     })
     .select("id, created_at")
     .single();
+
+  if (error?.code === "23505") {
+    const messageCreatedByConcurrentAttempt = await findExistingGeneratedAssistantMessage({
+      projectId: params.projectId,
+      threadId: resolvedThreadId,
+      jobId: params.jobId,
+    });
+    if (messageCreatedByConcurrentAttempt) {
+      return {
+        id: messageCreatedByConcurrentAttempt.id,
+        role: "assistant",
+        content: messageCreatedByConcurrentAttempt.content,
+        createdAt: messageCreatedByConcurrentAttempt.created_at,
+        generatedImages: persistedImages,
+      } satisfies CanvasGenerationAssistantMessage;
+    }
+  }
 
   if (error || !data) {
     throw new Error(error?.message || "Unable to persist generated assistant message.");

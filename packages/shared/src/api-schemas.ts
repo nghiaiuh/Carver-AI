@@ -27,6 +27,7 @@ export const CARVER_SIMULATION_SCENARIO_VALUES = [
   "success",
   "slow_success",
   "transient_provider_fail_then_success",
+  "fail_after_asset_persisted_once",
   "permanent_fail",
 ] as const;
 

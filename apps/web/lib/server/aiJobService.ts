@@ -51,11 +51,18 @@ const SIMULATION_SCENARIOS = [
   "success",
   "slow_success",
   "transient_provider_fail_then_success",
+  "fail_after_asset_persisted_once",
   "permanent_fail",
 ] as const;
 const INLINE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
 const logger = createSafeLogger("web.ai-jobs");
-const AI_JOB_SIMULATION_ENABLED = process.env.NODE_ENV !== "production";
+// Production defaults to real providers. Staging must opt in explicitly so its
+// deterministic E2E flow cannot accidentally enable simulation in production.
+const AI_JOB_SIMULATION_ENABLED =
+  process.env.CARVER_ENABLE_AI_JOB_SIMULATION === "true" || process.env.NODE_ENV !== "production";
+
+const isSafeInlineImageValidationMessage = (value: string) =>
+  /^Inline image (must|type|is|content|dimensions)/.test(value);
 
 type CreateAiJobWithCheckpointRpcRow = {
   id: string;
@@ -525,10 +532,26 @@ export async function createProjectAiJob(params: {
       ownerId: user.id,
       assets: persistedInputAssets,
     }).catch(() => undefined);
+
+    const message = error instanceof Error ? error.message : "";
+    logger.warn("AI job input preparation failed", {
+      requestId: context.requestId,
+      userId: user.id,
+      projectId,
+      error,
+    });
+
+    if (isSafeInlineImageValidationMessage(message)) {
+      return { ok: false, response: badRequest(message) };
+    }
+
     return {
       ok: false,
-      response: badRequest(
-        error instanceof Error ? error.message : "Unable to validate AI job image inputs.",
+      response: apiFailure(
+        "AI_JOB_INPUT_PREPARATION_FAILED",
+        "Unable to prepare AI job image inputs right now.",
+        500,
+        context.requestId,
       ),
     };
   }
@@ -577,7 +600,7 @@ export async function createProjectAiJob(params: {
 
   const { data: existingJob, error: existingJobError } = await supabase
     .from("ai_jobs")
-    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+    .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result")
     .eq("project_id", projectId)
     .eq("created_by", user.id)
     .eq("idempotency_key", idempotencyKey)
@@ -693,7 +716,7 @@ export async function createProjectAiJob(params: {
     });
     const { data: racedJob } = await supabase
       .from("ai_jobs")
-      .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result")
+      .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result")
       .eq("project_id", projectId)
       .eq("created_by", user.id)
       .eq("idempotency_key", idempotencyKey)
@@ -843,6 +866,9 @@ async function mapAiJobRecord(row: {
   provider: string | null;
   error_code: string | null;
   error_message: string | null;
+  last_error_code?: string | null;
+  last_error_message?: string | null;
+  last_attempt_at?: string | null;
   created_at: string;
   updated_at: string;
   job_result?: unknown;
@@ -865,6 +891,9 @@ async function mapAiJobRecord(row: {
     provider: row.provider,
     errorCode: row.error_code,
     errorMessage: row.error_message,
+    lastErrorCode: row.last_error_code ?? null,
+    lastErrorMessage: row.last_error_message ?? null,
+    lastAttemptAt: row.last_attempt_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     jobResult: params

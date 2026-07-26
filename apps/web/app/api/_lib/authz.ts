@@ -59,7 +59,7 @@ export async function requireProjectScopedJob(context: RequestContext, projectId
   const { data: job, error } = await context.supabase
     .from("ai_jobs")
     .select(
-      "id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, created_at, updated_at, job_result",
+      "id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result",
     )
     .eq("id", normalizedJobId)
     .eq("project_id", projectId.trim())

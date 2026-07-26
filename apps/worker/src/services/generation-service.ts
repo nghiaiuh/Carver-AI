@@ -22,11 +22,15 @@ import type {
 } from "@carver/shared";
 import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
 import { generateImageFromPrompt } from "../providers/openai/generate-image";
-import { persistGeneratedImageAsset } from "./asset-persistence-service";
+import {
+  findReusableGeneratedImageAsset,
+  persistGeneratedImageAsset,
+  type PersistedGeneratedOutput,
+} from "./asset-persistence-service";
 import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGenerationTargetImage } from "./job-image-sources";
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
-import { generateSimulatedImage } from "./simulation-generation-service";
+import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
 
 const logger = createSafeLogger("worker.generation-service");
 
@@ -208,65 +212,87 @@ export const executeGeneratedImageJob = async (
     throw new Error("Image-generating jobs require a compiled prompt.");
   }
 
-  const [targetImage, referenceImages, maskImage] = await Promise.all([
-    resolveGenerationTargetImage(job),
-    resolveGenerationReferenceImages(job),
-    resolveGenerationMaskImage(job),
-  ]);
-
-  logger.info("generation sources resolved", {
-    jobId: job.jobId,
-    projectId: job.projectId,
-    executionMode: job.executionMode,
-    hasTargetImage: Boolean(targetImage),
-    referenceImageCount: referenceImages.length,
-    hasMaskImage: Boolean(maskImage),
-  });
-
-  if ((job.executionMode === "image_edit" || job.executionMode === "region_edit") && !targetImage) {
-    throw new Error("Image edit jobs require a resolved target image.");
-  }
-
-  if (job.executionMode === "region_edit" && !maskImage) {
-    throw new Error("Region edit jobs require a resolved mask image.");
-  }
-
-  const providerImage = job.simulation
-    ? await generateSimulatedImage({
-        job,
-        prompt: state.finalPrompt,
-        currentAttempt: options?.currentAttempt ?? 1,
-      })
-    : await generateImageFromPrompt({
-        prompt: state.finalPrompt,
-        mode: job.executionMode,
-        targetImage,
-        referenceImages,
-        maskImage,
-      });
-
-  logger.info("generation provider image received", {
-    jobId: job.jobId,
-    projectId: job.projectId,
-    executionMode: job.executionMode,
-    mimeType: providerImage.mimeType,
-    width: providerImage.width,
-    height: providerImage.height,
-    provider: providerImage.provider,
-  });
-
-  const persisted = await persistGeneratedImageAsset({
+  const reusableOutput = await findReusableGeneratedImageAsset({
     jobId: job.jobId,
     projectId: job.projectId,
     ownerId: job.userId,
-    prompt: providerImage.revisedPrompt ?? state.finalPrompt,
-    title: "Generated concept",
-    buffer: providerImage.buffer,
-    mimeType: providerImage.mimeType,
-    width: providerImage.width,
-    height: providerImage.height,
-    provider: providerImage.provider,
   });
+  let persisted: PersistedGeneratedOutput;
+
+  if (reusableOutput) {
+    persisted = reusableOutput;
+    logger.info("reusing generated asset from an earlier attempt", {
+      jobId: job.jobId,
+      projectId: job.projectId,
+      assetId: persisted.assetId,
+    });
+  } else {
+    const [targetImage, referenceImages, maskImage] = await Promise.all([
+      resolveGenerationTargetImage(job),
+      resolveGenerationReferenceImages(job),
+      resolveGenerationMaskImage(job),
+    ]);
+
+    logger.info("generation sources resolved", {
+      jobId: job.jobId,
+      projectId: job.projectId,
+      executionMode: job.executionMode,
+      hasTargetImage: Boolean(targetImage),
+      referenceImageCount: referenceImages.length,
+      hasMaskImage: Boolean(maskImage),
+    });
+
+    if ((job.executionMode === "image_edit" || job.executionMode === "region_edit") && !targetImage) {
+      throw new Error("Image edit jobs require a resolved target image.");
+    }
+
+    if (job.executionMode === "region_edit" && !maskImage) {
+      throw new Error("Region edit jobs require a resolved mask image.");
+    }
+
+    const providerImage = job.simulation
+      ? await generateSimulatedImage({
+          job,
+          prompt: state.finalPrompt,
+          currentAttempt: options?.currentAttempt ?? 1,
+        })
+      : await generateImageFromPrompt({
+          prompt: state.finalPrompt,
+          mode: job.executionMode,
+          targetImage,
+          referenceImages,
+          maskImage,
+        });
+
+    logger.info("generation provider image received", {
+      jobId: job.jobId,
+      projectId: job.projectId,
+      executionMode: job.executionMode,
+      mimeType: providerImage.mimeType,
+      width: providerImage.width,
+      height: providerImage.height,
+      provider: providerImage.provider,
+    });
+
+    persisted = await persistGeneratedImageAsset({
+      jobId: job.jobId,
+      projectId: job.projectId,
+      ownerId: job.userId,
+      prompt: providerImage.revisedPrompt ?? state.finalPrompt,
+      title: "Generated concept",
+      buffer: providerImage.buffer,
+      mimeType: providerImage.mimeType,
+      width: providerImage.width,
+      height: providerImage.height,
+      provider: providerImage.provider,
+    });
+
+    // Exercise the dangerous retry boundary without paying a provider: the
+    // output exists, but a later step fails. The next attempt must reuse it.
+    if (shouldFailAfterPersistedOutput(job.simulation, options?.currentAttempt ?? 1)) {
+      throw new Error("temporary simulation failure: benchmark post-persist failure.");
+    }
+  }
 
   logger.info("generated asset persisted", {
     jobId: job.jobId,
@@ -286,6 +312,7 @@ export const executeGeneratedImageJob = async (
         : "Generated a concept image from the selected canvas target and connected references.";
 
   const assistantMessage = await persistGeneratedAssistantMessage({
+    jobId: job.jobId,
     projectId: job.projectId,
     threadId: job.threadId,
     content: assistantContent,
@@ -299,10 +326,12 @@ export const executeGeneratedImageJob = async (
     assistantMessageId: assistantMessage.id,
   });
 
+  const provider = persisted.generatedImage.provider ?? "carver-worker";
+
   return {
-    provider: providerImage.provider,
+    provider,
     jobResult: buildGeneratedJobResult({
-      provider: providerImage.provider,
+      provider,
       editBrief: state.editBrief,
       compiledPromptMeta: state.compiledPromptMeta,
       compiledPromptV2: state.compiledPromptV2,

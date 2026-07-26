@@ -118,6 +118,7 @@ export type CarverAiJobSimulationScenario =
   | "success"
   | "slow_success"
   | "transient_provider_fail_then_success"
+  | "fail_after_asset_persisted_once"
   | "permanent_fail";
 
 export type CarverAiJobSimulationConfig = {
@@ -187,6 +188,10 @@ export type CarverAiJobRecord = {
   provider: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  /** Most recent retryable failure while BullMQ keeps the job running/backing off. */
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  lastAttemptAt: string | null;
   createdAt: string;
   updatedAt: string;
   jobResult: CarverAiJobResult | null;

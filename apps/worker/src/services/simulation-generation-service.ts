@@ -30,6 +30,17 @@ export function isAiJobSimulationEnabled() {
   return process.env.CARVER_ENABLE_AI_JOB_SIMULATION === "true" || process.env.NODE_ENV !== "production";
 }
 
+/**
+ * A deterministic post-persist failure lets staging prove that a BullMQ retry
+ * reuses the same output asset instead of making a second provider request.
+ */
+export function shouldFailAfterPersistedOutput(
+  simulation: CarverAiJobSimulationConfig | null | undefined,
+  currentAttempt: number,
+) {
+  return simulation?.scenario === "fail_after_asset_persisted_once" && currentAttempt === 1;
+}
+
 export async function generateSimulatedImage(params: {
   job: CarverAiJobPayload;
   prompt: string;
