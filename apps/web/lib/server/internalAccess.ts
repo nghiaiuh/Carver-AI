@@ -12,6 +12,10 @@ function getInternalAdminIds() {
   );
 }
 
+export function isInternalAdminUser(userId: string) {
+  return getInternalAdminIds().has(userId);
+}
+
 /** Protects internal-only diagnostics without exposing a second identity system. */
 export async function requireInternalAdminPage() {
   const adminIds = getInternalAdminIds();
