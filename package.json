@@ -19,6 +19,7 @@
     "security:env": "node scripts/verify-security-env.mjs"
   },
   "devDependencies": {
+    "supabase": "^2.109.1",
     "turbo": "latest"
   },
   "overrides": {
