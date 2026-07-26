@@ -30,6 +30,7 @@ export type AiJobType =
 export type ExportFormat = "png" | "jpg" | "pdf";
 export type ExportStatus = "queued" | "running" | "succeeded" | "failed";
 export type LibraryAssetSourceType = "upload" | "ai-chat" | "manual";
+export type CreditLedgerReason = "chat" | "prompt_enhance" | "generation" | "refund" | "admin_adjustment";
 
 type Table<Row, Insert, Update, Relationships extends readonly unknown[] = []> = {
   Row: Row;
@@ -241,6 +242,35 @@ export interface Database {
           last_mutation_id?: string | null;
           created_at?: string;
           updated_at?: string;
+        }
+      >;
+      credit_ledger: Table<
+        {
+          id: string;
+          profile_id: string;
+          amount: number;
+          balance_after: number;
+          reason: CreditLedgerReason;
+          idempotency_key: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          profile_id: string;
+          amount: number;
+          balance_after: number;
+          reason: CreditLedgerReason;
+          idempotency_key: string;
+          created_at?: string;
+        },
+        {
+          id?: string;
+          profile_id?: string;
+          amount?: number;
+          balance_after?: number;
+          reason?: CreditLedgerReason;
+          idempotency_key?: string;
+          created_at?: string;
         }
       >;
       landscape_briefs: Table<
