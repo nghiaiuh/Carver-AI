@@ -6,7 +6,7 @@ The web app never exposes a permanent R2 URL.
 
 ## Release blockers
 
-1. Apply SQL migrations in order through `016_rate_limit_scope_allowlist.sql` to
+1. Apply SQL migrations in order through `018_service_role_draft_trigger_fix.sql` to
    the Supabase project referenced by production environment variables.
 2. Verify RLS for two test users: user A cannot read, update, delete, poll, or
    resolve a project, snapshot, chat message, job, asset, or library item owned
@@ -105,3 +105,9 @@ type) and retain the old route for a documented migration window.
    user A's owner ID: expect the DB to reject it; no draft row may be created.
 9. Call `consume_api_rate_limit` with an arbitrary scope string: expect
    `INVALID_RATE_LIMIT_INPUT` and verify no new `api_rate_limits` row exists.
+
+## Operations handoff
+
+Production worker reliability, alert configuration, Supabase Auth verification,
+backup/restore drills, and rollback procedures are documented in
+[operations-production-runbook.md](./operations-production-runbook.md).
