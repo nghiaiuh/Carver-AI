@@ -80,7 +80,12 @@ export const describeRedisConnection = () => {
   };
 };
 
-export const defaultQueueOptions = {
+/**
+ * Resolve Redis only when a process actually creates a queue or worker.
+ * Next.js evaluates route modules during `next build`; eagerly resolving here
+ * made a local build fail before any production queue work was requested.
+ */
+export const getDefaultQueueOptions = () => ({
   connection: resolveRedisConnection(),
   defaultJobOptions: {
     attempts: readBoundedInteger(process.env.AI_JOB_ATTEMPTS, 3, 1, 10, "AI_JOB_ATTEMPTS"),
@@ -103,7 +108,7 @@ export const defaultQueueOptions = {
       "AI_JOB_REMOVE_ON_FAIL",
     ),
   },
-};
+});
 
 export const getAiWorkerRuntimeOptions = () => ({
   concurrency: readBoundedInteger(process.env.AI_WORKER_CONCURRENCY, 2, 1, 32, "AI_WORKER_CONCURRENCY"),
@@ -131,4 +136,4 @@ export const getAiWorkerRuntimeOptions = () => ({
 });
 
 export const createAiJobQueue = () =>
-  new Queue<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, defaultQueueOptions);
+  new Queue<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, getDefaultQueueOptions());

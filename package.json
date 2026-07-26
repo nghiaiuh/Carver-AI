@@ -20,8 +20,8 @@
     "storage:temp-assets:delete": "node scripts/temp-asset-cleanup.mjs --delete",
     "security:env": "node scripts/verify-security-env.mjs",
     "test:prompt-engine": "node scripts/run-prompt-engine-tests.mjs",
-    "migration:validate": "node scripts/validate-sql-migrations.mjs"
-    ,"test:e2e": "playwright test"
+    "migration:validate": "node scripts/validate-sql-migrations.mjs",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

@@ -8,7 +8,7 @@
 import {
   AI_JOB_QUEUE_NAME,
   Worker,
-  defaultQueueOptions,
+  getDefaultQueueOptions,
   getAiWorkerRuntimeOptions,
 } from "@carver/queue";
 import type { QueuedCarverAiJobPayload } from "@carver/shared";
@@ -16,6 +16,6 @@ import { processAiJob } from "../jobs/process-ai-job";
 
 export const createAiJobWorker = () =>
   new Worker<QueuedCarverAiJobPayload>(AI_JOB_QUEUE_NAME, processAiJob, {
-    ...defaultQueueOptions,
+    ...getDefaultQueueOptions(),
     ...getAiWorkerRuntimeOptions(),
   });

@@ -32,11 +32,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The web app consumes declaration files from these workspace package exports.
+      # Build them first so CI cannot pass against a stale local dist directory.
+      - run: npm run build --workspace @carver/shared
+      - run: npm run build --workspace @carver/db
+      - run: npm run build --workspace @carver/queue
+      - run: npm run build --workspace @carver/storage
+      - run: npm run build --workspace @carver/ai
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:prompt-engine
       - run: npm run test --workspace @carver/shared
+      - run: npm run test --workspace @carver/queue
+      - run: npm run test --workspace @carver/worker
       - run: npm run migration:validate
+      - run: npm run build --workspace @carver/worker
       - run: npm run build --workspace @carver/web
 
   tenant-isolation-staging:
@@ -52,6 +62,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Workspace exports resolve from dist/ in a clean checkout as well.
+      - run: npm run build --workspace @carver/shared
+      - run: npm run build --workspace @carver/db
+      - run: npm run build --workspace @carver/queue
+      - run: npm run build --workspace @carver/storage
+      - run: npm run build --workspace @carver/ai
+      - run: test -n "$SUPABASE_TEST_URL" && test -n "$SUPABASE_TEST_ANON_KEY" && test -n "$SUPABASE_TEST_SERVICE_ROLE_KEY"
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
       - run: npm run dev --workspace @carver/web > /tmp/carver-web.log 2>&1 &
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
@@ -86,6 +107,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: test -n "$CARVER_E2E_BASE_URL" && test -n "$E2E_STORAGE_STATE_JSON"
+        env:
+          CARVER_E2E_BASE_URL: ${{ vars.CARVER_E2E_BASE_URL }}
+          E2E_STORAGE_STATE_JSON: ${{ secrets.CARVER_E2E_STORAGE_STATE_JSON }}
       - run: npx playwright install --with-deps chromium
       - run: node -e "require('node:fs').writeFileSync('/tmp/carver-e2e-storage-state.json', process.env.E2E_STORAGE_STATE_JSON)"
         env:
@@ -93,6 +118,8 @@ jobs:
       - run: npm run test:e2e
         env:
           CARVER_RUN_E2E: "1"
+          # Both staging web and worker must set CARVER_ENABLE_AI_JOB_SIMULATION=true.
+          # This proves the queue contract without calling a paid image provider.
+          CARVER_E2E_RUN_GENERATION: "1"
           CARVER_E2E_BASE_URL: ${{ vars.CARVER_E2E_BASE_URL }}
-          CARVER_E2E_PROJECT_ID: ${{ vars.CARVER_E2E_PROJECT_ID }}
           CARVER_E2E_STORAGE_STATE_PATH: /tmp/carver-e2e-storage-state.json

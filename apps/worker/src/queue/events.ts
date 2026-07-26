@@ -8,7 +8,7 @@
 import {
   AI_JOB_QUEUE_NAME,
   QueueEvents,
-  defaultQueueOptions,
+  getDefaultQueueOptions,
   type Worker,
 } from "@carver/queue";
 import { createSafeLogger, notifyOperationalAlert, type QueuedCarverAiJobPayload } from "@carver/shared";
@@ -28,7 +28,7 @@ function getAttemptsStarted(job: unknown) {
 
 export const registerAiJobWorkerEvents = (worker: Worker<QueuedCarverAiJobPayload>) => {
   const queueEvents = new QueueEvents(AI_JOB_QUEUE_NAME, {
-    connection: defaultQueueOptions.connection,
+    connection: getDefaultQueueOptions().connection,
   });
 
   worker.on("active", (job) => {
