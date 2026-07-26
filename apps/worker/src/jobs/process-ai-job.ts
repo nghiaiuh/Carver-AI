@@ -169,7 +169,7 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
         throw new Error(`Unsupported AI job type: ${dbJob.payload.jobType}`);
     }
 
-    await succeedJob(job.data.jobId, completedResult);
+    await succeedJob(job.data.jobId, bullJobId, completedResult);
   } catch (error) {
     const mappedError = buildJobError(error);
     logger.error("job attempt failed", {

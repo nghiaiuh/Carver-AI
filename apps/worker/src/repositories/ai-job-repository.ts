@@ -252,7 +252,11 @@ const loadForProcessing = async (
   };
 };
 
-const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult) => {
+const markSucceeded = async (
+  jobId: string,
+  bullJobId: string,
+  result: PreparedGenerationJobResult,
+) => {
   const supabase = getSupabaseAdmin();
   const aiJobsTable = supabase.from("ai_jobs") as any;
   const { data, error } = await aiJobsTable
@@ -270,6 +274,7 @@ const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult)
     })
     .eq("id", jobId)
     .eq("status", "running")
+    .eq("bull_job_id", bullJobId)
     .select("id")
     .maybeSingle();
 
@@ -278,8 +283,54 @@ const markSucceeded = async (jobId: string, result: PreparedGenerationJobResult)
   }
 
   if (!data?.id) {
-    throw new Error("AI job could not be marked succeeded from the running state.");
+    throw new Error("AI job could not be marked succeeded by this BullMQ execution.");
   }
+};
+
+/**
+ * A stale/re-delivered BullMQ attempt must never overwrite a different
+ * execution's running or succeeded state. A job may still be queued before
+ * its first claim, so that state is only terminalized when no worker has bound
+ * a bull_job_id yet.
+ */
+const markTerminalForCurrentExecution = async (
+  jobId: string,
+  bullJobId: string | null | undefined,
+  fields: Record<string, unknown>,
+) => {
+  const supabase = getSupabaseAdmin();
+  const aiJobsTable = supabase.from("ai_jobs") as any;
+
+  if (bullJobId) {
+    const { data, error } = await aiJobsTable
+      .update({ ...fields, bull_job_id: bullJobId })
+      .eq("id", jobId)
+      .eq("status", "running")
+      .eq("bull_job_id", bullJobId)
+      .select("id")
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (data?.id) {
+      return true;
+    }
+  }
+
+  const { data, error } = await aiJobsTable
+    .update({ ...fields, bull_job_id: bullJobId ?? null })
+    .eq("id", jobId)
+    .eq("status", "queued")
+    .is("bull_job_id", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data?.id);
 };
 
 const markFailed = async (
@@ -290,20 +341,14 @@ const markFailed = async (
     errorMessage: string;
   },
 ) => {
-  const supabase = getSupabaseAdmin();
-  const aiJobsTable = supabase.from("ai_jobs") as any;
-
-  await aiJobsTable
-    .update({
-      status: "failed",
-      bull_job_id: params.bullJobId ?? null,
-      error_code: params.errorCode,
-      error_message: params.errorMessage,
-      last_error_code: params.errorCode,
-      last_error_message: params.errorMessage,
-      last_attempt_at: new Date().toISOString(),
-    })
-    .eq("id", jobId);
+  await markTerminalForCurrentExecution(jobId, params.bullJobId, {
+    status: "failed",
+    error_code: params.errorCode,
+    error_message: params.errorMessage,
+    last_error_code: params.errorCode,
+    last_error_message: params.errorMessage,
+    last_attempt_at: new Date().toISOString(),
+  });
 };
 
 const recordRetryableFailure = async (
@@ -342,25 +387,14 @@ const reconcileExhaustedFailure = async (
     errorMessage: string;
   },
 ) => {
-  const supabase = getSupabaseAdmin();
-  const aiJobsTable = supabase.from("ai_jobs") as any;
-
-  const { error } = await aiJobsTable
-    .update({
-      status: "failed",
-      bull_job_id: bullJobId,
-      error_code: params.errorCode,
-      error_message: params.errorMessage,
-      last_error_code: params.errorCode,
-      last_error_message: params.errorMessage,
-      last_attempt_at: new Date().toISOString(),
-    })
-    .eq("id", jobId)
-    .in("status", ["queued", "running"]);
-
-  if (error) {
-    throw error;
-  }
+  await markTerminalForCurrentExecution(jobId, bullJobId, {
+    status: "failed",
+    error_code: params.errorCode,
+    error_message: params.errorMessage,
+    last_error_code: params.errorCode,
+    last_error_message: params.errorMessage,
+    last_attempt_at: new Date().toISOString(),
+  });
 };
 
 const listStaleRunningJobs = async (olderThan: Date, limit: number): Promise<StaleRunningJob[]> => {
@@ -406,9 +440,13 @@ const reconcileStalledFailure = async (
     .eq("id", jobId)
     .eq("status", "running");
 
-  if (bullJobId) {
-    query = query.eq("bull_job_id", bullJobId);
-  }
+  // Never reconcile a running row owned by another BullMQ execution. Legacy
+  // rows without a binding are safe to repair only when the DB value is also
+  // null; omitting this filter would let a stale reconciler overwrite a newer
+  // worker claim.
+  query = bullJobId
+    ? query.eq("bull_job_id", bullJobId)
+    : query.is("bull_job_id", null);
 
   const { error } = await query;
   if (error) {

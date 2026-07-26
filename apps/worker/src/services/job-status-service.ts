@@ -12,8 +12,12 @@ export const startJob = async (jobId: string, bullJobId: string) => {
   return aiJobRepository.markRunning(jobId, bullJobId);
 };
 
-export const succeedJob = async (jobId: string, result: PreparedGenerationJobResult) => {
-  await aiJobRepository.markSucceeded(jobId, result);
+export const succeedJob = async (
+  jobId: string,
+  bullJobId: string,
+  result: PreparedGenerationJobResult,
+) => {
+  await aiJobRepository.markSucceeded(jobId, bullJobId, result);
 };
 
 export const failJob = async (

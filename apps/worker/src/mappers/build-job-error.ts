@@ -22,7 +22,7 @@ export const buildJobError = (error: unknown): WorkerJobError => {
   if (normalized.includes("rate limit")) {
     return {
       errorCode: "provider_rate_limited",
-      errorMessage: message,
+      errorMessage: "The image provider is temporarily busy. Please retry shortly.",
       permanent: false,
     };
   }
@@ -38,7 +38,7 @@ export const buildJobError = (error: unknown): WorkerJobError => {
   ) {
     return {
       errorCode: "provider_temporary_failure",
-      errorMessage: message,
+      errorMessage: "The generation service is temporarily unavailable. Please retry shortly.",
       permanent: false,
     };
   }
@@ -46,7 +46,7 @@ export const buildJobError = (error: unknown): WorkerJobError => {
   if (normalized.includes("openai") || normalized.includes("image generation")) {
     return {
       errorCode: "provider_invalid_request",
-      errorMessage: message,
+      errorMessage: "The image provider could not process this generation request.",
       permanent: true,
     };
   }
@@ -54,7 +54,7 @@ export const buildJobError = (error: unknown): WorkerJobError => {
   if (normalized.includes("upload") || normalized.includes("storage")) {
     return {
       errorCode: "storage_upload_failed",
-      errorMessage: message,
+      errorMessage: "The generated image could not be stored. Please retry shortly.",
       permanent: false,
     };
   }
@@ -69,14 +69,14 @@ export const buildJobError = (error: unknown): WorkerJobError => {
   ) {
     return {
       errorCode: "unsupported_job_type",
-      errorMessage: message,
+      errorMessage: "The generation request is invalid or no longer available.",
       permanent: true,
     };
   }
 
   return {
     errorCode: "worker_processing_failed",
-    errorMessage: message,
+    errorMessage: "The generation worker could not complete this request. Please retry shortly.",
     permanent: false,
   };
 };
