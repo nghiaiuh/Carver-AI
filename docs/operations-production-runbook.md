@@ -12,6 +12,8 @@ includes secret values.
 - `REDIS_URL=rediss://<user>:<password>@<host>:<port>`
 - `AI_WORKER_CONCURRENCY=2` initially; increase only after load testing.
 - `AI_JOB_ATTEMPTS=3` and `AI_JOB_BACKOFF_MS=10000` initially.
+- `OPENAI_IMAGE_REQUEST_TIMEOUT_MS=240000` initially. It is bounded to
+  10-600 seconds and should be reviewed together with the worker drain time.
 - `AI_JOB_LOCK_DURATION_MS=60000` and `AI_JOB_MAX_STALLED_COUNT=1`.
 - `WORKER_HEALTH_PORT` or Railway `PORT` must be reachable by the platform.
 
@@ -55,8 +57,10 @@ The queue package rejects an unauthenticated or non-TLS Redis URL when
 
 The Playwright staging flow creates a disposable project, uploads a one-pixel
 PNG to the private library, saves and reloads a cloud draft, and verifies the
-canvas hydrates the asset through the gateway. It then creates a simulated AI
-job and polls it to `succeeded`; no OpenAI image request is made.
+canvas hydrates the asset through the gateway. It then sends a generation
+prompt through the real chat composer, verifies queue/worker polling, the
+assistant image, the generated canvas node, and its autosaved stable `assetId`.
+No OpenAI image request is made.
 
 Before running it, configure a disposable staging user session as
 `CARVER_E2E_STORAGE_STATE_JSON`, set `CARVER_E2E_BASE_URL` to the staging web
@@ -94,6 +98,39 @@ $env:CARVER_E2E_BASE_URL = "https://<staging-web-origin>"
 $env:CARVER_E2E_STORAGE_STATE_PATH = "C:\secure\carver-staging-state.json"
 npm run test:e2e
 ```
+
+### Worker production drill
+
+Run these drills on staging only. Use a disposable project and set
+`CARVER_ENABLE_AI_JOB_SIMULATION=true` on both web and worker. The internal
+AI job benchmark page enqueues real Redis/BullMQ work and writes a tiny test
+image through the normal R2 persistence path, but never calls OpenAI.
+
+1. **Retry and backoff:** run `transient_provider_fail_then_success`. The first
+   attempt records `last_error_*`; the job remains `running` during BullMQ
+   backoff, then becomes `succeeded`. Its elapsed time must include at least
+   the configured `AI_JOB_BACKOFF_MS`.
+2. **Provider timeout:** run `timeout_then_success`. It emits the same timeout
+   class used by the OpenAI request deadline on attempt one, then succeeds on
+   retry. Confirm the terminal job has one generated asset, not duplicate
+   output assets. `OPENAI_IMAGE_REQUEST_TIMEOUT_MS` is the real-provider
+   deadline; do not induce a paid-provider timeout as a routine drill.
+3. **Post-persist retry safety:** run `fail_after_asset_persisted_once`. The
+   first attempt writes the deterministic output asset and fails afterwards.
+   The retry must reuse that same asset ID and end `succeeded`.
+4. **Graceful deploy/restart:** run `slow_success` (15 seconds), wait until the
+   job is `running`, then deploy/restart the worker normally. `/healthz` should
+   become `503` while draining; the worker stops taking new jobs, lets the
+   active job finish, and exits without losing it.
+5. **Stalled/recovery:** only in staging, start `slow_success`, wait for
+   `running`, then force-stop the worker process rather than using graceful
+   deploy. Start one replacement worker and wait for the lock/stalled interval.
+   BullMQ must redeliver or terminally fail the job; the reconciliation loop
+   must not leave an unrecoverable DB row in `running`.
+
+Record the job ID, timestamps, terminal status, generated asset IDs, worker
+deployment revision, and any alert. Never paste prompt text, tokens, signed
+URLs, R2 paths, or provider payloads into the drill record.
 
 ## 2. Error tracking and alerts
 
