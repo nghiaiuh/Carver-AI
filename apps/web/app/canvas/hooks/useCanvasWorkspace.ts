@@ -150,6 +150,7 @@ type SnapshotRouteResponse = {
   data?: {
     document?: CanvasSnapshotDocument;
     snapshot?: SnapshotMeta | null;
+    assetDeliveryWarning?: string;
   };
   error?: string;
 };
@@ -160,6 +161,7 @@ type DraftRouteResponse = {
     projectId: string;
     document?: CanvasSnapshotDocument | null;
     draft?: ProjectDraftMeta | null;
+    assetDeliveryWarning?: string;
   };
   error?: string;
   code?: string;
@@ -287,7 +289,7 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
     hash = Math.imul(hash, 16777619);
   }
 
-  return `fnv1a-${(hash >>> 0).toString(16)}`;
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 1000;
@@ -749,7 +751,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   const restoreLocalDraftRecord = useCallback(async (record: LocalCanvasDraftRecord) => {
     const client = requireCanvasSupabaseClient(supabase);
-    const resolvedDocument = await resolveSnapshotRuntimeAssetUrls(client, record.document);
+    let resolvedDocument = record.document;
+    let assetDeliveryWarning: string | null = null;
+    try {
+      resolvedDocument = await resolveSnapshotRuntimeAssetUrls(client, record.document);
+    } catch {
+      assetDeliveryWarning = "Local draft restored, but some canvas images could not be refreshed yet.";
+    }
 
     applyHydratedSnapshotState(resolvedDocument);
     snapshotBaselineRef.current = {
@@ -762,7 +770,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       Boolean(record.meta.documentHash && record.meta.documentHash !== record.meta.basedOnHash),
     );
     setDraftConflict(null);
-    setDraftWarning(null);
+    setDraftWarning(assetDeliveryWarning);
   }, [applyHydratedSnapshotState, currentSnapshotMeta, supabase]);
 
   const persistLocalDraftNow = useCallback(async (projectIdOverride?: string) => {
@@ -948,6 +956,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     }
 
     cloudDraftSyncInFlightRef.current = true;
+    let needsFollowUpSync = false;
 
     try {
       const client = requireCanvasSupabaseClient(supabase);
@@ -987,13 +996,20 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         throw new Error(payload.error || "Unable to sync the project draft.");
       }
 
+      const hasNewerLocalMutation =
+        latestDraftMutationIdRef.current !== null &&
+        latestDraftMutationIdRef.current !== mutationId;
       cloudDraftMetaRef.current = {
         baseSnapshotId: payload.data.draft.baseSnapshotId,
         revision: payload.data.draft.revision,
         documentHash: payload.data.draft.documentHash ?? snapshotFingerprint,
-        lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
+        lastMutationId: hasNewerLocalMutation
+          ? latestDraftMutationIdRef.current
+          : (payload.data.draft.lastMutationId ?? mutationId),
       };
-      latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? mutationId;
+      if (!hasNewerLocalMutation) {
+        latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? mutationId;
+      }
       cloudDraftRetryAttemptRef.current = 0;
       if (cloudDraftRetryTimeoutRef.current !== null) {
         window.clearTimeout(cloudDraftRetryTimeoutRef.current);
@@ -1005,6 +1021,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         cloudDraftHash: payload.data.draft.documentHash ?? snapshotFingerprint,
         lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
       }).catch(() => undefined);
+
+      // An edit may have happened while this request was active. Its normal
+      // debounce can skip because the previous write was in flight, so flush
+      // the newer document after this acknowledgement completes.
+      needsFollowUpSync = latestSnapshotFingerprintRef.current !== snapshotFingerprint;
 
       if (!syncParams.quiet) {
         setDraftWarning(null);
@@ -1069,6 +1090,21 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       return false;
     } finally {
       cloudDraftSyncInFlightRef.current = false;
+      if (
+        needsFollowUpSync &&
+        typeof window !== "undefined" &&
+        (syncParams.allowNonLeader || isCloudDraftSyncLeader) &&
+        cloudDraftSyncTimeoutRef.current === null
+      ) {
+        cloudDraftSyncTimeoutRef.current = window.setTimeout(() => {
+          cloudDraftSyncTimeoutRef.current = null;
+          void syncCloudDraft({
+            projectId,
+            quiet: true,
+            allowNonLeader: syncParams.allowNonLeader,
+          });
+        }, 0);
+      }
     }
   }, [currentUserId, isCloudDraftSyncLeader, params.projectId, supabase]);
 
@@ -1156,7 +1192,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     try {
       await persistLocalDraftNow(projectId).catch(() => undefined);
-      await syncCloudDraft({
+      const cloudDraftSynced = await syncCloudDraft({
         projectId,
         force: true,
         quiet: true,
@@ -1164,7 +1200,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
 
       const currentDraftRevision = cloudDraftMetaRef.current.revision;
-      if (!currentDraftRevision) {
+      if (
+        !cloudDraftSynced ||
+        !currentDraftRevision ||
+        cloudDraftMetaRef.current.documentHash !== snapshotFingerprint
+      ) {
         recordCanvasPersistenceBenchmarkEvent({
           operation: "snapshot-finalize",
           projectId,
@@ -1213,6 +1253,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         throw new Error(payload.error || "Unable to save the current snapshot.");
       }
 
+      const hasNewerLocalChanges = latestSnapshotFingerprintRef.current !== snapshotFingerprint;
       applySnapshotBaseline(snapshotDocument, payload.data.snapshot);
       cloudDraftMetaRef.current = {
         baseSnapshotId: payload.data.snapshot.snapshotId,
@@ -1221,7 +1262,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         lastMutationId: latestDraftMutationIdRef.current,
       };
 
-      if (currentUserId) {
+      if (currentUserId && !hasNewerLocalChanges) {
         await markCanvasDraftClean(currentUserId, projectId, {
           tabId: tabIdRef.current,
           basedOnSnapshotId: payload.data.snapshot.snapshotId,
@@ -1234,7 +1275,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         });
       }
       setDraftConflict(null);
-      setDraftWarning(null);
+      setHasUnsavedSnapshotChanges(hasNewerLocalChanges);
+      setDraftWarning(
+        hasNewerLocalChanges
+          ? "A version was saved, but newer canvas changes are still being saved locally and synced to the cloud."
+          : null,
+      );
 
       if (!saveParams.quiet) {
         showToast(
@@ -1511,12 +1557,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         applyCloudDraftMeta(cloudDraftMeta);
         setDraftConflict(null);
         setDraftWarning(
-          cloudDraftMeta &&
-            snapshotPayload.data.snapshot?.snapshotId &&
-            cloudDraftMeta.baseSnapshotId &&
-            cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
-            ? "A cloud draft based on a different saved version was restored."
-            : null,
+          draftPayload.data?.assetDeliveryWarning ??
+            snapshotPayload.data?.assetDeliveryWarning ??
+            (cloudDraftMeta &&
+              snapshotPayload.data.snapshot?.snapshotId &&
+              cloudDraftMeta.baseSnapshotId &&
+              cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
+              ? "A cloud draft based on a different saved version was restored."
+              : null),
         );
 
         const draftRecord =
@@ -1550,7 +1598,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           return;
         }
 
-        const resolvedDraft = await resolveSnapshotRuntimeAssetUrls(client, draftRecord.document);
+        let resolvedDraft = draftRecord.document;
+        try {
+          resolvedDraft = await resolveSnapshotRuntimeAssetUrls(client, draftRecord.document);
+        } catch {
+          setDraftWarning("Local draft restored, but some canvas images could not be refreshed yet.");
+        }
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }

@@ -381,7 +381,8 @@ export async function recordCanvasDraftCloudSync(
       ...currentRecord.meta,
       cloudDraftRevision: params.cloudDraftRevision,
       cloudDraftHash: params.cloudDraftHash,
-      lastMutationId: params.lastMutationId,
+      // A late cloud acknowledgement must not replace a newer local mutation.
+      lastMutationId: currentRecord.meta.lastMutationId ?? params.lastMutationId,
       updatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
     };
