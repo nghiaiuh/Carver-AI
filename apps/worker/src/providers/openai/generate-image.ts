@@ -19,8 +19,17 @@ import { createSafeLogger } from "@carver/shared";
 import sharp from "sharp";
 
 const logger = createSafeLogger("worker.openai-image");
-const OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
+const DEFAULT_OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
 const MAX_PROVIDER_IMAGE_BYTES = 20 * 1024 * 1024;
+
+export function getOpenAiImageRequestTimeoutMs(rawValue = process.env.OPENAI_IMAGE_REQUEST_TIMEOUT_MS) {
+  const configured = Number(rawValue ?? DEFAULT_OPENAI_IMAGE_REQUEST_TIMEOUT_MS);
+  if (!Number.isInteger(configured) || configured < 10_000 || configured > 600_000) {
+    return DEFAULT_OPENAI_IMAGE_REQUEST_TIMEOUT_MS;
+  }
+
+  return configured;
+}
 
 type OpenAIImageGenerationResponse = {
   data?: Array<{
@@ -53,7 +62,7 @@ function toBlobPart(buffer: Buffer) {
 
 async function imageUrlToBuffer(imageUrl: string) {
   const response = await fetchWithTimeout(imageUrl, {
-    timeoutMs: OPENAI_IMAGE_REQUEST_TIMEOUT_MS,
+    timeoutMs: getOpenAiImageRequestTimeoutMs(),
   });
   if (!response.ok) {
     throw new Error("OpenAI returned an image URL that could not be downloaded.");
@@ -255,7 +264,7 @@ export async function generateImageFromPrompt(params: {
             Authorization: `Bearer ${apiKey}`,
           },
     body: requestBody,
-    timeoutMs: OPENAI_IMAGE_REQUEST_TIMEOUT_MS,
+    timeoutMs: getOpenAiImageRequestTimeoutMs(),
   });
 
   const payload = (await response.json().catch(() => ({}))) as OpenAIImageGenerationResponse;

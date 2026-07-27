@@ -13,6 +13,35 @@ const logger = createSafeLogger("worker.stalled-reconciliation");
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 const DEFAULT_BATCH_SIZE = 25;
+const RECOVERABLE_QUEUE_STATES = new Set([
+  "active",
+  "waiting",
+  "delayed",
+  "prioritized",
+  "waiting-children",
+]);
+
+export type StalledQueueState =
+  | "active"
+  | "waiting"
+  | "delayed"
+  | "prioritized"
+  | "waiting-children"
+  | "completed"
+  | "failed"
+  | "unknown"
+  | "missing";
+
+export function getStalledJobReconciliationDecision(queueState: StalledQueueState) {
+  if (RECOVERABLE_QUEUE_STATES.has(queueState)) {
+    return { action: "keep_running" as const, errorCode: null };
+  }
+
+  return {
+    action: "mark_failed" as const,
+    errorCode: queueState === "failed" ? "worker_retries_exhausted" : "worker_stalled_job",
+  };
+}
 
 const readBoundedNumber = (
   rawValue: string | undefined,
@@ -36,8 +65,10 @@ async function reconcileOneJob(job: { id: string; bullJobId: string | null; last
     const queueJob = job.bullJobId ? await queue.getJob(job.bullJobId) : null;
     const queueState = queueJob ? await queueJob.getState() : "missing";
 
+    const decision = getStalledJobReconciliationDecision(queueState as StalledQueueState);
+
     // A delayed/waiting/active job may be in a legitimate retry or redelivery path.
-    if (["active", "waiting", "delayed", "prioritized", "waiting-children"].includes(queueState)) {
+    if (decision.action === "keep_running") {
       logger.warn("stale db running state still has recoverable queue job", {
         jobId: job.id,
         bullJobId: job.bullJobId,
@@ -47,7 +78,7 @@ async function reconcileOneJob(job: { id: string; bullJobId: string | null; last
       return;
     }
 
-    const errorCode = queueState === "failed" ? "worker_retries_exhausted" : "worker_stalled_job";
+    const errorCode = decision.errorCode;
     await aiJobRepository.reconcileStalledFailure(job.id, job.bullJobId, {
       errorCode,
       errorMessage: "AI job remained running after its BullMQ execution was no longer recoverable.",
