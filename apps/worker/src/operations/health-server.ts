@@ -37,8 +37,9 @@ async function checkReadiness(): Promise<WorkerReadiness> {
   try {
     queue = createAiJobQueue();
     await queue.waitUntilReady();
-    const client = await queue.client;
-    await client.ping();
+    // A queue read proves the Redis connection is usable without relying on
+    // the narrower BullMQ Redis client type exposing an ioredis-only ping().
+    await queue.getJobCounts("waiting");
     checks.redis = "ok";
   } catch (error) {
     logger.error("readiness redis check failed", { error });

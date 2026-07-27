@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@carver/shared": "*",
-    "bullmq": "^4.0.0"
+    "bullmq": "^5.81.2"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
