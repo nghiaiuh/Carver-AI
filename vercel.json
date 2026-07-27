@@ -3,6 +3,5 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "buildCommand": "npx turbo run build --filter=@carver/web...",
-  "devCommand": "npm run dev --workspace=@carver/web",
-  "outputDirectory": "apps/web/.next"
+  "devCommand": "npm run dev --workspace=@carver/web"
 }
