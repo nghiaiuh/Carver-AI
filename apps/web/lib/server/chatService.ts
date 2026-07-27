@@ -469,7 +469,16 @@ function buildChatGenerationBody(params: {
     jobType: params.jobType,
   };
 
-  const optionalKeys = ["idempotencyKey", "snapshot", "canvasSnapshot", "targetNodeId", "canvasGraphContext"];
+  // Keep the chat-to-job handoff complete. Simulation is accepted only by the
+  // server-side AI job service when its environment explicitly enables it.
+  const optionalKeys = [
+    "idempotencyKey",
+    "snapshot",
+    "canvasSnapshot",
+    "targetNodeId",
+    "canvasGraphContext",
+    "simulation",
+  ];
   optionalKeys.forEach((key) => {
     if (key in params.body) {
       payload[key] = params.body[key];
