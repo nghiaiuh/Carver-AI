@@ -12,6 +12,7 @@ import { loadWorkerEnvFiles } from "./config/load-worker-env";
 import { startLibrarySyncScheduler } from "./services/library-sync-service";
 import { startStalledJobReconciliation } from "./services/stalled-job-reconciliation";
 import { startWorkerHealthServer } from "./operations/health-server";
+import { createGracefulShutdownCoordinator } from "./operations/graceful-shutdown";
 import { createSafeLogger } from "@carver/shared";
 import { describeRedisConnection } from "@carver/queue";
 
@@ -38,50 +39,26 @@ logger.info("worker listening for jobs", {
 
 void aiJobWorker;
 
-let shutdownPromise: Promise<void> | null = null;
-
-async function shutdown(signal: string) {
-  if (shutdownPromise) {
-    return shutdownPromise;
-  }
-
-  shutdownPromise = (async () => {
-    logger.info("worker shutdown requested", { signal });
-    healthServer.markShuttingDown();
-    stopLibrarySyncScheduler();
-    stopStalledJobReconciliation();
-
-    const timeoutMs = Number(process.env.WORKER_SHUTDOWN_TIMEOUT_MS ?? 30_000);
-    const closeResources = async () => {
-      await aiJobWorker.pause();
-      await Promise.all([
-        stopWorkerEvents?.().catch(() => undefined),
-        healthServer.close().catch(() => undefined),
-      ]);
-      await aiJobWorker.close();
-    };
-
-    const deadline = setTimeout(() => {
-      logger.error("worker shutdown timed out", { signal, timeoutMs });
-      // Railway will restart this process. After the deadline, preserving a
-      // stuck process is less safe than returning its BullMQ work to the queue.
-      process.exit(1);
-    }, timeoutMs);
-    deadline.unref();
-
-    try {
-      await closeResources();
-      logger.info("worker shutdown complete", { signal });
-    } finally {
-      clearTimeout(deadline);
-    }
-  })();
-
-  return shutdownPromise;
-}
+const shutdown = createGracefulShutdownCoordinator({
+  worker: aiJobWorker,
+  healthServer,
+  stopLibrarySyncScheduler,
+  stopStalledJobReconciliation,
+  stopWorkerEvents,
+  timeoutMs: Number(process.env.WORKER_SHUTDOWN_TIMEOUT_MS ?? 30_000),
+  onTimeout: () => {
+    logger.error("worker shutdown timed out");
+    // Railway will restart this process. After the deadline, preserving a
+    // stuck process is less safe than returning its BullMQ work to the queue.
+    process.exit(1);
+  },
+});
 
 const handleShutdownSignal = (signal: "SIGTERM" | "SIGINT") => {
-  void shutdown(signal).catch((error) => {
+  logger.info("worker shutdown requested", { signal });
+  void shutdown().then(() => {
+    logger.info("worker shutdown complete", { signal });
+  }).catch((error) => {
     logger.error("worker shutdown failed", { signal, error });
     process.exit(1);
   });
