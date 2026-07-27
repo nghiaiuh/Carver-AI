@@ -16,6 +16,8 @@ jobs:
       # Build-time placeholders only. CI never receives production credentials.
       NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+      # next.config.mjs validates this public URL while compiling CSP headers.
+      NEXT_PUBLIC_LANDING_ASSET_BASE_URL: https://ci-assets.carver.example
       SUPABASE_URL: https://ci.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
       REDIS_URL: rediss://default:ci-password@localhost:6379
@@ -78,6 +80,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          NEXT_PUBLIC_LANDING_ASSET_BASE_URL: https://ci-assets.carver.example
           SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
           REDIS_URL: rediss://default:ci-password@localhost:6379
