@@ -118,6 +118,7 @@ export type CarverAiJobSimulationScenario =
   | "success"
   | "slow_success"
   | "transient_provider_fail_then_success"
+  | "timeout_then_success"
   | "fail_after_asset_persisted_once"
   | "permanent_fail";
 

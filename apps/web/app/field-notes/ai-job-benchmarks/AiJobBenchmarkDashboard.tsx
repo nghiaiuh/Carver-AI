@@ -68,6 +68,7 @@ const SIMULATION_SCENARIOS = [
   "success",
   "slow_success",
   "transient_provider_fail_then_success",
+  "timeout_then_success",
   "fail_after_asset_persisted_once",
   "permanent_fail",
 ] as const;
@@ -240,7 +241,9 @@ export default function AiJobBenchmarkDashboard() {
           idempotencyKey: requestId,
           simulation: {
             scenario,
-            delayMs: scenario === "slow_success" ? 3500 : 400,
+            // This deliberately leaves enough time to exercise a graceful
+            // worker restart without calling a paid image provider.
+            delayMs: scenario === "slow_success" ? 15_000 : 400,
             failUntilAttempt: scenario === "transient_provider_fail_then_success" ? 1 : undefined,
           },
         }),

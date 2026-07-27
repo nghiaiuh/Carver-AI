@@ -41,6 +41,13 @@ export function shouldFailAfterPersistedOutput(
   return simulation?.scenario === "fail_after_asset_persisted_once" && currentAttempt === 1;
 }
 
+export function shouldSimulateProviderTimeout(
+  simulation: CarverAiJobSimulationConfig | null | undefined,
+  currentAttempt: number,
+) {
+  return simulation?.scenario === "timeout_then_success" && currentAttempt === 1;
+}
+
 export async function generateSimulatedImage(params: {
   job: CarverAiJobPayload;
   prompt: string;
@@ -59,6 +66,10 @@ export async function generateSimulatedImage(params: {
 
   if (simulation.scenario === "permanent_fail") {
     throw new Error("invalid simulation failure: benchmark permanent failure.");
+  }
+
+  if (shouldSimulateProviderTimeout(simulation, params.currentAttempt)) {
+    throw new Error("OpenAI image request timed out after the simulated deadline.");
   }
 
   if (simulation.scenario === "transient_provider_fail_then_success") {
