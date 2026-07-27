@@ -79,12 +79,27 @@ async function getAccessToken(page: Page) {
   return token!;
 }
 
-async function apiJson(page: Page, token: string, path: string, init: RequestInit = {}): Promise<ApiResult> {
+type SimpleRequestInit = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+};
+
+async function apiJson(
+  page: Page,
+  token: string,
+  path: string,
+  init: SimpleRequestInit = {},
+): Promise<ApiResult> {
   return page.evaluate(
     async ({ token: accessToken, path: requestPath, init: requestInit }) => {
       const headers = new Headers(requestInit.headers);
       headers.set("Authorization", `Bearer ${accessToken}`);
-      const response = await fetch(requestPath, { ...requestInit, headers });
+      const response = await fetch(requestPath, {
+        method: requestInit.method,
+        headers,
+        body: requestInit.body,
+      });
       const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
       return { status: response.status, body };
     },
@@ -114,23 +129,45 @@ async function uploadFixture(page: Page, token: string, folderId: string): Promi
   );
 }
 
+type E2ENode = {
+  id: string;
+  kind: string;
+  title: string;
+  role: string;
+  imageUrl: string;
+  sourceImage: { assetId: string; url: string; quality: string };
+  prompt: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 function emptyDocument() {
   return {
     schema: "carver-canvas-v4",
     schemaVersion: 4,
     snapshotVersion: 4,
     camera: {},
-    objects: [],
-    regions: [],
-    locks: [],
-    references: [],
-    selection: { objectIds: [], regionIds: [], activeAssetIds: [] },
-    graph: { nodes: [], edges: [], activeGenerationTargetId: null },
-    markers: [],
-    addedObjects: [],
-    sketchLines: [],
-    sketchGroups: [],
-    penStrokes: [],
+    objects: [] as Array<Record<string, unknown>>,
+    regions: [] as Array<Record<string, unknown>>,
+    locks: [] as Array<Record<string, unknown>>,
+    references: [] as Array<Record<string, unknown>>,
+    selection: {
+      objectIds: [] as string[],
+      regionIds: [] as string[],
+      activeAssetIds: [] as string[],
+    },
+    graph: {
+      nodes: [] as E2ENode[],
+      edges: [] as Array<Record<string, unknown>>,
+      activeGenerationTargetId: null as string | null,
+    },
+    markers: [] as Array<Record<string, unknown>>,
+    addedObjects: [] as Array<Record<string, unknown>>,
+    sketchLines: [] as Array<Record<string, unknown>>,
+    sketchGroups: [] as Array<Record<string, unknown>>,
+    penStrokes: [] as Array<Record<string, unknown>>,
     metadata: {},
   };
 }
