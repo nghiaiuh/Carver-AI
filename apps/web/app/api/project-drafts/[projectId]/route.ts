@@ -1,5 +1,6 @@
 import {
   coerceCanvasSnapshotDocument,
+  isCanvasSnapshotDocument,
   type CanvasSnapshotDocument,
 } from "@carver/shared";
 import { apiFailure, apiSuccess, readJsonObject } from "../../_lib/http";
@@ -27,6 +28,7 @@ const MAX_DRAFT_REQUEST_BYTES = 5 * 1024 * 1024;
 type DraftRouteResponse = {
   projectId: string;
   document: CanvasSnapshotDocument | null;
+  assetDeliveryWarning?: string;
   draft: {
     projectId: string;
     ownerId: string;
@@ -40,6 +42,12 @@ type DraftRouteResponse = {
 
 function documentValue(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  // A malformed autosave payload must fail closed. Coercing arbitrary input to
+  // an empty document here could overwrite a valid cloud draft after a client bug.
+  if (!isCanvasSnapshotDocument(value)) {
     return null;
   }
 
@@ -71,18 +79,35 @@ export async function GET(
 
   try {
     const loaded = await loadProjectCanvasDraft(context.supabase, projectResult.project.id);
+    let document = loaded.document;
+    let assetDeliveryWarning: string | undefined;
+
+    if (document) {
+      try {
+        document = await resolveCanvasSnapshotAssetUrls({
+          requestUrl: request.url,
+          document,
+          supabase: context.supabase,
+          userId: context.user.id,
+          projectId: projectResult.project.id,
+        });
+      } catch (error) {
+        // Asset delivery URLs are runtime decoration. The durable graph must
+        // still be restored when an asset refresh has a temporary failure.
+        logger.warn("project draft asset resolution failed", {
+          requestId: context.requestId,
+          projectId: projectResult.project.id,
+          userId: context.user.id,
+          error,
+        });
+        assetDeliveryWarning = "Some canvas images could not be refreshed yet.";
+      }
+    }
 
     return apiSuccess<DraftRouteResponse>({
       projectId: projectResult.project.id,
-      document: loaded.document
-        ? await resolveCanvasSnapshotAssetUrls({
-            requestUrl: request.url,
-            document: loaded.document,
-            supabase: context.supabase,
-            userId: context.user.id,
-            projectId: projectResult.project.id,
-          })
-        : null,
+      document,
+      assetDeliveryWarning,
       draft: loaded.draft,
     });
   } catch (error) {
@@ -161,7 +186,12 @@ export async function PUT(
     typeof body.documentHash === "string" && body.documentHash.trim()
       ? body.documentHash.trim()
       : null;
-  if (documentHash && (documentHash.length < 32 || documentHash.length > 128)) {
+  const isCanvasFingerprint = /^fnv1a-[0-9a-f]{1,8}$/i.test(documentHash ?? "");
+  if (
+    documentHash &&
+    !isCanvasFingerprint &&
+    (documentHash.length < 32 || documentHash.length > 128)
+  ) {
     return apiFailure("BAD_REQUEST", "documentHash is invalid", 400, context.requestId);
   }
   const mutationId =

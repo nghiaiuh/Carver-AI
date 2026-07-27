@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@carver/db/server";
 import { createSafeLogger } from "@carver/shared";
 import {
   coerceCanvasSnapshotDocument,
+  isCanvasSnapshotDocument,
   type CanvasSnapshotDocument,
 } from "@carver/shared";
 import { apiFailure, badRequest, readJsonObject, serverErrorResponse } from "../../../_lib/http";
@@ -23,6 +24,10 @@ const logger = createSafeLogger("web.project-snapshots");
 
 function snapshotValue(value: unknown): CanvasSnapshotDocument | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  if (!isCanvasSnapshotDocument(value)) {
     return null;
   }
 
@@ -80,19 +85,36 @@ export async function GET(
 
   try {
     const loaded = await loadCurrentProjectSnapshot(context.supabase, projectId);
+    let document = loaded.document;
+    let assetDeliveryWarning: string | undefined;
+
+    try {
+      document = await resolveCanvasSnapshotAssetUrls({
+        requestUrl: request.url,
+        document,
+        supabase: context.supabase,
+        userId: context.user.id,
+        projectId,
+      });
+    } catch (error) {
+      // Asset delivery URLs are runtime decoration. A temporary refresh failure
+      // must not turn a valid persisted graph into a failed canvas load.
+      logger.warn("current project snapshot asset resolution failed", {
+        requestId: context.requestId,
+        userId: context.user.id,
+        projectId: projectResult.project.id,
+        error,
+      });
+      assetDeliveryWarning = "Some canvas images could not be refreshed yet.";
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         projectId,
-        document: await resolveCanvasSnapshotAssetUrls({
-          requestUrl: request.url,
-          document: loaded.document,
-          supabase: context.supabase,
-          userId: context.user.id,
-          projectId,
-        }),
+        document,
         snapshot: loaded.snapshot,
+        assetDeliveryWarning,
       },
     });
   } catch (error) {
@@ -148,7 +170,12 @@ export async function POST(
 
   const reason = snapshotReasonValue(body.reason) ?? "manual";
   const documentHash = typeof body.documentHash === "string" ? body.documentHash.trim() : "";
-  if (documentHash && (documentHash.length < 32 || documentHash.length > 128)) {
+  const isCanvasFingerprint = /^fnv1a-[0-9a-f]{1,8}$/i.test(documentHash);
+  if (
+    documentHash &&
+    !isCanvasFingerprint &&
+    (documentHash.length < 32 || documentHash.length > 128)
+  ) {
     return apiFailure("BAD_REQUEST", "documentHash is invalid", 400, context.requestId);
   }
   const validationError = validateCanvasSnapshotDocument(snapshot);
