@@ -141,7 +141,7 @@ test.describe("canvas release-critical staging flow", () => {
     "E2E requires CARVER_RUN_E2E=1 and an authenticated disposable staging storage state.",
   );
 
-  test("creates a project, persists a private asset-backed draft, reloads canvas, and retries a simulated generation", async ({ page }) => {
+  test("creates a project, restores its draft, and returns a simulated chat generation to chat and canvas", async ({ page }) => {
     await page.goto("/");
     const token = await getAccessToken(page);
     const runId = `e2e-${Date.now()}`;
@@ -224,44 +224,76 @@ test.describe("canvas release-critical staging flow", () => {
     // Asset/draft hydration remains valuable on every staging run. Generation is
     // opted in only where the separate staging worker is running with simulation.
     if (!runGeneration) return;
-    const createJob = await apiJson(page, token, `/api/projects/${projectId}/ai-jobs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Generate a safe simulated landscape output for E2E verification.",
-        executionMode: "text_to_image",
-        jobType: "generate_concept",
-        idempotencyKey: `e2e-simulation-${runId}`,
-        snapshot: document,
-        // The first worker attempt fails transiently. A terminal success proves
-        // BullMQ retry, DB job ownership, polling, and output delivery together.
-        // The first attempt persists its output then fails. Retry must reuse
-        // the deterministic asset rather than invoke the provider again.
-        simulation: { scenario: "fail_after_asset_persisted_once", delayMs: 100 },
-      }),
+
+    // The real composer does not expose simulation controls. The staging test
+    // adds the fixture-only provider config at the HTTP boundary, so this still
+    // validates chat intent routing, queueing, UI polling, and output hydration.
+    await page.route("**/api/chat", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+
+      const postData = route.request().postData();
+      const body = postData ? (JSON.parse(postData) as Record<string, unknown>) : {};
+      await route.continue({
+        postData: JSON.stringify({
+          ...body,
+          // The first attempt persists its output then fails. A successful retry
+          // proves BullMQ retry reuses the deterministic output asset.
+          simulation: { scenario: "fail_after_asset_persisted_once", delayMs: 100 },
+        }),
+      });
     });
-    expect(createJob.status, JSON.stringify(createJob.body)).toBe(201);
-    const job = (createJob.body.data as { job?: { id?: string } } | undefined)?.job;
-    expect(job?.id).toBeTruthy();
 
-    let completedJob: Record<string, unknown> | undefined;
-    await expect
-      .poll(
-        async () => {
-          const current = await apiJson(page, token, `/api/projects/${projectId}/ai-jobs/${job!.id}`);
-          expect(current.status, JSON.stringify(current.body)).toBe(200);
-          completedJob = (current.body.data as { job?: Record<string, unknown> } | undefined)?.job;
-          return completedJob?.status;
-        },
-        { timeout: 90_000, intervals: [500, 1_000, 2_000] },
-      )
-      .toBe("succeeded");
+    const chatResponsePromise = page.waitForResponse(
+      (response) => response.url().includes("/api/chat") && response.request().method() === "POST",
+    );
+    const composer = page.locator('[role="textbox"][contenteditable="true"]');
+    await composer.fill("Generate a safe simulated landscape output for E2E verification.");
+    await page.getByTitle("Send").click();
 
-    const jobResult = completedJob?.jobResult as { generatedImages?: Array<{ assetId?: string; imageUrl?: string }> } | undefined;
+    const chatResponse = await chatResponsePromise;
+    const chatBody = (await chatResponse.json()) as {
+      mode?: string;
+      job?: { id?: string };
+    };
+    expect(chatResponse.status(), JSON.stringify(chatBody)).toBe(200);
+    expect(chatBody.mode).toBe("generation");
+    expect(chatBody.job?.id).toBeTruthy();
+    const jobId = chatBody.job!.id!;
+
+    // The chat panel owns poll-and-hydrate. Waiting on its final output verifies
+    // that the browser did not merely enqueue a job and abandon the result.
+    await expect(page.getByText("Generated a concept image from the selected canvas target and connected references.")).toBeVisible({
+      timeout: 90_000,
+    });
+    await expect(page.getByAltText("Generated concept")).toBeVisible({ timeout: 90_000 });
+    await expect(page.locator('canvas[aria-label="Generated concept"]')).toBeVisible({ timeout: 90_000 });
+
+    const completedJob = await apiJson(page, token, `/api/projects/${projectId}/ai-jobs/${jobId}`);
+    expect(completedJob.status, JSON.stringify(completedJob.body)).toBe(200);
+    const completedJobRecord = (completedJob.body.data as { job?: Record<string, unknown> } | undefined)?.job;
+    expect(completedJobRecord?.status).toBe("succeeded");
+
+    const jobResult = completedJobRecord?.jobResult as { generatedImages?: Array<{ assetId?: string; imageUrl?: string }> } | undefined;
     expect(jobResult?.generatedImages?.[0]?.assetId).toBeTruthy();
     expect(jobResult?.generatedImages?.[0]?.imageUrl).toContain("/api/assets/");
 
     const generatedAssetId = jobResult?.generatedImages?.[0]?.assetId;
+    await expect
+      .poll(
+        async () => {
+          const draft = await apiJson(page, token, `/api/project-drafts/${projectId}`);
+          expect(draft.status, JSON.stringify(draft.body)).toBe(200);
+          const draftDocument = (draft.body.data as { document?: { graph?: { nodes?: Array<{ sourceImage?: { assetId?: string } }> } } } | undefined)
+            ?.document;
+          return draftDocument?.graph?.nodes?.some((node) => node.sourceImage?.assetId === generatedAssetId) ?? false;
+        },
+        { timeout: 20_000, intervals: [500, 1_000, 2_000] },
+      )
+      .toBe(true);
+
     const chatHistory = await apiJson(page, token, `/api/chat?projectId=${projectId}&canvasId=e2e-retry`);
     expect(chatHistory.status, JSON.stringify(chatHistory.body)).toBe(200);
     const messages = (chatHistory.body.messages as Array<{
