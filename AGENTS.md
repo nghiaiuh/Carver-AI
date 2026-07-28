@@ -5,7 +5,7 @@
 When responding to the user after completing a task, always address or refer to the user as **Nghĩa IT**.
 
 This is a context-check marker to confirm the agent has read and followed this file.
-
+Always have commit content in the end of task response
 Example:
 
 ```md
