@@ -1,5 +1,5 @@
 import type { Database } from "@carver/db";
-import type { LibraryAssetRecord, LibraryFolderRecord } from "@carver/storage";
+import type { LibraryAssetRecord, LibraryFolderRecord } from "@carver/storage/library-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   resolveOwnedAssetUrls,

@@ -6,7 +6,7 @@
  * - `DELETE`: xoa asset metadata trong Supabase va xoa cac file lien quan tren R2.
  */
 
-import { deleteLibraryAsset } from "@carver/storage";
+import { deleteLibraryAsset } from "@carver/storage/library-metadata";
 import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
 import { isUuidLike } from "../../../_lib/authz";

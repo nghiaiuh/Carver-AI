@@ -6,7 +6,7 @@
  * - `GET`: lay danh sach folder va asset de sidebar/flyout hien thi.
  */
 
-import { listLibrary } from "@carver/storage";
+import { listLibrary } from "@carver/storage/library-metadata";
 import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../_lib/auth";
 import { apiFailure, apiSuccess } from "../_lib/http";

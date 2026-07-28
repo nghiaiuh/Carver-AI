@@ -6,7 +6,7 @@
  * - `POST`: tao folder moi va tra ve metadata de client cap nhat sidebar.
  */
 
-import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage";
+import { buildLibraryFolderRecord, createLibraryFolder } from "@carver/storage/library-metadata";
 import { createSafeLogger } from "@carver/shared";
 import { getRequestContext } from "../../_lib/auth";
 import { apiFailure, apiSuccess, badRequest, readJsonObject } from "../../_lib/http";

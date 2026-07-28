@@ -30,6 +30,11 @@
       "module": "./src/library.ts",
       "default": "./dist/library.js"
     },
+    "./library-metadata": {
+      "types": "./src/libraryMetadata.ts",
+      "module": "./src/libraryMetadata.ts",
+      "default": "./src/libraryMetadata.ts"
+    },
     "./library-sync": {
       "types": "./dist/librarySync.d.ts",
       "module": "./src/librarySync.ts",

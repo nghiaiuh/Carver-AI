@@ -11,7 +11,7 @@ import {
   buildLibraryFolderRecord,
   deleteLibraryFolder,
   renameLibraryFolder,
-} from "@carver/storage";
+} from "@carver/storage/library-metadata";
 import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { getRequestContext } from "../../../_lib/auth";
 import { isUuidLike } from "../../../_lib/authz";
