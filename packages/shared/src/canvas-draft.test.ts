@@ -106,3 +106,25 @@ test("draft operations remove edges when their source image is deleted", () => {
 
   assert.deepEqual(restored.graph, nextDocument.graph);
 });
+
+test("draft operations replay viewport zoom changes", () => {
+  const original = buildDocument();
+  original.camera.zoom = 1;
+
+  const nextDocument = buildDocument();
+  nextDocument.camera.zoom = 1.75;
+
+  const { operations } = buildCanvasDraftOperations({
+    previousDocument: original,
+    nextDocument,
+    projectId: PROJECT_ID,
+    tabId: "tab-1",
+    baseRevision: 2,
+    sequenceStart: 20,
+  });
+
+  const restored = applyCanvasDraftOperations(original, operations);
+
+  assert.equal(restored.camera.zoom, 1.75);
+  assert.deepEqual(restored.camera, nextDocument.camera);
+});

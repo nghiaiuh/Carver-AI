@@ -38,6 +38,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [isCanvasLocked, setIsCanvasLocked] = useState(false);
   const [activeRecipeModal, setActiveRecipeModal] = useState<SceneRecipeItemId | null>(null);
+  const dismissDraftWarning = actions.dismissDraftWarning;
   // GSAP entry animation needs rootRef attached to DOM, so it lives here.
   useGSAP(
     () => {
@@ -153,6 +154,16 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [actions, state.selectedNode]);
 
+  useEffect(() => {
+    if (!state.draftWarning) return;
+
+    const timeout = window.setTimeout(() => {
+      dismissDraftWarning();
+    }, 5_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [dismissDraftWarning, state.draftWarning]);
+
   return (
     <div
       ref={rootRef}
@@ -162,27 +173,10 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       {/* Desktop layout */}
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
         {state.draftWarning ? (
-          <div className="border-b border-[var(--canvas-theme-border)] bg-amber-50 px-4 py-2 text-sm text-amber-900">
-            <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
-              <p>{state.draftWarning}</p>
-              {state.draftConflict ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void actions.restoreLocalDraft()}
-                    className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
-                  >
-                    Restore local draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void actions.useSavedVersion()}
-                    className="rounded-full border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
-                  >
-                    Use saved version
-                  </button>
-                </div>
-              ) : null}
+          <div className="fixed right-6 top-24 z-[130] w-[min(360px,calc(100vw-48px))] rounded-2xl border border-[#E8D8A8] bg-[#FFF9E8] px-4 py-3 text-sm text-[#6E4B00] shadow-[0_18px_45px_rgba(47,35,10,0.16)]">
+            <div className="flex items-start gap-3">
+              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#D5961F]" />
+              <p className="leading-5">{state.draftWarning}</p>
             </div>
           </div>
         ) : null}

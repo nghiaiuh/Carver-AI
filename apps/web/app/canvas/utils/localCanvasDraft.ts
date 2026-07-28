@@ -377,12 +377,20 @@ export async function recordCanvasDraftCloudSync(
       return null;
     }
 
+    const currentMutationId = currentRecord.meta.lastMutationId;
+    const acknowledgedMutationId = params.lastMutationId;
+    const hasNewerLocalMutation =
+      Boolean(currentRecord.meta.documentHash && params.cloudDraftHash) &&
+      currentRecord.meta.documentHash !== params.cloudDraftHash;
+
     const nextMeta: LocalCanvasDraftMeta = {
       ...currentRecord.meta,
       cloudDraftRevision: params.cloudDraftRevision,
       cloudDraftHash: params.cloudDraftHash,
       // A late cloud acknowledgement must not replace a newer local mutation.
-      lastMutationId: currentRecord.meta.lastMutationId ?? params.lastMutationId,
+      lastMutationId: hasNewerLocalMutation
+        ? currentMutationId
+        : (acknowledgedMutationId ?? currentMutationId ?? null),
       updatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
     };

@@ -288,10 +288,10 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-// Local persistence is the recovery path, so acknowledge it quickly after the
-// user pauses. Cloud sync is deliberately slower to batch one editing burst.
-const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 500;
-const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 3_000;
+// Local draft is the crash/reload recovery path, so it must land quickly after
+// semantic canvas changes. Cloud draft stays lightly debounced to batch bursts.
+const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 120;
+const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 900;
 const CLOUD_DRAFT_SYNC_RETRY_LIMIT = 4;
 const CLOUD_DRAFT_SYNC_RETRY_BASE_MS = 2_000;
 const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
@@ -516,14 +516,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   );
   const draftChannelRef = useRef<BroadcastChannel | null>(null);
   const syncLeaderAbortRef = useRef<AbortController | null>(null);
-  const saveSnapshotDocumentRef = useRef<
-    ((params: {
-      projectId?: string;
-      reason: "manual" | "close";
-      quiet?: boolean;
-      keepalive?: boolean;
-    }) => Promise<boolean>) | null
-  >(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const library = useCanvasLibrary();
@@ -1361,10 +1353,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [activeNodeId, nodes]);
 
   useEffect(() => {
-    saveSnapshotDocumentRef.current = saveSnapshotDocument;
-  }, [saveSnapshotDocument]);
-
-  useEffect(() => {
     syncLeaderAbortRef.current?.abort();
     syncLeaderAbortRef.current = null;
 
@@ -1605,8 +1593,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
         if (hasSnapshotConflict || hasCloudConflict) {
           applyHydratedSnapshotState(baseDocument);
-          setDraftConflict(draftRecord);
-          setDraftWarning("A newer saved draft/version exists. Restore the local draft only if you want to continue from that older base.");
+          if (currentUserId) {
+            await clearCanvasDraft(currentUserId, projectId).catch(() => undefined);
+          }
+          setDraftConflict(null);
+          setDraftWarning(null);
           return;
         }
 
@@ -1767,10 +1758,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         window.clearTimeout(cloudDraftSyncTimeoutRef.current);
         cloudDraftSyncTimeoutRef.current = null;
       }
-      if (cloudDraftRetryTimeoutRef.current !== null) {
-        window.clearTimeout(cloudDraftRetryTimeoutRef.current);
-        cloudDraftRetryTimeoutRef.current = null;
-      }
     };
   }, [
     currentSnapshotFingerprint,
@@ -1782,14 +1769,23 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   ]);
 
   useEffect(() => {
+    const flushPendingLocalDraft = () => {
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+
+      void persistLocalDraftNow().catch(() => undefined);
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
-        void persistLocalDraftNow().catch(() => undefined);
+        flushPendingLocalDraft();
       }
     };
 
     const handlePageHide = () => {
-      void persistLocalDraftNow().catch(() => undefined);
+      flushPendingLocalDraft();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -1800,21 +1796,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       window.removeEventListener("pagehide", handlePageHide);
     };
   }, [persistLocalDraftNow]);
-
-  useEffect(() => {
-    const closingProjectId = params.projectId;
-    return () => {
-      if (!closingProjectId) {
-        return;
-      }
-
-      void saveSnapshotDocumentRef.current?.({
-        projectId: closingProjectId,
-        reason: "close",
-        quiet: true,
-      });
-    };
-  }, [params.projectId]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -2432,6 +2413,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [currentUserId, params.projectId]);
 
   // Đóng modal nhiều góc nhìn; phần generate riêng chưa được cài đặt.
+  const dismissDraftWarning = useCallback(() => {
+    setDraftWarning(null);
+  }, []);
+
   const generateAngles = () => {
     setShowMultiAngleModal(false);
   };
@@ -2594,6 +2579,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     actions: {
       // Toast
       showToast,
+      dismissDraftWarning,
 
       toggleMiniMap: () => setMiniMapOpen((current) => !current),
 

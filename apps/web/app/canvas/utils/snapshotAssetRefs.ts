@@ -10,6 +10,10 @@ type ResolvedAssetUrlMap = Record<
   }
 >;
 
+type MaybeAssetRef = {
+  assetId?: string | null;
+};
+
 function extractAssetIdFromGatewayUrl(value: string | undefined) {
   if (!value) {
     return undefined;
@@ -43,6 +47,7 @@ export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
   }
 
   for (const node of document.graph.nodes) {
+    add((node as MaybeAssetRef).assetId);
     add(node.sourceImage?.assetId);
     add(extractAssetIdFromGatewayUrl(node.imageUrl));
     add(extractAssetIdFromGatewayUrl(node.sourceImage?.url));
@@ -72,23 +77,24 @@ export function applyResolvedAssetUrlsToSnapshot(
       ...document.graph,
       nodes: document.graph.nodes.map((node) => {
         const nodeAssetId =
+          (node as MaybeAssetRef).assetId ??
           node.sourceImage?.assetId ??
           extractAssetIdFromGatewayUrl(node.sourceImage?.url) ??
           extractAssetIdFromGatewayUrl(node.imageUrl);
         const resolvedNodeUrl = nodeAssetId ? assets[nodeAssetId]?.originalUrl : undefined;
         const nextNode = {
           ...node,
-          imageUrl: resolvedNodeUrl ?? node.imageUrl,
+          imageUrl: resolvedNodeUrl ?? (nodeAssetId ? "" : node.imageUrl),
           sourceImage: node.sourceImage
             ? {
                 ...node.sourceImage,
                 assetId: nodeAssetId,
-                url: resolvedNodeUrl ?? node.sourceImage.url,
+                url: resolvedNodeUrl ?? (nodeAssetId ? "" : node.sourceImage.url),
               }
             : nodeAssetId
               ? {
                   assetId: nodeAssetId,
-                  url: resolvedNodeUrl ?? node.imageUrl,
+                  url: resolvedNodeUrl ?? "",
                   quality: "original" as const,
                 }
               : undefined,
@@ -116,12 +122,12 @@ export function applyResolvedAssetUrlsToSnapshot(
               return {
                 ...child,
                 assetId: resolvedChildAssetId,
-                imageSrc: resolvedChildUrl ?? child.imageSrc,
+                imageSrc: resolvedChildUrl ?? (resolvedChildAssetId ? "" : child.imageSrc),
                 sourceImage: child.sourceImage
                   ? {
                       ...child.sourceImage,
                       assetId: resolvedChildAssetId,
-                      url: resolvedChildUrl ?? child.sourceImage.url,
+                      url: resolvedChildUrl ?? (resolvedChildAssetId ? "" : child.sourceImage.url),
                     }
                   : undefined,
               };

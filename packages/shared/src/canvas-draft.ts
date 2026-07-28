@@ -5,6 +5,7 @@ import {
   type CanvasGraphNodeSnapshot,
   type CanvasMarkerSnapshot,
   type CanvasPenStrokeSnapshot,
+  type CanvasCameraState,
   type CanvasSketchGroupSnapshot,
   type CanvasSketchLineSnapshot,
   type CanvasSnapshotDocument,
@@ -71,6 +72,11 @@ export type CanvasDraftPenStrokesSetOperation = CanvasDraftOperationBase & {
   value: CanvasPenStrokeSnapshot[];
 };
 
+export type CanvasDraftCameraSetOperation = CanvasDraftOperationBase & {
+  type: "camera.set";
+  value: CanvasCameraState;
+};
+
 export type CanvasDraftOperation =
   | CanvasDraftNodeUpsertOperation
   | CanvasDraftNodeDeleteOperation
@@ -81,7 +87,8 @@ export type CanvasDraftOperation =
   | CanvasDraftAddedObjectsSetOperation
   | CanvasDraftSketchLinesSetOperation
   | CanvasDraftSketchGroupsSetOperation
-  | CanvasDraftPenStrokesSetOperation;
+  | CanvasDraftPenStrokesSetOperation
+  | CanvasDraftCameraSetOperation;
 
 export type CanvasDraftCheckpoint = {
   document: CanvasSnapshotDocument;
@@ -140,6 +147,9 @@ export function applyCanvasDraftOperations(
       case "pen-strokes.set":
         nextDocument.penStrokes = operation.value;
         break;
+      case "camera.set":
+        nextDocument.camera = operation.value;
+        break;
       default:
         break;
     }
@@ -171,6 +181,10 @@ function shallowEdgeEqual(
 }
 
 function shallowArrayEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function shallowCameraEqual(left: CanvasCameraState, right: CanvasCameraState) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -300,6 +314,14 @@ export function buildCanvasDraftOperations(params: {
       ...createBase(),
       type: "pen-strokes.set",
       value: params.nextDocument.penStrokes,
+    });
+  }
+
+  if (!shallowCameraEqual(params.previousDocument.camera, params.nextDocument.camera)) {
+    operations.push({
+      ...createBase(),
+      type: "camera.set",
+      value: params.nextDocument.camera,
     });
   }
 
