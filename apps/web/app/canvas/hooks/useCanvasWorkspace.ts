@@ -19,7 +19,6 @@ import {
 } from "@carver/shared";
 import { buildCanvasThemeStyle } from "../components/core/canvasThemeStyle";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
-import useResizablePanel from "./useResizablePanel";
 import { gsap } from "../../components/gsapSetup";
 import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
 import {
@@ -27,11 +26,7 @@ import {
   type CanvasPresetGroupNode,
   DEFAULT_CANVAS_THEME,
   DEFAULT_PEN_SETTINGS,
-  DEFAULT_RIGHT_PANEL_WIDTH,
   type PresetGroupCategory,
-  MAX_RIGHT_PANEL_WIDTH,
-  MIN_RIGHT_PANEL_WIDTH,
-  RIGHT_PANEL_WIDTH_STORAGE_KEY,
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
@@ -46,6 +41,7 @@ import {
 import {
   hydrateCanvasStateFromSnapshot,
 } from "../utils/canvasSnapshotHydration";
+import { DEFAULT_CANVAS_VIEWPORT_ZOOM, normalizeCanvasViewportZoom } from "../utils/canvasViewport";
 import {
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
@@ -292,8 +288,10 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 1000;
-const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 1500;
+// Local persistence is the recovery path, so acknowledge it quickly after the
+// user pauses. Cloud sync is deliberately slower to batch one editing burst.
+const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 500;
+const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 3_000;
 const CLOUD_DRAFT_SYNC_RETRY_LIMIT = 4;
 const CLOUD_DRAFT_SYNC_RETRY_BASE_MS = 2_000;
 const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
@@ -308,10 +306,10 @@ function hasTransientSnapshotContent(document: CanvasSnapshotDocument) {
   const hasUnsafeUrl = (value: string | undefined) =>
     Boolean(
       value &&
-        (value.startsWith("blob:") ||
-          value.startsWith("data:") ||
-          value.startsWith("file:") ||
-          value.includes("base64,")),
+      (value.startsWith("blob:") ||
+        value.startsWith("data:") ||
+        value.startsWith("file:") ||
+        value.includes("base64,")),
     );
 
   return document.graph.nodes.some((node) => {
@@ -419,7 +417,6 @@ function animateIn(selector: string) {
 export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── DOM Refs ────────────────────────────────────────────────────────────────
   const rootRef = useRef<HTMLDivElement>(null);
-  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   // ── Canvas entities ─────────────────────────────────────────────────────────
   const [selectedItem, setSelectedItem] = useState<SelectedItem>({ type: "none" });
@@ -438,6 +435,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [selectedSketchLineIds, setSelectedSketchLineIds] = useState<string[]>([]);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
+  const [viewportZoom, setViewportZoom] = useState(DEFAULT_CANVAS_VIEWPORT_ZOOM);
+  const setCanvasViewportZoom = useCallback((value: number) => {
+    const nextZoom = normalizeCanvasViewportZoom(value);
+    setViewportZoom((currentZoom) => currentZoom === nextZoom ? currentZoom : nextZoom);
+  }, []);
 
   // ── Generation / AI ─────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
@@ -453,8 +455,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [showAddObjectMenu, setShowAddObjectMenu] = useState(false);
   const [showFeasibilityReviewPanel, setShowFeasibilityReviewPanel] = useState(false);
   const [showGroupNameModal, setShowGroupNameModal] = useState(false);
-  const miniMapOpen = true;
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [miniMapOpen, setMiniMapOpen] = useState(true);
   const [language, setLanguage] = useState(DEFAULT_CANVAS_LANGUAGE);
   const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState<string | null>(null);
   const [pendingLibraryInsertAsset, setPendingLibraryInsertAsset] =
@@ -477,6 +478,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const snapshotLoadRequestRef = useRef(0);
   const snapshotSaveInFlightRef = useRef(false);
   const draftSaveTimeoutRef = useRef<number | null>(null);
+  const lastPersistedLocalDraftFingerprintRef = useRef<string | null>(null);
   const cloudDraftSyncTimeoutRef = useRef<number | null>(null);
   const cloudDraftRetryTimeoutRef = useRef<number | null>(null);
   const cloudDraftRetryAttemptRef = useRef(0);
@@ -524,15 +526,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   >(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
-  const rightPanelResize = useResizablePanel({
-    panelRef: rightPanelRef,
-    side: "right",
-    defaultWidth: DEFAULT_RIGHT_PANEL_WIDTH,
-    minWidth: MIN_RIGHT_PANEL_WIDTH,
-    maxWidth: MAX_RIGHT_PANEL_WIDTH,
-    storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
-  });
-
   const library = useCanvasLibrary();
   const supabase = getOptionalBrowserSupabaseClient();
 
@@ -554,7 +547,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const canvasThemeStyle = buildCanvasThemeStyle(DEFAULT_CANVAS_THEME);
-  const isResizingPanel = rightPanelResize.isResizing;
+  const isResizingPanel = false;
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
   const activeGenerationTarget =
     activeGenerationTargetId
@@ -575,8 +568,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         sketchLines,
         sketchGroups,
         penStrokes,
+        viewportZoom,
       }),
-    [activeGenerationTargetId, addedObjects, edges, markers, nodes, penStrokes, sketchGroups, sketchLines],
+    [activeGenerationTargetId, addedObjects, edges, markers, nodes, penStrokes, sketchGroups, sketchLines, viewportZoom],
   );
   const currentSnapshotFingerprint = useMemo(
     () => createSnapshotFingerprint(currentSnapshotDocument),
@@ -653,6 +647,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const applyHydratedSnapshotState = useCallback((document: CanvasSnapshotDocument) => {
     const hydrated = hydrateCanvasStateFromSnapshot(document);
 
+    setCanvasViewportZoom(hydrated.viewportZoom);
     setNodes(hydrated.nodes);
     setEdges(hydrated.edges);
     setPromptText(hydrated.promptText);
@@ -672,7 +667,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setGenerationAssistantMessages([]);
     setSelectedSketchLineIds([]);
     handledGenerationJobIdsRef.current.clear();
-  }, []);
+  }, [setCanvasViewportZoom]);
 
   const applySnapshotBaseline = useCallback((document: CanvasSnapshotDocument, snapshot: SnapshotMeta | null) => {
     const documentHash = snapshot?.documentHash?.trim() || createSnapshotFingerprint(document);
@@ -682,12 +677,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       documentHash,
     };
     savedSnapshotFingerprintRef.current = documentHash;
+    lastPersistedLocalDraftFingerprintRef.current = documentHash;
     setCurrentSnapshotMeta(
       snapshot
         ? {
-            ...snapshot,
-            documentHash,
-          }
+          ...snapshot,
+          documentHash,
+        }
         : null,
     );
     setHasUnsavedSnapshotChanges(false);
@@ -778,6 +774,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const attemptedAt = new Date().toISOString();
     const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
+    const snapshotFingerprint = latestSnapshotFingerprintRef.current;
     if (
       !currentUserId ||
       !projectId ||
@@ -794,6 +791,21 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         requestSent: false,
         result: "skipped",
         skipReason: "not-ready",
+      });
+      return false;
+    }
+
+    if (snapshotFingerprint === lastPersistedLocalDraftFingerprintRef.current) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "local-draft-save",
+        projectId,
+        intent: "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "dedupe",
       });
       return false;
     }
@@ -815,6 +827,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         cloudDraftHash: cloudDraftMetaRef.current.documentHash,
         lastMutationId: mutationId,
       });
+      lastPersistedLocalDraftFingerprintRef.current = snapshotFingerprint;
 
       draftChannelRef.current?.postMessage({
         type: "draft-updated",
@@ -822,7 +835,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         projectId,
         tabId: tabIdRef.current,
       });
-      void pruneExpiredCanvasDrafts(currentUserId).catch(() => undefined);
       recordCanvasPersistenceBenchmarkEvent({
         operation: "local-draft-save",
         projectId,
@@ -1425,17 +1437,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     channel.onmessage = (event) => {
       const message = event.data as
         | {
-            type?: "draft-updated";
-            userId?: string;
-            projectId?: string;
-            tabId?: string;
-          }
+          type?: "draft-updated";
+          userId?: string;
+          projectId?: string;
+          tabId?: string;
+        }
         | {
-            type?: "draft-leader";
-            userId?: string;
-            projectId?: string;
-            tabId?: string;
-          }
+          type?: "draft-leader";
+          userId?: string;
+          projectId?: string;
+          tabId?: string;
+        }
         | undefined;
 
       if (!message) {
@@ -1558,13 +1570,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         setDraftConflict(null);
         setDraftWarning(
           draftPayload.data?.assetDeliveryWarning ??
-            snapshotPayload.data?.assetDeliveryWarning ??
-            (cloudDraftMeta &&
-              snapshotPayload.data.snapshot?.snapshotId &&
-              cloudDraftMeta.baseSnapshotId &&
-              cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
-              ? "A cloud draft based on a different saved version was restored."
-              : null),
+          snapshotPayload.data?.assetDeliveryWarning ??
+          (cloudDraftMeta &&
+            snapshotPayload.data.snapshot?.snapshotId &&
+            cloudDraftMeta.baseSnapshotId &&
+            cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
+            ? "A cloud draft based on a different saved version was restored."
+            : null),
         );
 
         const draftRecord =
@@ -1583,8 +1595,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           (typeof draftRecord.meta.basedOnVersion === "number" && draftRecord.meta.basedOnVersion < dbVersion) ||
           Boolean(
             draftRecord.meta.basedOnSnapshotId &&
-              snapshotPayload.data.snapshot?.snapshotId &&
-              draftRecord.meta.basedOnSnapshotId !== snapshotPayload.data.snapshot.snapshotId,
+            snapshotPayload.data.snapshot?.snapshotId &&
+            draftRecord.meta.basedOnSnapshotId !== snapshotPayload.data.snapshot.snapshotId,
           );
         const hasCloudConflict =
           typeof draftRecord.meta.cloudDraftRevision === "number" &&
@@ -1689,6 +1701,15 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       !projectId ||
       isSnapshotLoading ||
       !snapshotBaselineRef.current.documentHash
+    ) {
+      return;
+    }
+
+    const currentHash = latestSnapshotFingerprintRef.current;
+    if (
+      !currentHash ||
+      currentHash === snapshotBaselineRef.current.documentHash ||
+      currentHash === lastPersistedLocalDraftFingerprintRef.current
     ) {
       return;
     }
@@ -1994,10 +2015,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   };
 
   // Xử lý click lên ảnh theo tool hiện tại, ví dụ đặt marker vị trí.
-  const handleImageAction = (x: number, y: number) => {
+  const handleImageAction = (targetNodeId: string, x: number, y: number) => {
     if (activeTool === "mark-position") {
       const id = `marker-${markers.length + 1}`;
-      setMarkers((items) => [...items, { id, x, y, label: "Place koi pond here" }]);
+      setMarkers((items) => [...items, { id, x, y, label: "Place koi pond here", targetNodeId }]);
       setSelectedItem({ type: "marker", id });
       animateIn(".marker-pin");
     }
@@ -2005,6 +2026,20 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   // Thêm object mẫu lên canvas và trả tool về chế độ chọn.
   const addObject = (label: string) => {
+    const selectedNodeId =
+      selectedItem.type === "node" || selectedItem.type === "image"
+        ? selectedItem.id
+        : null;
+    const targetNodeId =
+      selectedNodeId ??
+      activeGenerationTargetId ??
+      nodes.find((node) => !isPresetGroupNode(node))?.id ??
+      null;
+    if (!targetNodeId) {
+      showToast("Select a site image before placing an object.");
+      return;
+    }
+
     const id = `object-${addedObjects.length + 1}`;
     setAddedObjects((items) => [
       ...items,
@@ -2016,6 +2051,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         h: label === "Waterfall" ? 17 : 11,
         rotation: label === "Pathway" ? -10 : -4,
         label,
+        targetNodeId,
       },
     ]);
     setSelectedItem({ type: "object", id });
@@ -2073,9 +2109,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         const nextChildren = replaceAllChildren
           ? params.children.map((child, index) => ({ ...child, order: index }))
           : params.children.reduce(
-              (children, child) => upsertPresetChild(children, child, true),
-              node.presetGroup.children,
-            );
+            (children, child) => upsertPresetChild(children, child, true),
+            node.presetGroup.children,
+          );
         const activeChildId =
           params.children.at(-1)?.id ??
           node.presetGroup.activeChildId;
@@ -2272,10 +2308,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const regionPayload =
       activeTool === "region" && selectedNode?.regionMask
         ? {
-            imageId: selectedNode.id,
-            prompt: promptText.trim(),
-            mask: selectedNode.regionMask,
-          }
+          imageId: selectedNode.id,
+          prompt: promptText.trim(),
+          mask: selectedNode.regionMask,
+        }
         : null;
 
     try {
@@ -2291,6 +2327,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         sketchLines,
         sketchGroups,
         penStrokes,
+        viewportZoom,
       });
       const payload = {
         projectId: params.projectId,
@@ -2303,11 +2340,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         jobType: regionPayload ? "refine_concept" : "generate_concept",
         mask: regionPayload
           ? {
-              dataUrl: regionPayload.mask.dataUrl,
-              width: regionPayload.mask.width,
-              height: regionPayload.mask.height,
-              selectionRatio: regionPayload.mask.selectionRatio,
-            }
+            dataUrl: regionPayload.mask.dataUrl,
+            width: regionPayload.mask.width,
+            height: regionPayload.mask.height,
+            selectionRatio: regionPayload.mask.selectionRatio,
+          }
           : undefined,
       };
 
@@ -2428,9 +2465,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       items.map((node) =>
         node.id === nodeId
           ? {
-              ...node,
-              regionMask: newMask,
-            }
+            ...node,
+            regionMask: newMask,
+          }
           : node,
       ),
     );
@@ -2489,12 +2526,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   // ── Return shape ────────────────────────────────────────────────────────────
 
   return {
-    // DOM refs (needed by CanvasWorkspace for GSAP / panel resizing)
+    // DOM ref needed by CanvasWorkspace for entry animation.
     rootRef,
-    rightPanelRef,
-
-    // Panel resizing hooks (expose full object so Workspace can wire ResizeHandle)
-    rightPanelResize,
 
     // Library sub-hook used by the studio asset modal.
     library,
@@ -2512,13 +2545,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       selectedSketchLineIds,
       nodes,
       edges,
+      viewportZoom,
       promptText,
       activeGenerationTargetId,
       generationAssistantMessages,
       activeNodeId,
       pendingGenerationJob,
       miniMapOpen,
-      rightPanelOpen,
       language,
       selectedLibraryAssetId,
       pendingLibraryInsertAsset,
@@ -2562,9 +2595,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Toast
       showToast,
 
-      // Panels
-      openRightPanel: () => setRightPanelOpen(true),
-      closeRightPanel: () => setRightPanelOpen(false),
+      toggleMiniMap: () => setMiniMapOpen((current) => !current),
 
       // Tool & selection
       handleTool,
@@ -2603,6 +2634,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Nodes & edges (passthrough setters for CanvasBoard)
       setNodes,
       setEdges,
+      setViewportZoom: setCanvasViewportZoom,
       setActiveNodeId,
 
       // Prompt

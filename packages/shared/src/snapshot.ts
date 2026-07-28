@@ -180,6 +180,7 @@ export type CanvasMarkerSnapshot = {
   x: number;
   y: number;
   label: string;
+  targetNodeId?: string;
 };
 
 export type CanvasAddedObjectSnapshot = {
@@ -190,6 +191,7 @@ export type CanvasAddedObjectSnapshot = {
   h: number;
   rotation: number;
   label: string;
+  targetNodeId?: string;
   selectedAssetIds?: string[];
 };
 

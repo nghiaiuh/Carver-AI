@@ -19,7 +19,7 @@ import type {
   SketchLine,
 } from "../../types/canvas";
 import { getDefaultInputPorts, getVisibleInputPorts } from "../../types/canvas";
-import { Copy, Image as ImageIcon, ImagePlus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Box, Copy, ImagePlus, MapPin, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import {
   INPUT_PORT_GAP,
@@ -77,18 +77,18 @@ function getNodeFrameClassName({
   isConnectionTarget: boolean;
 }) {
   if (selected) {
-    return "border-[#4D735B] ring-2 ring-[#4D735B]/12";
+    return "border-[#EA7542] ring-2 ring-[#EA7542]/15 shadow-[0_8px_24px_rgba(234,117,66,0.1)]";
   }
 
   if (isGenerationTarget) {
-    return "border-[#7B6534] ring-2 ring-[#B99B52]/20";
+    return "border-[#EA7542] ring-2 ring-[#EA7542]/20";
   }
 
   if (isConnectionTarget) {
-    return "border-[#6F8B74] ring-2 ring-[#6F8B74]/12";
+    return "border-[#3B82F6] ring-2 ring-[#3B82F6]/15";
   }
 
-  return "border-white/65";
+  return "border-[#E5E3DC] hover:border-[#D8D5CB] shadow-[0_4px_20px_rgba(0,0,0,0.03)]";
 }
 
 function getPortTopOffset({
@@ -146,7 +146,7 @@ type CanvasNodeCardProps = {
   onSelectSketchGroup: (id: string) => void;
   onSelectContextMenu: (id: string, x: number, y: number) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
-  onImageAction: (xPercent: number, yPercent: number) => void;
+  onImageAction: (nodeId: string, xPercent: number, yPercent: number) => void;
   onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
@@ -167,12 +167,15 @@ export default function CanvasNodeCard({
   showSelectionTools = true,
   selectedItem,
   activeTool,
+  markers,
+  addedObjects,
   viewportZoom,
   isConnectionTarget = false,
   hoveredPortId,
   pendingReplacePortId,
   onSelect,
   onStartConnection,
+  onSelectOverlay,
   onSelectContextMenu,
   onDragStart,
   onImageAction,
@@ -201,6 +204,13 @@ export default function CanvasNodeCard({
     isGenerationTarget,
     isConnectionTarget,
   });
+  const legacyOverlayHost = isGenerationTarget || selected;
+  const nodeMarkers = markers.filter(
+    (marker) => marker.targetNodeId === node.id || (!marker.targetNodeId && legacyOverlayHost),
+  );
+  const nodeObjects = addedObjects.filter(
+    (object) => object.targetNodeId === node.id || (!object.targetNodeId && legacyOverlayHost),
+  );
 
   return (
     <div
@@ -246,7 +256,7 @@ export default function CanvasNodeCard({
                 const rect = event.currentTarget.getBoundingClientRect();
                 const x = ((event.clientX - rect.left) / rect.width) * 100;
                 const y = ((event.clientY - rect.top) / rect.height) * 100;
-                onImageAction(x, y);
+                onImageAction(node.id, x, y);
               }
             }}
           >
@@ -264,6 +274,49 @@ export default function CanvasNodeCard({
               </div>
             )}
             <div className="pointer-events-none absolute inset-0 bg-[rgba(255,255,255,0.03)]" />
+
+            {nodeObjects.map((object) => (
+              <button
+                key={object.id}
+                type="button"
+                className="added-object absolute z-30 flex min-h-7 min-w-10 items-center justify-center gap-1 rounded-lg border border-[#315D42] bg-[#F7F1DE]/95 px-2 text-[10px] font-semibold text-[#173225] shadow-[0_4px_12px_rgba(23,50,37,0.16)] transition hover:bg-white"
+                style={{
+                  left: `${object.x}%`,
+                  top: `${object.y}%`,
+                  width: `${object.w}%`,
+                  height: `${object.h}%`,
+                  transform: `translate(-50%, -50%) rotate(${object.rotation}deg)`,
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectOverlay({ type: "object", id: object.id });
+                }}
+                title={object.label}
+              >
+                <Box className="h-3 w-3 shrink-0" aria-hidden />
+                <span className="max-w-full truncate">{object.label}</span>
+              </button>
+            ))}
+
+            {nodeMarkers.map((marker) => (
+              <button
+                key={marker.id}
+                type="button"
+                className="marker-pin absolute z-40 -translate-x-1/2 -translate-y-full text-left"
+                style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectOverlay({ type: "marker", id: marker.id });
+                }}
+                title={marker.label}
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-white bg-[#315D42] text-white shadow-md">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden />
+                </span>
+              </button>
+            ))}
           </div>
 
           {visiblePorts.map((port, visibleIndex) => {
@@ -374,17 +427,15 @@ function ImageNodeHandle({
   active: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  const handleOffset = -20;
+  const handleOffset = -6;
 
   return (
     <button
       type="button"
       data-canvas-interactive="true"
       className={[
-        "absolute top-1/2 z-[150] grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
-        active
-          ? "border-[#8A8A8A] bg-[#5F5F5F]"
-          : "border-[#4A4A4A] bg-[#3F3F3F] hover:border-[#8A8A8A] hover:bg-[#5F5F5F]",
+        "absolute top-1/2 z-[150] flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-[#827E75] bg-white shadow-sm transition hover:scale-125 hover:border-[#EA7542] hover:ring-2 hover:ring-[#EA7542]/20",
+        active ? "border-[#EA7542] ring-2 ring-[#EA7542]/30" : "",
       ].join(" ")}
       style={{
         left: side === "left" ? `${handleOffset}px` : "auto",
@@ -392,10 +443,10 @@ function ImageNodeHandle({
         transform: "translateY(-50%)",
         transformOrigin: "center",
       }}
-      aria-label={`Start image connection from ${side} handle`}
+      aria-label={`Start connection from ${side} port`}
       onPointerDown={onPointerDown}
     >
-      <ImageIcon className="h-4 w-4" aria-hidden="true" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[#EA7542]" />
     </button>
   );
 }
@@ -417,21 +468,18 @@ function InputPortHandle({
   isNodeActive: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  let bgClass = "border-[#4A4A4A] bg-[#2F3033] hover:border-[#A3A3A3] hover:bg-[#4B4C50]";
-  let labelClass = "border-[#4B5563] bg-[#1F2937] text-[#E5E7EB]";
+  let borderClass = "border-[#827E75] bg-white";
+  let dotClass = "bg-[#827E75]";
 
   if (isPendingReplace) {
-    bgClass = "border-[#F59E0B] bg-[#92400E] ring-2 ring-[#F59E0B]/30";
-    labelClass = "border-[#F59E0B]/50 bg-[#451A03] text-[#FEF3C7]";
+    borderClass = "border-[#F59E0B] bg-[#FFFBEB] ring-2 ring-[#F59E0B]/30";
+    dotClass = "bg-[#D97706]";
   } else if (isHovered) {
-    bgClass = "border-[#202833] bg-[#2F3742] ring-2 ring-[#202833]/20";
-    labelClass = "border-[#202833]/30 bg-[#202833] text-[#F8FAFC]";
+    borderClass = "border-[#3B82F6] bg-white ring-2 ring-[#3B82F6]/20";
+    dotClass = "bg-[#3B82F6]";
   } else if (isConnected) {
-    bgClass = "border-[#9CA3AF] bg-[#4B5563]";
-    labelClass = "border-[#6B7280] bg-[#374151] text-white";
-  } else {
-    bgClass = "border-[#6B7280] bg-[#111827]/30 border-dashed hover:border-[#9CA3AF] hover:bg-[#374151]/60";
-    labelClass = "border-[#4B5563] bg-[#111827] text-[#D1D5DB]";
+    borderClass = "border-[#3B82F6] bg-[#EFF6FF]";
+    dotClass = "bg-[#3B82F6]";
   }
 
   return (
@@ -440,25 +488,21 @@ function InputPortHandle({
         type="button"
         data-canvas-interactive="true"
         className={[
-          "relative grid h-8 w-8 place-items-center rounded-full border text-white shadow-lg shadow-black/25 transition",
-          bgClass,
+          "relative flex h-4 w-4 items-center justify-center rounded-full border shadow-sm transition hover:scale-125 hover:border-[#EA7542]",
+          borderClass,
         ].join(" ")}
-        aria-label={`${port.label}${isConnected ? " (connected)" : " (empty)"}${isMaxReached ? " - max ports reached" : ""}`}
+        aria-label={`${port.label}${isConnected ? " (connected)" : " (empty)"}`}
         title={isMaxReached ? "Max input ports reached" : port.label}
         onPointerDown={onPointerDown}
       >
-        <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
-        <span className="absolute -bottom-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full border border-[#111827] bg-white px-1 text-[9px] font-black leading-none text-[#111827]">
-          {port.index + 1}
-        </span>
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
       </button>
       <span
         className={[
-          "pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-bold shadow-lg shadow-black/20 transition",
+          "pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md border border-[#E5E3DC] bg-white px-2 py-0.5 text-[10px] font-semibold text-[#1A1918] shadow-sm transition",
           isNodeActive || isHovered || isPendingReplace
             ? "translate-x-0 opacity-100"
             : "-translate-x-1 opacity-0 group-hover/port:translate-x-0 group-hover/port:opacity-100",
-          labelClass,
         ].join(" ")}
       >
         {port.label}

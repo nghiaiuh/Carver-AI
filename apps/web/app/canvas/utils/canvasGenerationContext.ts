@@ -19,6 +19,7 @@ import type {
 } from "@carver/shared";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { isPresetGroupNode } from "./presetGroupHelpers";
+import { normalizeCanvasViewportZoom } from "./canvasViewport";
 import {
   sanitizePersistedSnapshotImageUrl,
   sanitizeSourceImageForSnapshot,
@@ -230,11 +231,16 @@ export function buildCanvasSnapshotWithGraph(params: {
   sketchLines?: SketchLine[];
   sketchGroups?: SketchGroup[];
   penStrokes?: PenStrokeObject[];
+  viewportZoom?: number;
 }): CanvasSnapshotDocument {
   const snapshot = createEmptyCanvasSnapshotDocument();
 
   return {
     ...snapshot,
+    camera: {
+      ...snapshot.camera,
+      zoom: normalizeCanvasViewportZoom(params.viewportZoom),
+    },
     graph: {
       activeGenerationTargetId: params.activeGenerationTargetId,
       nodes: params.nodes.map((node) => ({
@@ -291,6 +297,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       x: marker.x,
       y: marker.y,
       label: marker.label,
+      targetNodeId: marker.targetNodeId,
     })),
     addedObjects: (params.addedObjects ?? []).map((object) => ({
       id: object.id,
@@ -300,6 +307,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       h: object.h,
       rotation: object.rotation,
       label: object.label,
+      targetNodeId: object.targetNodeId,
       selectedAssetIds: object.selectedAssetIds,
     })),
     sketchLines: (params.sketchLines ?? []).map((line) => ({

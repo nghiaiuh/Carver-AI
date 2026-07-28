@@ -20,6 +20,7 @@ import type {
 } from "../types/canvas";
 import { getDefaultInputPorts } from "../types/canvas";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
+import { normalizeCanvasViewportZoom } from "./canvasViewport";
 
 const DEFAULT_IMAGE_NODE_WIDTH = 240;
 const DEFAULT_IMAGE_NODE_HEIGHT = 180;
@@ -61,6 +62,7 @@ const PRESET_GROUP_CATEGORIES = new Set<PresetGroupCategory>([
 ]);
 
 type HydratedCanvasSnapshotState = {
+  viewportZoom: number;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   activeGenerationTargetId: string | null;
@@ -354,6 +356,7 @@ function sanitizeMarker(marker: unknown): Marker | null {
     x: numberValue(source?.x, 0),
     y: numberValue(source?.y, 0),
     label,
+    targetNodeId: stringValue(source?.targetNodeId) ?? undefined,
   };
 }
 
@@ -373,6 +376,7 @@ function sanitizeAddedObject(object: unknown): AddedObject | null {
     h: Math.max(1, numberValue(source?.h, 160)),
     rotation: numberValue(source?.rotation, 0),
     label,
+    targetNodeId: stringValue(source?.targetNodeId) ?? undefined,
     selectedAssetIds: Array.isArray(source?.selectedAssetIds)
       ? source.selectedAssetIds.filter((item): item is string => typeof item === "string")
       : [],
@@ -553,6 +557,7 @@ export function hydrateCanvasStateFromSnapshot(
     : [];
 
   return {
+    viewportZoom: normalizeCanvasViewportZoom(snapshot.camera?.zoom),
     nodes,
     edges,
     activeGenerationTargetId,

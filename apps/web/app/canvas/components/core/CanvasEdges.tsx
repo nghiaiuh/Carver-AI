@@ -114,26 +114,26 @@ export default function CanvasEdges({
             <path
               d={pathData}
               fill="none"
-              stroke={isSelected ? "#466E55" : "#9CAF9A"}
-              strokeWidth={isSelected ? "2.4" : "1.4"}
+              stroke={isSelected ? "#EA7542" : "#94A3B8"}
+              strokeWidth={isSelected ? "2.2" : "1.5"}
               strokeLinecap="round"
-              className="opacity-55 transition-colors group-hover:stroke-[#6F8B74] group-hover:opacity-90"
+              className="opacity-70 transition-colors group-hover:stroke-[#3B82F6] group-hover:opacity-100"
             />
 
             <circle
               cx={targetCenter.x}
               cy={targetCenter.y}
               r={isSelected ? "4" : "3"}
-              fill={isSelected ? "#466E55" : "#B7C3AE"}
-              className="opacity-80 transition group-hover:fill-[#6F8B74]"
+              fill={isSelected ? "#EA7542" : "#3B82F6"}
+              className="opacity-90 transition group-hover:scale-125"
             />
 
-            {/* Keep labels discoverable without making dense graphs noisy. */}
+            {/* Hover Label */}
             <foreignObject x={midX - 35} y={midY - 12} width="70" height="24">
               <div className={`flex h-full w-full items-center justify-center rounded-full border text-[10px] font-bold uppercase tracking-wider shadow-sm transition ${
                 isSelected 
-                  ? "bg-[#F8F4EA] border-[#466E55] text-[#173225] opacity-100"
-                  : "bg-[#FFFDF8] border-[#E4DFD3] text-[#6F7B6F] opacity-0 group-hover:opacity-100 group-hover:border-[#AEB99F] group-hover:text-[#173225]"
+                  ? "bg-[#FFF5F0] border-[#EA7542] text-[#EA7542] opacity-100"
+                  : "bg-white border-[#E5E3DC] text-[#827E75] opacity-0 group-hover:opacity-100 group-hover:border-[#3B82F6] group-hover:text-[#3B82F6]"
               }`}>
                 {edge.label}
               </div>

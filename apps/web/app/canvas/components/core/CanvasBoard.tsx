@@ -40,6 +40,7 @@ import type {
 } from "../../types/canvas";
 import { getDefaultInputPorts } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
+import CanvasContourOverlay from "./CanvasContourOverlay";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
 import CanvasEdges from "./CanvasEdges";
@@ -74,7 +75,7 @@ type CanvasBoardProps = {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   onSelect: (item: SelectedItem) => void;
-  onImageAction: (xPercent: number, yPercent: number) => void;
+  onImageAction: (nodeId: string, xPercent: number, yPercent: number) => void;
   onAddSketchLine: (line: SketchLine) => void;
   onAddPenStroke: (stroke: PenStrokeObject) => void;
   onDeletePenStroke: (strokeId: string) => void;
@@ -89,6 +90,8 @@ type CanvasBoardProps = {
   onToast: (message: string) => void;
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
+  viewportZoom: number;
+  onViewportZoomChange: (zoom: number) => void;
   activeGenerationTargetId: string | null;
   activeNodeId: string | null;
   onSetActiveNode: (id: string) => void;
@@ -384,6 +387,8 @@ export default function CanvasBoard({
   onToast,
   onNodesChange,
   onEdgesChange,
+  viewportZoom,
+  onViewportZoomChange,
   activeGenerationTargetId,
   activeNodeId,
   onSetActiveNode,
@@ -427,11 +432,11 @@ export default function CanvasBoard({
   const importImagesInputRef = useRef<HTMLInputElement>(null);
   const miniMapFrameRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const [viewport, setViewport] = useState<{ zoom: number; pan: Point }>({
-    zoom: 1,
-    pan: { x: 0, y: 0 },
-  });
-  const { zoom, pan } = viewport;
+  // Zoom is owned by the workspace so it is captured by autosave snapshots.
+  // Panning remains transient UI state; reopening at the saved zoom is stable
+  // across screen sizes without restoring an unsuitable screen offset.
+  const zoom = clamp(viewportZoom, MIN_ZOOM, MAX_ZOOM);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
@@ -848,24 +853,21 @@ export default function CanvasBoard({
 
     const cursor = getCursorPointRelativeToContainer(event, container);
 
-    setViewport((prev) => {
-      const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
-      const nextZoom = clamp(prev.zoom + delta, MIN_ZOOM, MAX_ZOOM);
+    const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
+    const nextZoom = clamp(zoom + delta, MIN_ZOOM, MAX_ZOOM);
+    if (nextZoom === zoom) return;
 
-      if (nextZoom === prev.zoom) return prev;
-
-      return {
-        zoom: nextZoom,
-        pan: getNextPanForCursorZoom({
-          cursorX: cursor.x,
-          cursorY: cursor.y,
-          prevPan: prev.pan,
-          prevZoom: prev.zoom,
-          nextZoom,
-        }),
-      };
-    });
-  }, [isRegionEditing]);
+    setPan((currentPan) =>
+      getNextPanForCursorZoom({
+        cursorX: cursor.x,
+        cursorY: cursor.y,
+        prevPan: currentPan,
+        prevZoom: zoom,
+        nextZoom,
+      }),
+    );
+    onViewportZoomChange(nextZoom);
+  }, [isRegionEditing, onViewportZoomChange, zoom]);
 
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -1079,7 +1081,7 @@ export default function CanvasBoard({
       const start = panStart.current;
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
-      setViewport((prev) => ({ ...prev, pan: { x: start.panX + dx, y: start.panY + dy } }));
+      setPan({ x: start.panX + dx, y: start.panY + dy });
       return;
     }
 
@@ -1172,7 +1174,6 @@ export default function CanvasBoard({
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
       const hoveredNode = nodes.find((node) => {
         if (node.id === draftEdge.sourceId) return false;
-        // Rule: only 1 connection line between any 2 images — skip already-connected pairs
         const alreadyConnected = edges.some(
           (e) =>
             (e.sourceId === draftEdge.sourceId && e.targetId === node.id) ||
@@ -1189,7 +1190,6 @@ export default function CanvasBoard({
       });
       setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
-
   }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isRegionEditing, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
@@ -1285,11 +1285,6 @@ export default function CanvasBoard({
     dragStart.current = null;
 
     if (draftEdge) {
-      // Find what we dropped on (if we dropped on a node)
-      // This is a bit tricky because pointer events might be captured.
-      // So we use elementFromPoint
-      // Actually, since we release pointer capture, it should be fine.
-      // Alternatively, we calculate intersection
       const container = containerRef.current;
       if (container) {
         const screenPoint = getPointerPointInContainer(event, container);
@@ -1299,7 +1294,6 @@ export default function CanvasBoard({
           zoom,
         });
 
-        // Check if drop is inside any node
         const targetNode = nodes.find((node) => {
           const scale = node.scale ?? 1;
           return (
@@ -1316,10 +1310,6 @@ export default function CanvasBoard({
           const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
           const sourceIsPresetGroup = sourceNode ? isPresetGroupNode(sourceNode) : false;
 
-          // Duplicate check:
-          // - If originating from a specific preset child → allow multiple connections from the
-          //   same group node but not from the same child to the same target.
-          // - Otherwise → 1 connection between any 2 nodes (existing behaviour).
           const edgeExists = draftEdge.sourcePresetChildId
             ? edges.some(
               (edge) =>
@@ -1360,7 +1350,6 @@ export default function CanvasBoard({
               role,
               label: role.replace("_reference", "").replaceAll("_", " "),
               createdAt: new Date().toISOString(),
-              // Store which child originated this edge so CanvasEdges can anchor correctly
               ...(draftEdge.sourcePresetChildId ? { sourcePresetChildId: draftEdge.sourcePresetChildId } : {}),
             };
             onEdgesChange(prev => [...prev, newEdge]);
@@ -1622,10 +1611,11 @@ export default function CanvasBoard({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
 
-  const zoomIn = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
-  const zoomOut = () => setViewport((prev) => ({ ...prev, zoom: clamp(parseFloat((prev.zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM) }));
+  const zoomIn = () => onViewportZoomChange(clamp(parseFloat((zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
+  const zoomOut = () => onViewportZoomChange(clamp(parseFloat((zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
   const resetZoom = () => {
-    setViewport({ zoom: 1, pan: { x: 0, y: 0 } });
+    setPan({ x: 0, y: 0 });
+    onViewportZoomChange(1);
   };
 
   const selectedNodeSummary = useMemo(() => {
@@ -1768,13 +1758,10 @@ export default function CanvasBoard({
       event.stopPropagation();
       const dx = (event.clientX - start.x) * MINIMAP_DRAG_SPEED;
       const dy = (event.clientY - start.y) * MINIMAP_DRAG_SPEED;
-      setViewport((prev) => ({
-        ...prev,
-        pan: {
-          x: start.panX - dx,
-          y: start.panY - dy,
-        },
-      }));
+      setPan({
+        x: start.panX - dx,
+        y: start.panY - dy,
+      });
     },
     [],
   );
@@ -1792,8 +1779,8 @@ export default function CanvasBoard({
   return (
     <section
       ref={containerRef}
-      className="relative h-full flex-1 touch-none select-none overflow-hidden"
-      style={{ backgroundColor: "var(--canvas-theme-canvas)", cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
+      className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[#FAF9F6]"
+      style={{ cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
       onClick={(event) => {
         if (suppressCanvasBackgroundClickRef.current) {
           suppressCanvasBackgroundClickRef.current = false;
@@ -1810,347 +1797,10 @@ export default function CanvasBoard({
       onPointerCancel={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      <div
-        aria-hidden="true"
-        className="hidden"
-        style={{
-          background: [
-            "linear-gradient(180deg, rgba(255,255,255,0.16), transparent 20%)",
-            "radial-gradient(circle at top center, rgba(255,255,255,0.14), transparent 28%)",
-          ].join(", "),
-        }}
-      />
-      <input
-        ref={importImagesInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(event) => importImages(event.target.files)}
-      />
-      <div className="hidden" data-canvas-ui="true">
-        <div className="pointer-events-auto relative min-w-0 flex-1">
-          <div className="inline-flex max-w-full items-center gap-3 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2.5 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
-            <button
-              type="button"
-              onClick={() => setProjectMenuOpen((value) => !value)}
-              className="grid h-10 w-10 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
-              title={projectMenuOpen ? "Close menu" : "Open menu"}
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
-              aria-label={projectMenuOpen ? "Close project menu" : "Open project menu"}
-            >
-              {projectMenuOpen ? (
-                <Menu className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-[#101412] text-[10px] font-black leading-none text-[#F8F5EE]">
-                  C.
-                </span>
-              )}
-            </button>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--canvas-theme-text-muted)]">Canvas Session</p>
-              {editingProjectName ? (
-                <input
-                  ref={projectNameInputRef}
-                  value={projectNameDraft}
-                  onChange={(e) => setProjectNameDraft(e.target.value)}
-                  onBlur={commitProjectName}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitProjectName();
-                    if (e.key === "Escape") cancelProjectName();
-                  }}
-                  className="w-40 max-w-full bg-transparent text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)] outline-none"
-                  aria-label="Project name"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={startEditingProjectName}
-                  className="max-w-[180px] truncate text-left text-base font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text)]"
-                  title="Edit project name"
-                >
-                  {projectName}
-                </button>
-              )}
-            </div>
-            <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#166534]">
-              {snapshotStatusText}
-            </span>
-            <ChevronDown className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-          </div>
-
-          {projectMenuOpen ? (
-            <div
-              role="menu"
-              className="mt-3 w-72 overflow-hidden rounded-[30px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
-            >
-              <MenuSection
-                items={[
-                  { label: "Home", onSelect: () => router.push("/") },
-                  { label: projectName, onSelect: startEditingProjectName },
-                ]}
-                onSelect={handleMenuSelect}
-              />
-              <MenuSection
-                items={[
-                  {
-                    label: "Save Version",
-                    shortcut: "Ctrl+S",
-                    disabled: !projectId || isSnapshotSaving,
-                    onSelect: onSaveVersion,
-                  },
-                  {
-                    label: "New Project",
-                    onSelect: () => {
-                      setProjectName("Untitled");
-                      onNodesChange([]);
-                      onEdgesChange([]);
-                      setDeletedNodeStack([]);
-                      setCreatedNodeStack([]);
-                      setCreatedNodeRedoStack([]);
-                      resetZoom();
-                      onToast("New project created");
-                    },
-                  },
-                  {
-                    label: "Clear Canvas",
-                    tone: "danger",
-                    onSelect: () => {
-                      onNodesChange([]);
-                      onEdgesChange([]);
-                      setDeletedNodeStack([]);
-                      setCreatedNodeStack([]);
-                      setCreatedNodeRedoStack([]);
-                      resetZoom();
-                      onToast("Project cleared");
-                    },
-                  },
-                ]}
-                onSelect={handleMenuSelect}
-              />
-              <MenuSection
-                items={[{ label: "Import Images", onSelect: () => importImagesInputRef.current?.click() }]}
-                onSelect={handleMenuSelect}
-              />
-              <MenuSection
-                items={[
-                  { label: "Undo", shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0 && createdNodeStack.length === 0, onSelect: () => { if (!undoDeleteNode()) undoCreateNode(); } },
-                  { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: createdNodeRedoStack.length === 0, onSelect: redoCreateNode },
-                  { label: "Duplicate Selection", shortcut: "Ctrl+D", disabled: true },
-                ]}
-                onSelect={handleMenuSelect}
-              />
-              <MenuSection
-                items={[
-                  { label: "Zoom to Fit", shortcut: "Shift+1", onSelect: resetZoom },
-                  { label: "Zoom In", shortcut: "Ctrl++", onSelect: zoomIn },
-                  { label: "Zoom Out", shortcut: "Ctrl+-", onSelect: zoomOut },
-                ]}
-                onSelect={handleMenuSelect}
-                noDivider
-              />
-            </div>
-          ) : null}
-        </div>
-
-        <div className="pointer-events-auto flex flex-1 justify-center">
-          <div className="flex max-w-[560px] items-center gap-3 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2.5 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
-            <span className="rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)]">
-              {TOOL_LABELS[activeTool]}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[var(--canvas-theme-text)]">{selectedNodeSummary}</p>
-              <p className="hidden text-xs text-[var(--canvas-theme-text-muted)]">
-                {nodes.length} images · {sourceNodeCount} references · {edges.length} connections
-              </p>
-              <p className="text-xs text-[var(--canvas-theme-text-muted)]">
-                {nodes.length} images / {sourceNodeCount} references / {edges.length} connections
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="pointer-events-auto flex flex-1 justify-end">
-          <div className="flex items-center gap-2 rounded-[28px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-2 shadow-[0_18px_45px_var(--canvas-theme-shadow)] backdrop-blur">
-            <button
-              type="button"
-              onClick={() => {
-                if (deletedNodeStack.length === 0) {
-                  onToast("Nothing to undo");
-                  return;
-                }
-                undoDeleteNode();
-                onToast("Reverted latest canvas deletion");
-              }}
-              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
-              title="Undo latest deletion"
-            >
-              <History className="h-4 w-4" aria-hidden="true" />
-              <span>Undo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onToast("Compare view opens when multiple outputs exist")}
-              className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              <span>Compare</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onToast("Export flow coming next")}
-              className="flex items-center gap-2 rounded-full bg-[var(--canvas-theme-surface-soft)] px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              <span>Export</span>
-            </button>
-            <div className="ml-1 inline-flex items-center gap-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)]">
-              <Zap className="h-4 w-4 fill-current" aria-hidden="true" />
-              <span>{creditsDisplayText} credits</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      {!studioChrome ? (
-      <div ref={projectMenuRef} className="absolute left-1.5 top-1.5 z-50" data-canvas-ui="true">
-        <div className="flex h-10 items-center gap-1.5 rounded-[22px] border border-transparent bg-transparent px-1.5 text-[var(--canvas-theme-text-soft)] shadow-none backdrop-blur-0" data-canvas-ui="true">
-          <button
-            type="button"
-            onClick={() => setProjectMenuOpen((value) => !value)}
-            className="grid h-7 w-7 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]"
-            title={projectMenuOpen ? text.menu.closeMenu : text.menu.openMenu}
-            aria-haspopup="menu"
-            aria-expanded={projectMenuOpen}
-            aria-label={projectMenuOpen ? text.menu.closeProjectMenu : text.menu.openProjectMenu}
-          >
-            {projectMenuOpen ? (
-              <Menu className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-[#101412] text-[12px] font-black leading-none text-[#F8F5EE]">
-                C.
-              </span>
-            )}
-          </button>
-          {editingProjectName ? (
-            <input
-              ref={projectNameInputRef}
-              value={projectNameDraft}
-              onChange={(e) => setProjectNameDraft(e.target.value)}
-              onBlur={commitProjectName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitProjectName();
-                if (e.key === "Escape") cancelProjectName();
-              }}
-              className="w-20 bg-transparent text-sm font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)] outline-none"
-              aria-label={text.menu.projectName}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={startEditingProjectName}
-              className="max-w-[100px] truncate text-sm font-semibold tracking-[-0.02em] text-[var(--canvas-theme-text-soft)]"
-              title={text.menu.editProjectName}
-            >
-              {projectName}
-            </button>
-          )}
-        </div>
-
-        {projectMenuOpen ? (
-          <div
-            role="menu"
-            className="mt-3 w-56 overflow-hidden rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/96 shadow-[0_20px_48px_var(--canvas-theme-shadow)] backdrop-blur-xl"
-          >
-            <MenuSection
-              items={[
-                { label: text.menu.home, onSelect: () => router.push("/") },
-                { label: projectName, onSelect: startEditingProjectName },
-              ]}
-              onSelect={handleMenuSelect}
-            />
-            <MenuSection
-              items={[
-                {
-                  label: text.menu.languageLabel,
-                  onSelect: () => onLanguageChange(language === "vi" ? "en" : "vi"),
-                },
-              ]}
-              onSelect={handleMenuSelect}
-            />
-            <MenuSection
-              items={[
-                {
-                  label: text.menu.newProject,
-                  onSelect: () => {
-                    setProjectName(text.common.untitled);
-                    onNodesChange([]);
-                    onEdgesChange([]);
-                    setDeletedNodeStack([]);
-                    setCreatedNodeStack([]);
-                    setCreatedNodeRedoStack([]);
-                    resetZoom();
-                    onToast(text.toast.newProjectCreated);
-                  },
-                },
-                {
-                  label: text.menu.clearCanvas,
-                  tone: "danger",
-                  onSelect: () => {
-                    onNodesChange([]);
-                    onEdgesChange([]);
-                    setDeletedNodeStack([]);
-                    setCreatedNodeStack([]);
-                    setCreatedNodeRedoStack([]);
-                    resetZoom();
-                    onToast(text.toast.projectCleared);
-                  },
-                },
-              ]}
-              onSelect={handleMenuSelect}
-            />
-            <MenuSection
-              items={[{ label: text.menu.importImages, onSelect: () => importImagesInputRef.current?.click() }]}
-              onSelect={handleMenuSelect}
-            />
-            <MenuSection
-              items={[
-                { label: text.menu.undo, shortcut: "Ctrl+Z", disabled: deletedNodeStack.length === 0 && createdNodeStack.length === 0, onSelect: () => { if (!undoDeleteNode()) undoCreateNode(); } },
-                { label: text.menu.redo, shortcut: "Ctrl+Shift+Z", disabled: createdNodeRedoStack.length === 0, onSelect: redoCreateNode },
-                { label: text.menu.duplicateSelection, shortcut: "Ctrl+D", disabled: true },
-              ]}
-              onSelect={handleMenuSelect}
-            />
-            <MenuSection
-              items={[
-                { label: text.menu.zoomToFit, shortcut: "Shift+1", onSelect: resetZoom },
-                { label: text.menu.zoomIn, shortcut: "Ctrl++", onSelect: zoomIn },
-                { label: text.menu.zoomOut, shortcut: "Ctrl+-", onSelect: zoomOut },
-              ]}
-              onSelect={handleMenuSelect}
-              noDivider
-            />
-          </div>
-        ) : null}
-      </div>
-      ) : null}
-
-      {!studioChrome ? (
-      <div className="absolute right-4 top-2 z-40 flex h-11 items-center gap-2 rounded-[22px] border border-transparent bg-transparent px-3 text-xs font-semibold text-[var(--canvas-theme-text-muted)] shadow-none backdrop-blur-0" data-canvas-ui="true">
-        <span className="rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/90 px-3 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
-          {snapshotStatusText}
-        </span>
-        <div className="flex items-center gap-1">
-          <Zap className="h-4 w-4 fill-[var(--canvas-theme-icon)] text-[var(--canvas-theme-icon)]" aria-hidden="true" />
-          <span>{creditsDisplayText}</span>
-        </div>
-      </div>
-      ) : null}
-
-      {/* Zoomable + pannable canvas layer */}
+      <CanvasContourOverlay />
       <div
         ref={worldLayerRef}
-        className="absolute inset-0"
+        className="absolute inset-0 z-10"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: "0 0",
@@ -2350,7 +2000,7 @@ export default function CanvasBoard({
       ) : null}
 
       {miniMapOpen ? (
-        <div className="absolute bottom-[72px] left-3 z-40 h-[166px] w-[252px] rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+        <div className="absolute bottom-[72px] right-6 z-40 h-[166px] w-[252px] rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
           <div
             ref={miniMapFrameRef}
             className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)]"

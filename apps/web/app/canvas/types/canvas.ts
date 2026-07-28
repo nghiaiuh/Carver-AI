@@ -60,6 +60,7 @@ export type Marker = {
   x: number;
   y: number;
   label: string;
+  targetNodeId?: string;
 };
 
 
@@ -72,6 +73,7 @@ export type AddedObject = {
   h: number;
   rotation: number;
   label: string;
+  targetNodeId?: string;
   selectedAssetIds?: string[];
 };
 
