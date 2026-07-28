@@ -56,6 +56,10 @@ function classifyR2AccessError(error: unknown) {
     $metadata?: { httpStatusCode?: number };
   };
 
+  if (maybeError.message?.includes("Missing ASSET_GATEWAY_SIGNING_SECRET")) {
+    return "ASSET_GATEWAY_CONFIG_MISSING";
+  }
+
   if (maybeError.message?.includes("Missing required environment variable:")) {
     return "ASSET_STORAGE_CONFIG_MISSING";
   }
@@ -188,7 +192,27 @@ export async function GET(
   const expiresAt = Number(url.searchParams.get("exp"));
   const token = url.searchParams.get("token") ?? "";
 
-  if (!verifyAssetDeliveryToken({ assetId, variant, expiresAt, token })) {
+  let isDeliveryTokenValid = false;
+  try {
+    isDeliveryTokenValid = verifyAssetDeliveryToken({ assetId, variant, expiresAt, token });
+  } catch (error) {
+    const errorCode = classifyR2AccessError(error);
+    logger.error("asset delivery token verification failed", {
+      requestId,
+      assetId,
+      variant,
+      error,
+    });
+    return apiFailure(
+      errorCode,
+      "Unable to load asset",
+      500,
+      requestId,
+      { headers: corsHeaders(request, "application/json") },
+    );
+  }
+
+  if (!isDeliveryTokenValid) {
     logger.warn("asset delivery token invalid", {
       requestId,
       assetId,

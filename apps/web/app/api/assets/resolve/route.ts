@@ -8,6 +8,23 @@ const logger = createSafeLogger("web.assets.resolve");
 const MAX_ASSET_RESOLVE_COUNT = 200;
 const MAX_ASSET_RESOLVE_REQUEST_BYTES = 64 * 1024;
 
+function classifyAssetResolveError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return "ASSET_RESOLVE_FAILED";
+  }
+
+  const maybeError = error as { message?: string };
+  if (maybeError.message?.includes("Missing ASSET_GATEWAY_SIGNING_SECRET")) {
+    return "ASSET_GATEWAY_CONFIG_MISSING";
+  }
+
+  if (maybeError.message?.includes("Unable to verify asset ownership")) {
+    return "ASSET_OWNERSHIP_LOOKUP_FAILED";
+  }
+
+  return "ASSET_RESOLVE_FAILED";
+}
+
 function assetIdsValue(value: unknown) {
   if (!Array.isArray(value)) {
     return { assetIds: [], hasInvalidId: false };
@@ -72,12 +89,14 @@ export async function POST(request: Request) {
 
     return apiSuccess({ assets: resolved });
   } catch (error) {
+    const errorCode = classifyAssetResolveError(error);
     logger.error("asset URL resolution failed", {
       requestId: context.requestId,
       userId: context.user.id,
       requestedAssetCount: assetIds.length,
+      errorCode,
       error,
     });
-    return apiFailure("ASSET_RESOLVE_FAILED", "Unable to resolve assets", 500, context.requestId);
+    return apiFailure(errorCode, "Unable to resolve assets", 500, context.requestId);
   }
 }
