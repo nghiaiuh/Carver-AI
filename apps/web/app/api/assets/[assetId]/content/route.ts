@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSafeLogger } from "@carver/shared";
 import { getSupabaseAdmin } from "@carver/db/server";
-import { getR2ObjectBuffer } from "@carver/storage";
+import { getR2ObjectBuffer } from "@carver/storage/r2";
 import {
   normalizeAssetDeliveryVariant,
   verifyAssetDeliveryToken,

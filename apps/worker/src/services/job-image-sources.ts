@@ -5,7 +5,8 @@ import type {
   CanvasGenerationTarget,
   CarverAiJobPayload,
 } from "@carver/shared";
-import { getR2ObjectBuffer, parseDataUrlImage } from "@carver/storage";
+import { parseDataUrlImage } from "@carver/storage/image-data";
+import { getR2ObjectBuffer } from "@carver/storage/r2";
 
 type ResolvedGenerationImageSource = {
   buffer: Buffer;

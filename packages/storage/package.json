@@ -9,6 +9,26 @@
       "types": "./dist/index.d.ts",
       "module": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./r2": {
+      "types": "./dist/r2.d.ts",
+      "module": "./src/r2.ts",
+      "default": "./dist/r2.js"
+    },
+    "./image-data": {
+      "types": "./dist/imageData.d.ts",
+      "module": "./src/imageData.ts",
+      "default": "./dist/imageData.js"
+    },
+    "./library": {
+      "types": "./dist/library.d.ts",
+      "module": "./src/library.ts",
+      "default": "./dist/library.js"
+    },
+    "./library-sync": {
+      "types": "./dist/librarySync.d.ts",
+      "module": "./src/librarySync.ts",
+      "default": "./dist/librarySync.js"
     }
   },
   "scripts": {

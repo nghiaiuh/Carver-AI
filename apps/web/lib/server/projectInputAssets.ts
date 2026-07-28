@@ -6,12 +6,14 @@ import type { Database } from "@carver/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   deleteR2Objects,
+  getR2Bucket,
+  uploadR2Object,
+} from "@carver/storage/r2";
+import {
   extensionForMimeType,
   hasAllowedMagicBytes,
-  getR2Bucket,
   parseDataUrlImage,
-  uploadR2Object,
-} from "@carver/storage";
+} from "@carver/storage/image-data";
 
 const slugify = (value: string) =>
   value

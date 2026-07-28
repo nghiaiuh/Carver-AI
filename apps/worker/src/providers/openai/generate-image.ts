@@ -14,7 +14,7 @@ import {
   OPENAI_IMAGE_SIZE,
   OPENAI_IMAGES_URL,
 } from "@carver/shared";
-import { hasAllowedMagicBytes } from "@carver/storage";
+import { hasAllowedMagicBytes } from "@carver/storage/image-data";
 import { createSafeLogger } from "@carver/shared";
 import sharp from "sharp";
 

@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { Database } from "@carver/db";
-import { deleteR2Objects } from "@carver/storage";
+import { deleteR2Objects } from "@carver/storage/r2";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export class ProjectHasActiveJobsError extends Error {
