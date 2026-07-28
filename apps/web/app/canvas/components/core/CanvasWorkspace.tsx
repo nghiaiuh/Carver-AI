@@ -9,44 +9,35 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
 import type { PresetGroupCategory } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
 import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
-import AiChatSidebar from "../panels/AiChatSidebar";
 import CanvasAssetLibraryModal from "./CanvasAssetLibraryModal";
-import ContextualAIComposer from "./ContextualAIComposer";
 import SceneRecipeBar, { type SceneRecipeItemId } from "./SceneRecipeBar";
-import StudioHeader from "./StudioHeader";
-import StudioToolRail from "./StudioToolRail";
+import FloatingProjectNav from "./FloatingProjectNav";
+import FloatingControlCluster from "./FloatingControlCluster";
+import FloatingToolRail from "./FloatingToolRail";
+import FloatingPageControls from "./FloatingPageControls";
+import FloatingZoomControls from "./FloatingZoomControls";
+import QuickAddMenu from "../panels/QuickAddMenu";
 import GroupNameTagModal from "../panels/GroupNameTagModal";
 import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
 import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
-import ResizeHandle from "../widgets/ResizeHandle";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
-import { buildCanvasSnapshotWithGraph } from "../../utils/canvasGenerationContext";
 import { isPresetGroupNode } from "../../utils/presetGroupHelpers";
 
 export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const canvas = useCanvasWorkspace({ projectId });
-  const { rootRef, rightPanelRef, rightPanelResize } = canvas;
+  const { rootRef } = canvas;
   const { state, modals, toast, actions, library } = canvas;
-  const [isRightPanelRendered, setIsRightPanelRendered] = useState(state.rightPanelOpen);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [isCanvasLocked, setIsCanvasLocked] = useState(false);
   const [activeRecipeModal, setActiveRecipeModal] = useState<SceneRecipeItemId | null>(null);
-  const rightPanelContentRef = useRef<HTMLDivElement | null>(null);
-  const rightPanelTweenRef = useRef<gsap.core.Timeline | null>(null);
-  const isRightPanelAnimatingRef = useRef(false);
-  const rightPanelWidthRef = useRef(rightPanelResize.width);
-
-  useEffect(() => {
-    rightPanelWidthRef.current = rightPanelResize.width;
-  }, [rightPanelResize.width]);
-
   // GSAP entry animation needs rootRef attached to DOM, so it lives here.
   useGSAP(
     () => {
@@ -62,12 +53,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     },
     { scope: rootRef },
   );
-
-  useEffect(() => {
-    if (state.rightPanelOpen) {
-      queueMicrotask(() => setIsRightPanelRendered(true));
-    }
-  }, [state.rightPanelOpen]);
 
   const snapshotStatusText = useMemo(() => {
     if (!projectId) return "Local canvas";
@@ -149,86 +134,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   };
 
   useEffect(() => {
-    const wrapper = rightPanelRef.current;
-    if (!wrapper || !isRightPanelRendered || !state.rightPanelOpen || isRightPanelAnimatingRef.current) return;
-    gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "willChange" });
-  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
-
-  useEffect(() => {
-    if (!rightPanelResize.isResizing) return;
-
-    const wrapper = rightPanelRef.current;
-    const element = rightPanelContentRef.current;
-    rightPanelTweenRef.current?.kill();
-    isRightPanelAnimatingRef.current = false;
-
-    if (!wrapper || !element || !state.rightPanelOpen) return;
-
-    gsap.set(wrapper, { width: rightPanelResize.width, overflow: "hidden", clearProps: "willChange" });
-    gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-  }, [rightPanelRef, rightPanelResize.isResizing, rightPanelResize.width, state.rightPanelOpen]);
-
-  useEffect(() => {
-    const wrapper = rightPanelRef.current;
-    const element = rightPanelContentRef.current;
-    rightPanelTweenRef.current?.kill();
-
-    if (!isRightPanelRendered || !wrapper || !element) return;
-
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReducedMotion) {
-      if (state.rightPanelOpen) {
-        gsap.set(wrapper, { width: rightPanelResize.width, clearProps: "width,willChange" });
-        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-      } else {
-        gsap.set(wrapper, { width: 0, clearProps: "width,willChange" });
-        queueMicrotask(() => setIsRightPanelRendered(false));
-      }
-      return;
-    }
-
-    isRightPanelAnimatingRef.current = true;
-    gsap.set(wrapper, { overflow: "hidden", willChange: "width" });
-    gsap.set(element, { willChange: "transform" });
-
-    if (state.rightPanelOpen) {
-      gsap.set(wrapper, { width: 0 });
-      gsap.set(element, { xPercent: 100 });
-      rightPanelTweenRef.current = gsap.timeline({
-        onComplete: () => {
-          isRightPanelAnimatingRef.current = false;
-          gsap.set(wrapper, { width: rightPanelWidthRef.current, clearProps: "willChange" });
-          gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-        },
-      });
-      rightPanelTweenRef.current
-        .to(wrapper, { width: rightPanelWidthRef.current, duration: 0.34, ease: "power2.out" }, 0)
-        .to(element, { xPercent: 0, duration: 0.34, ease: "power3.out" }, 0);
-      return;
-    }
-
-    gsap.set(wrapper, { width: rightPanelWidthRef.current });
-    gsap.set(element, { xPercent: 0 });
-    rightPanelTweenRef.current = gsap.timeline({
-      onComplete: () => {
-        isRightPanelAnimatingRef.current = false;
-        setIsRightPanelRendered(false);
-        gsap.set(wrapper, { width: 0, clearProps: "willChange" });
-        gsap.set(element, { xPercent: 0, clearProps: "transform,willChange" });
-      },
-    });
-    rightPanelTweenRef.current
-      .to(element, { xPercent: 100, duration: 0.34, ease: "power3.inOut" }, 0)
-      .to(wrapper, { width: 0, duration: 0.34, ease: "power2.inOut" }, 0);
-  }, [isRightPanelRendered, rightPanelRef, rightPanelResize.width, state.rightPanelOpen]);
-
-  useEffect(() => {
-    return () => {
-      rightPanelTweenRef.current?.kill();
-    };
-  }, []);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
 
@@ -281,247 +186,211 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             </div>
           </div>
         ) : null}
-        <StudioHeader
-          projectName={projectName}
-          snapshotStatus={snapshotStatusText}
-          creditsAmount={state.creditsAmount}
-          isSaving={state.isSnapshotSaving}
-          hasUnsavedChanges={state.hasUnsavedSnapshotChanges}
-          onSave={() => void actions.saveVersion()}
-          onOpenHistory={actions.openRightPanel}
-          onExport={() => actions.showToast("Export flow coming next")}
-          onUndo={() => actions.showToast("Use Ctrl+Z to undo the latest board edit")}
-          onRedo={() => actions.showToast("Use Ctrl+Shift+Z to redo the latest board edit")}
-        />
-        <div data-enter className="relative flex min-h-0 flex-1 bg-[#F4F0E7]">
-          <StudioToolRail
-            activeTool={state.activeTool}
-            onTool={actions.handleTool}
-            onAddObject={() => actions.setShowAddObjectMenu(true)}
-            onUpload={() => setActiveRecipeModal("site")}
+        {/* Top-Left Floating Project Nav */}
+        <div className="absolute left-6 top-4 z-[90]">
+          <FloatingProjectNav
+            projectName={projectName}
+            snapshotStatus={snapshotStatusText}
+            isSaving={state.isSnapshotSaving}
+            hasUnsavedChanges={state.hasUnsavedSnapshotChanges}
+            onSave={() => void actions.saveVersion()}
+            onExport={() => actions.showToast("Exporting canvas workflow...")}
           />
+        </div>
 
+        {/* Top-Right Floating Control Cluster */}
+        <div className="absolute right-6 top-4 z-[90]">
+          <FloatingControlCluster
+            creditsAmount={state.creditsAmount}
+            onUndo={() => actions.showToast("Undo (Ctrl+Z)")}
+            onRedo={() => actions.showToast("Redo (Ctrl+Shift+Z)")}
+            onShare={() => actions.showToast("Share options opened")}
+          />
+        </div>
+
+        {/* Floating Vertical Tool Rail */}
+        <FloatingToolRail
+          activeTool={state.activeTool}
+          onTool={actions.handleTool}
+          onAddNode={() => setQuickAddOpen(true)}
+          onOpenLibrary={() => setActiveRecipeModal("style")}
+          onUndo={() => actions.showToast("Undo action")}
+          onRedo={() => actions.showToast("Redo action")}
+        />
+
+        {/* Bottom-Left Page Controls */}
+        <div className="absolute bottom-6 left-6 z-[90]">
+          <FloatingPageControls
+            currentPageName="Page 1"
+            isLocked={isCanvasLocked}
+            onToggleLock={() => setIsCanvasLocked(!isCanvasLocked)}
+          />
+        </div>
+
+        {/* Bottom-Right Zoom Controls */}
+        <div className="absolute bottom-6 right-6 z-[90]">
+          <FloatingZoomControls
+            zoomPercentage={state.viewportZoom * 100}
+            onZoomIn={() => actions.setViewportZoom(state.viewportZoom + 0.1)}
+            onZoomOut={() => actions.setViewportZoom(state.viewportZoom - 0.1)}
+            onZoomSelect={(zoomPercentage) => actions.setViewportZoom(zoomPercentage / 100)}
+            onFitAll={() => actions.setViewportZoom(1)}
+            onResetView={() => actions.setViewportZoom(1)}
+            onToggleMinimap={actions.toggleMiniMap}
+            onGiveFeedback={() => actions.showToast("Feedback dialog opened")}
+          />
+        </div>
+
+        <QuickAddMenu
+          open={quickAddOpen}
+          onClose={() => setQuickAddOpen(false)}
+          onSelectType={(nodeType) => {
+            actions.showToast(`Added ${nodeType} node to canvas`);
+            if (nodeType === "upload-image") setActiveRecipeModal("site");
+          }}
+        />
+
+        <div data-enter className="relative flex min-h-0 flex-1 bg-[#FAF9F6]">
           {/* Canvas board */}
           <div className="relative min-w-0 flex-1 overflow-hidden">
-          <CanvasBoard
-            projectId={projectId}
-            language={state.language}
-            onLanguageChange={actions.setLanguage}
-            selectedItem={state.selectedItem}
-            activeTool={state.activeTool}
-            markers={state.markers}
-            addedObjects={state.addedObjects}
-            nodes={state.nodes}
-            edges={state.edges}
-            onSelect={actions.handleSelectItem}
-            onImageAction={actions.handleImageAction}
-            sketchLines={state.sketchLines}
-            sketchGroups={state.sketchGroups}
-            penStrokes={state.penStrokes}
-            penSettings={state.penSettings}
-            selectedSketchLineIds={state.selectedSketchLineIds}
-            onAddSketchLine={actions.addSketchLine}
-            onAddPenStroke={actions.addPenStroke}
-            onDeletePenStroke={actions.deletePenStroke}
-            onReplacePenStrokes={actions.replacePenStrokes}
-            onSelectSketchLine={actions.selectSketchLine}
-            onSelectSketchGroup={(id) => actions.handleSelectItem({ type: "sketchGroup", id })}
-            onTool={actions.handleTool}
-            onQuickEdit={() => actions.setShowQuickEditModal(true)}
-            onMultiAngle={() => actions.setShowMultiAngleModal(true)}
-            onAddObject={() => actions.setShowAddObjectMenu(true)}
-            onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
-            onToast={actions.showToast}
-            onNodesChange={actions.setNodes}
-            onEdgesChange={actions.setEdges}
-            activeGenerationTargetId={state.activeGenerationTargetId}
-            activeNodeId={state.activeNodeId}
-            onSetActiveNode={actions.setActiveNodeId}
-            isSnapshotLoading={state.isSnapshotLoading}
-            isSnapshotSaving={state.isSnapshotSaving}
-            isDraftSaving={state.isDraftSaving}
-            currentSnapshotMeta={state.currentSnapshotMeta}
-            hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
-            creditsAmount={state.creditsAmount}
-            miniMapOpen={state.miniMapOpen}
-            pendingLibraryInsertAsset={state.pendingLibraryInsertAsset}
-            onConsumePendingLibraryInsert={actions.consumePendingLibraryInsert}
-            pendingPresetGroupInsert={state.pendingPresetGroupInsert}
-            onConsumePendingPresetGroupInsert={actions.consumePendingPresetGroupInsert}
-            isResizingPanel={state.isResizingPanel}
-            selectedNode={state.selectedNode}
-            onSetActivePresetChild={actions.setActivePresetChild}
-            onRemovePresetChild={actions.removePresetChild}
-            onMovePresetChild={actions.movePresetChild}
-            brushMode={state.brushMode}
-            regionSelectionTool={state.regionSelectionTool}
-            brushSize={state.brushSize}
-            brushSoftness={state.brushSoftness}
-            maskTrigger={state.maskTrigger}
-            onBeginMaskChange={actions.pushMaskHistoryCheckpoint}
-            onCommitMask={actions.commitMaskData}
-            onUndoMask={actions.undoMask}
-            onRedoMask={actions.redoMask}
-            onBrushSizeChange={actions.setBrushSize}
-            onBrushSoftnessChange={actions.setBrushSoftness}
-            onCloseRegionEditor={actions.exitRegionMode}
-            onSaveVersion={() => void actions.saveVersion()}
-            studioChrome
-            onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
-          />
+            <CanvasBoard
+              projectId={projectId}
+              language={state.language}
+              onLanguageChange={actions.setLanguage}
+              selectedItem={state.selectedItem}
+              activeTool={state.activeTool}
+              markers={state.markers}
+              addedObjects={state.addedObjects}
+              nodes={state.nodes}
+              edges={state.edges}
+              onSelect={actions.handleSelectItem}
+              onImageAction={actions.handleImageAction}
+              sketchLines={state.sketchLines}
+              sketchGroups={state.sketchGroups}
+              penStrokes={state.penStrokes}
+              penSettings={state.penSettings}
+              selectedSketchLineIds={state.selectedSketchLineIds}
+              onAddSketchLine={actions.addSketchLine}
+              onAddPenStroke={actions.addPenStroke}
+              onDeletePenStroke={actions.deletePenStroke}
+              onReplacePenStrokes={actions.replacePenStrokes}
+              onSelectSketchLine={actions.selectSketchLine}
+              onSelectSketchGroup={(id) => actions.handleSelectItem({ type: "sketchGroup", id })}
+              onTool={actions.handleTool}
+              onQuickEdit={() => actions.setShowQuickEditModal(true)}
+              onMultiAngle={() => actions.setShowMultiAngleModal(true)}
+              onAddObject={() => actions.setShowAddObjectMenu(true)}
+              onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
+              onToast={actions.showToast}
+              onNodesChange={actions.setNodes}
+              onEdgesChange={actions.setEdges}
+              viewportZoom={state.viewportZoom}
+              onViewportZoomChange={actions.setViewportZoom}
+              activeGenerationTargetId={state.activeGenerationTargetId}
+              activeNodeId={state.activeNodeId}
+              onSetActiveNode={actions.setActiveNodeId}
+              isSnapshotLoading={state.isSnapshotLoading}
+              isSnapshotSaving={state.isSnapshotSaving}
+              isDraftSaving={state.isDraftSaving}
+              currentSnapshotMeta={state.currentSnapshotMeta}
+              hasUnsavedSnapshotChanges={state.hasUnsavedSnapshotChanges}
+              creditsAmount={state.creditsAmount}
+              miniMapOpen={state.miniMapOpen}
+              pendingLibraryInsertAsset={state.pendingLibraryInsertAsset}
+              onConsumePendingLibraryInsert={actions.consumePendingLibraryInsert}
+              pendingPresetGroupInsert={state.pendingPresetGroupInsert}
+              onConsumePendingPresetGroupInsert={actions.consumePendingPresetGroupInsert}
+              isResizingPanel={state.isResizingPanel}
+              selectedNode={state.selectedNode}
+              onSetActivePresetChild={actions.setActivePresetChild}
+              onRemovePresetChild={actions.removePresetChild}
+              onMovePresetChild={actions.movePresetChild}
+              brushMode={state.brushMode}
+              regionSelectionTool={state.regionSelectionTool}
+              brushSize={state.brushSize}
+              brushSoftness={state.brushSoftness}
+              maskTrigger={state.maskTrigger}
+              onBeginMaskChange={actions.pushMaskHistoryCheckpoint}
+              onCommitMask={actions.commitMaskData}
+              onUndoMask={actions.undoMask}
+              onRedoMask={actions.redoMask}
+              onBrushSizeChange={actions.setBrushSize}
+              onBrushSoftnessChange={actions.setBrushSoftness}
+              onCloseRegionEditor={actions.exitRegionMode}
+              onSaveVersion={() => void actions.saveVersion()}
+              studioChrome
+              onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
+            />
 
-          <ContextualAIComposer
-            targetTitle={state.activeGenerationTarget?.title ?? null}
+            <CanvasAssetLibraryModal
+              open={Boolean(activeRecipeModal)}
+              activeItem={activeRecipeModal}
+              folders={library.folders}
+              onClose={() => setActiveRecipeModal(null)}
+              onAddAssets={addLibraryAssetsFromRecipe}
+            />
+
+          </div>
+
+          {state.activeTool === "region" && state.selectedNode ? (
+            <RegionBrushToolbar workspace={canvas} />
+          ) : null}
+
+          {/* ── Modals & overlays ────────────────────────────────────────────── */}
+          <QuickEditModal
+            open={modals.showQuickEditModal}
             promptText={state.promptText}
-            isGenerating={Boolean(state.pendingGenerationJob)}
             onPromptChange={actions.setPromptText}
-            onGenerate={actions.generateConcept}
-            onOpenHistory={actions.openRightPanel}
-            onEnhance={() => actions.showToast("Open History to use the full prompt enhancer")}
+            onClose={() => actions.setShowQuickEditModal(false)}
+            onApply={actions.applyQuickEdit}
           />
 
-          <SceneRecipeBar
-            siteLabel={siteLabel}
-            styleCount={recipeCounts.style}
-            plantCount={recipeCounts.plants}
-            materialCount={recipeCounts.materials}
-            objectCount={recipeCounts.objects}
-            onOpen={setActiveRecipeModal}
-            onGenerate={actions.generateConcept}
-          />
-
-          <CanvasAssetLibraryModal
-            open={Boolean(activeRecipeModal)}
-            activeItem={activeRecipeModal}
-            folders={library.folders}
-            onClose={() => setActiveRecipeModal(null)}
-            onAddAssets={addLibraryAssetsFromRecipe}
-          />
-
-          {/* Right panel */}
-          {isRightPanelRendered && state.rightPanelOpen ? (
-            <div
-              ref={rightPanelRef}
-              className="absolute inset-y-0 right-0 z-[110] w-[420px] border-l border-[#D8D2C3] bg-[#FFFDF8] shadow-[-24px_0_70px_rgba(23,50,37,0.16)]"
-              data-canvas-ui="true"
-              data-shell-panel="right"
-            >
-              <div
-                ref={rightPanelContentRef}
-                className="h-full"
+          {state.selectedSketchLineIds.length > 0 && (
+            <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-[0_16px_36px_var(--canvas-theme-shadow)]">
+              <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">
+                {state.selectedSketchLineIds.length} sketch line
+                {state.selectedSketchLineIds.length === 1 ? "" : "s"} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => actions.setShowGroupNameModal(true)}
+                className="rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-black text-[var(--canvas-theme-active-text)] shadow-[0_12px_24px_var(--canvas-theme-shadow)]"
               >
-                <AiChatSidebar
-                  canvasId="canvas-main"
-                  projectId={projectId}
-                  targetNodeId={state.activeGenerationTarget?.id ?? null}
-                  targetTitle={state.activeGenerationTarget?.title ?? null}
-                  targetImageUrl={state.activeGenerationTarget?.imageUrl ?? null}
-                  generationContext={state.activeGenerationContext}
-                  generationSnapshot={buildCanvasSnapshotWithGraph({
-                    nodes: state.nodes,
-                    edges: state.edges,
-                    activeGenerationTargetId: state.activeGenerationTargetId,
-                  })}
-                  connectedImageReferences={state.activeGenerationContext?.imageReferences ?? []}
-                  connectedPresetReferences={state.activeGenerationContext?.presetReferences ?? []}
-                  generationAssistantMessages={state.generationAssistantMessages}
-                  draft={state.promptText}
-                  onDraftChange={actions.setPromptText}
-                  onCreditsChange={(creditsRemaining) => {
-                    if (typeof creditsRemaining === "number") {
-                      void actions.refreshProfileCredits().catch(() => undefined);
-                    }
-                  }}
-                  onClearLinkedImage={() => actions.handleSelectItem({ type: "none" })}
-                  onGenerationComplete={({ job, targetNodeId: completedTargetNodeId }) =>
-                    actions.applyCompletedGenerationJob({
-                      job,
-                      targetNodeId: completedTargetNodeId,
-                      syncAssistantMessage: false,
-                    })}
-                  onClose={actions.closeRightPanel}
-                  onToast={actions.showToast}
-                />
-              </div>
-              <ResizeHandle
-                side="left"
-                ariaLabel="Resize right panel"
-                isResizing={rightPanelResize.isResizing}
-                onPointerDown={rightPanelResize.startResize}
-                onDoubleClick={rightPanelResize.resetWidth}
-              />
+                Group + Name Tag
+              </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={actions.openRightPanel}
-              className="hidden"
-              title={state.language === "vi" ? "Mở chat" : "Open chat"}
-            >
-              <MessageSquare className="h-5 w-5" aria-hidden="true" />
-            </button>
+          )}
+
+          <GroupNameTagModal
+            open={modals.showGroupNameModal}
+            lineCount={state.selectedSketchLineIds.length}
+            onClose={() => actions.setShowGroupNameModal(false)}
+            onCreate={actions.groupSelectedSketchLines}
+          />
+          <MultiAngleModal
+            open={modals.showMultiAngleModal}
+            onClose={() => actions.setShowMultiAngleModal(false)}
+            onGenerate={actions.generateAngles}
+          />
+          <AddObjectMenu
+            open={modals.showAddObjectMenu}
+            onClose={() => actions.setShowAddObjectMenu(false)}
+            onAdd={actions.addObject}
+          />
+          <FeasibilityReviewPanel
+            open={modals.showFeasibilityReviewPanel}
+            onClose={() => actions.setShowFeasibilityReviewPanel(false)}
+          />
+
+          {/* Toast */}
+          {toast && (
+            <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-black text-[var(--canvas-theme-text)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
+              {toast}
+            </div>
           )}
         </div>
 
-        {state.activeTool === "region" && state.selectedNode ? (
-          <RegionBrushToolbar workspace={canvas} />
-        ) : null}
-
-        {/* ── Modals & overlays ────────────────────────────────────────────── */}
-        <QuickEditModal
-          open={modals.showQuickEditModal}
-          promptText={state.promptText}
-          onPromptChange={actions.setPromptText}
-          onClose={() => actions.setShowQuickEditModal(false)}
-          onApply={actions.applyQuickEdit}
-        />
-
-        {state.selectedSketchLineIds.length > 0 && (
-          <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-[0_16px_36px_var(--canvas-theme-shadow)]">
-            <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">
-              {state.selectedSketchLineIds.length} sketch line
-              {state.selectedSketchLineIds.length === 1 ? "" : "s"} selected
-            </span>
-            <button
-              type="button"
-              onClick={() => actions.setShowGroupNameModal(true)}
-              className="rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-black text-[var(--canvas-theme-active-text)] shadow-[0_12px_24px_var(--canvas-theme-shadow)]"
-            >
-              Group + Name Tag
-            </button>
-          </div>
-        )}
-
-        <GroupNameTagModal
-          open={modals.showGroupNameModal}
-          lineCount={state.selectedSketchLineIds.length}
-          onClose={() => actions.setShowGroupNameModal(false)}
-          onCreate={actions.groupSelectedSketchLines}
-        />
-        <MultiAngleModal
-          open={modals.showMultiAngleModal}
-          onClose={() => actions.setShowMultiAngleModal(false)}
-          onGenerate={actions.generateAngles}
-        />
-        <AddObjectMenu
-          open={modals.showAddObjectMenu}
-          onClose={() => actions.setShowAddObjectMenu(false)}
-          onAdd={actions.addObject}
-        />
-        <FeasibilityReviewPanel
-          open={modals.showFeasibilityReviewPanel}
-          onClose={() => actions.setShowFeasibilityReviewPanel(false)}
-        />
-
-        {/* Toast */}
-        {toast && (
-          <div className="toast-message fixed left-1/2 top-20 z-[120] -translate-x-1/2 rounded-[14px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-black text-[var(--canvas-theme-text)] shadow-[0_12px_28px_var(--canvas-theme-shadow)]">
-            {toast}
-          </div>
-        )}
-      </div>
-
-      {/* ── Mobile / small screen fallback ──────────────────────────────────── */}
+        {/* ── Mobile / small screen fallback ──────────────────────────────────── */}
       </div>
 
       <div className="grid min-h-screen place-items-center bg-[#F7F8FA] p-8 xl:hidden">
