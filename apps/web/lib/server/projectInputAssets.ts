@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   deleteR2Objects,
   extensionForMimeType,
+  hasAllowedMagicBytes,
   getR2Bucket,
   parseDataUrlImage,
   uploadR2Object,
@@ -21,18 +22,37 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "") || "image";
 
-export async function persistTemporaryProjectImageAsset(params: {
+function inferAllowedImageMimeType(buffer: Buffer, declaredMimeType: string) {
+  if (hasAllowedMagicBytes(buffer, declaredMimeType)) {
+    return declaredMimeType;
+  }
+
+  for (const mimeType of ["image/png", "image/jpeg", "image/webp"] as const) {
+    if (hasAllowedMagicBytes(buffer, mimeType)) {
+      return mimeType;
+    }
+  }
+
+  return null;
+}
+
+async function persistProjectImageBuffer(params: {
   supabase: SupabaseClient<Database>;
   projectId: string;
   ownerId: string;
   requestId: string;
   label: string;
-  dataUrl: string;
+  buffer: Buffer;
+  sourceMimeType: string;
   kind?: Database["public"]["Tables"]["assets"]["Insert"]["kind"];
   metadata?: Record<string, unknown>;
 }) {
-  const source = parseDataUrlImage(params.dataUrl);
-  const image = sharp(source.buffer, {
+  const sourceMimeType = inferAllowedImageMimeType(params.buffer, params.sourceMimeType);
+  if (!sourceMimeType) {
+    throw new Error("Inline image content does not match the declared MIME type.");
+  }
+
+  const image = sharp(params.buffer, {
     failOn: "none",
     limitInputPixels: 40_000_000,
   }).rotate();
@@ -88,6 +108,8 @@ export async function persistTemporaryProjectImageAsset(params: {
         temporary: true,
         temporaryPurpose: "ai-job-input",
         sourceLabel: params.label,
+        sourceMimeType,
+        declaredMimeType: params.sourceMimeType,
         ...params.metadata,
       } as never,
     })
@@ -105,6 +127,46 @@ export async function persistTemporaryProjectImageAsset(params: {
     mimeType: data.mime_type,
     sizeBytes: data.size_bytes,
   };
+}
+
+export async function persistTemporaryProjectImageAsset(params: {
+  supabase: SupabaseClient<Database>;
+  projectId: string;
+  ownerId: string;
+  requestId: string;
+  label: string;
+  dataUrl: string;
+  kind?: Database["public"]["Tables"]["assets"]["Insert"]["kind"];
+  metadata?: Record<string, unknown>;
+}) {
+  const source = parseDataUrlImage(params.dataUrl);
+  return persistProjectImageBuffer({
+    ...params,
+    buffer: source.buffer,
+    sourceMimeType: source.mimeType,
+  });
+}
+
+export async function persistTemporaryProjectImageAssetFile(params: {
+  supabase: SupabaseClient<Database>;
+  projectId: string;
+  ownerId: string;
+  requestId: string;
+  label: string;
+  file: File;
+  kind?: Database["public"]["Tables"]["assets"]["Insert"]["kind"];
+  metadata?: Record<string, unknown>;
+}) {
+  const buffer = Buffer.from(await params.file.arrayBuffer());
+  return persistProjectImageBuffer({
+    ...params,
+    buffer,
+    sourceMimeType: params.file.type,
+    metadata: {
+      sourceFileName: params.file.name,
+      ...params.metadata,
+    },
+  });
 }
 
 /** Best-effort cleanup for inputs that never become part of a durable job. */

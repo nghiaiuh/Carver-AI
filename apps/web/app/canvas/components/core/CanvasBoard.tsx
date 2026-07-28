@@ -182,6 +182,8 @@ type ImageSourceMetadata = {
   mimeType?: string;
   sizeBytes?: number;
   name?: string;
+  width?: number | null;
+  height?: number | null;
   role?: CanvasNode["role"];
   preserveTitle?: boolean;
 };
@@ -652,7 +654,10 @@ export default function CanvasBoard({
     async (imageUrl: string, title = "Pasted Image", sourceMetadata: ImageSourceMetadata = {}) => {
       const pastePan = pan;
       const pasteZoom = zoom;
-      const dimensions = await loadImageDimensions(imageUrl);
+      const dimensions =
+        sourceMetadata.width && sourceMetadata.height
+          ? { width: sourceMetadata.width, height: sourceMetadata.height }
+          : await loadImageDimensions(imageUrl);
       let createdNode: CanvasNode | null = null;
       onNodesChange((prev) => {
         const isFirst = prev.length === 0;
@@ -700,25 +705,37 @@ export default function CanvasBoard({
 
   const addLocalImageNode = useCallback(
     async (blob: Blob, title: string, sourceMetadata: ImageSourceMetadata = {}) => {
-      const persisted = await onPersistCanvasNodeImageAsset({
-        blob,
-        title,
-        mimeType: sourceMetadata.mimeType,
-        name: sourceMetadata.name,
-        role: sourceMetadata.role,
-        preserveTitle: sourceMetadata.preserveTitle,
-      });
+      onToast("Uploading pasted image...");
+      const localPreviewUrl = URL.createObjectURL(blob);
 
-      await addImageNode(persisted.imageUrl, title, {
-        ...sourceMetadata,
-        assetId: persisted.assetId,
-        mimeType: persisted.mimeType,
-        sizeBytes: persisted.sizeBytes,
-        name: persisted.name,
-        preserveTitle: persisted.preserveTitle,
-      });
+      try {
+        const [dimensions, persisted] = await Promise.all([
+          loadImageDimensions(localPreviewUrl),
+          onPersistCanvasNodeImageAsset({
+            blob,
+            title,
+            mimeType: sourceMetadata.mimeType,
+            name: sourceMetadata.name,
+            role: sourceMetadata.role,
+            preserveTitle: sourceMetadata.preserveTitle,
+          }),
+        ]);
+
+        await addImageNode(persisted.imageUrl, title, {
+          ...sourceMetadata,
+          assetId: persisted.assetId,
+          mimeType: persisted.mimeType,
+          sizeBytes: persisted.sizeBytes,
+          name: persisted.name,
+          width: dimensions?.width ?? sourceMetadata.width ?? null,
+          height: dimensions?.height ?? sourceMetadata.height ?? null,
+          preserveTitle: persisted.preserveTitle,
+        });
+      } finally {
+        URL.revokeObjectURL(localPreviewUrl);
+      }
     },
-    [addImageNode, onPersistCanvasNodeImageAsset],
+    [addImageNode, onPersistCanvasNodeImageAsset, onToast],
   );
 
   useEffect(() => {

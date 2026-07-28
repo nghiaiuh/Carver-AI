@@ -3,13 +3,13 @@ import {
   apiSuccess,
   badRequestResponse,
   readJsonObject,
-  serverErrorResponse,
 } from "../../../../_lib/http";
 import { createSafeLogger } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext } from "../../../../_lib/authz";
 import {
   deletePersistedProjectImageAssets,
   persistTemporaryProjectImageAsset,
+  persistTemporaryProjectImageAssetFile,
 } from "../../../../../../lib/server/projectInputAssets";
 import { resolveOwnedAssetUrls } from "../../../../../../lib/server/assetService";
 import { enforceRateLimit } from "../../../../_lib/rateLimit";
@@ -22,10 +22,18 @@ const logger = createSafeLogger("web.snapshot-assets");
 type SnapshotAssetRequestItem = {
   nodeId: string;
   title: string;
-  dataUrl: string;
-};
+} & (
+  | {
+    dataUrl: string;
+    file?: never;
+  }
+  | {
+    file: File;
+    dataUrl?: never;
+  }
+);
 
-function readSnapshotAssetItems(body: Record<string, unknown>) {
+function readSnapshotAssetItems(body: Record<string, unknown>): SnapshotAssetRequestItem[] {
   const value = body.images;
   if (!Array.isArray(value)) {
     return [] as SnapshotAssetRequestItem[];
@@ -58,6 +66,73 @@ function readSnapshotAssetItems(body: Record<string, unknown>) {
       dataUrl,
     } satisfies SnapshotAssetRequestItem];
   });
+}
+
+async function readSnapshotAssetFormItems(request: Request): Promise<SnapshotAssetRequestItem[]> {
+  const formData = await request.formData().catch(() => null);
+  if (!formData) {
+    return [] as SnapshotAssetRequestItem[];
+  }
+
+  const file = formData.get("file");
+  const nodeId = typeof formData.get("nodeId") === "string"
+    ? String(formData.get("nodeId")).trim()
+    : "";
+  const title = typeof formData.get("title") === "string"
+    ? String(formData.get("title")).trim()
+    : "";
+
+  if (
+    !(file instanceof File) ||
+    file.size <= 0 ||
+    file.size > 8 * 1024 * 1024 ||
+    !nodeId ||
+    nodeId.length > 240 ||
+    !title ||
+    title.length > 240
+  ) {
+    return [];
+  }
+
+  return [{
+    nodeId,
+    title,
+    file,
+  } satisfies SnapshotAssetRequestItem];
+}
+
+function isFileSnapshotAssetItem(image: SnapshotAssetRequestItem): image is SnapshotAssetRequestItem & { file: File } {
+  return "file" in image && image.file instanceof File;
+}
+
+function classifySnapshotAssetError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return { code: "SNAPSHOT_ASSET_UPLOAD_FAILED", status: 500 };
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  if (
+    message.includes("too large") ||
+    message.includes("dimensions are invalid") ||
+    message.includes("content does not match") ||
+    message.includes("base64 PNG, JPEG, or WebP") ||
+    message.includes("type is not supported")
+  ) {
+    return {
+      code: message.includes("too large") ? "UPLOAD_TOO_LARGE" : "UNSUPPORTED_FILE_TYPE",
+      status: message.includes("too large") ? 413 : 400,
+    };
+  }
+
+  if (message.includes("Missing required environment variable:")) {
+    return { code: "ASSET_STORAGE_CONFIG_MISSING", status: 500 };
+  }
+
+  if (message.includes("Missing ASSET_GATEWAY_SIGNING_SECRET")) {
+    return { code: "ASSET_GATEWAY_CONFIG_MISSING", status: 500 };
+  }
+
+  return { code: "SNAPSHOT_ASSET_UPLOAD_FAILED", status: 500 };
 }
 
 export async function POST(
@@ -94,11 +169,15 @@ export async function POST(
     return apiFailure("UPLOAD_TOO_LARGE", "Upload is too large.", 413, context.requestId);
   }
 
-  const body = await readJsonObject(request);
-  if (Array.isArray(body.images) && body.images.length > MAX_SNAPSHOT_IMAGE_COUNT) {
+  const contentType = request.headers.get("content-type") ?? "";
+  const isMultipart = contentType.toLowerCase().includes("multipart/form-data");
+  const body = isMultipart ? null : await readJsonObject(request);
+  if (!isMultipart && Array.isArray(body?.images) && body.images.length > MAX_SNAPSHOT_IMAGE_COUNT) {
     return apiFailure("UPLOAD_TOO_MANY_FILES", "Too many images in one upload.", 400, context.requestId);
   }
-  const images = readSnapshotAssetItems(body);
+  const images = isMultipart
+    ? await readSnapshotAssetFormItems(request)
+    : readSnapshotAssetItems(body ?? {});
   if (images.length === 0) {
     return badRequestResponse("images are required", requestId);
   }
@@ -113,20 +192,28 @@ export async function POST(
 
   try {
     for (const [index, image] of images.entries()) {
-      const persisted = await persistTemporaryProjectImageAsset({
+      const commonParams = {
         supabase: context.supabase,
         projectId: projectResult.project.id,
         ownerId: context.user.id,
         requestId: `${requestId}-${index}`,
         label: image.title,
-        dataUrl: image.dataUrl,
-        kind: "upload",
+        kind: "upload" as const,
         metadata: {
           temporary: false,
           snapshotSource: "canvas-node",
           nodeId: image.nodeId,
         },
-      });
+      };
+      const persisted = isFileSnapshotAssetItem(image)
+        ? await persistTemporaryProjectImageAssetFile({
+          ...commonParams,
+          file: image.file,
+        })
+        : await persistTemporaryProjectImageAsset({
+          ...commonParams,
+          dataUrl: image.dataUrl,
+        });
       persistedImages.push({
         nodeId: image.nodeId,
         assetId: persisted.assetId,
@@ -144,13 +231,16 @@ export async function POST(
     });
 
     return apiSuccess({
-      images: persistedImages.map(({ storagePath: _storagePath, ...image }) => {
+      images: persistedImages.map((image) => {
         const urls = resolvedUrls.get(image.assetId);
         if (!urls) {
           throw new Error("Unable to resolve persisted image asset.");
         }
         return {
-          ...image,
+          nodeId: image.nodeId,
+          assetId: image.assetId,
+          mimeType: image.mimeType,
+          sizeBytes: image.sizeBytes,
           imageUrl: urls.originalUrl,
           expiresAt: urls.expiresAt,
         };
@@ -170,6 +260,16 @@ export async function POST(
       ownerId: context.user.id,
       assets: persistedImages,
     }).catch(() => undefined);
-    return serverErrorResponse(requestId);
+    const classified = classifySnapshotAssetError(error);
+    return apiFailure(
+      classified.code,
+      classified.status === 413
+        ? "Upload is too large."
+        : classified.status === 400
+          ? "Image file is invalid."
+          : "Unable to upload image.",
+      classified.status,
+      requestId,
+    );
   }
 }

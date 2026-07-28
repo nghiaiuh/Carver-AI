@@ -325,22 +325,6 @@ function hasTransientSnapshotContent(document: CanvasSnapshotDocument) {
   });
 }
 
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("Unable to read image blob."));
-    };
-    reader.onerror = () => reject(new Error("Unable to read image blob."));
-    reader.readAsDataURL(blob);
-  });
-}
-
 async function resolveSnapshotRuntimeAssetUrls(
   client: BrowserSupabaseClient,
   document: CanvasSnapshotDocument,
@@ -703,21 +687,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     }
 
     const client = requireCanvasSupabaseClient(supabase);
-    const dataUrl = await blobToDataUrl(assetParams.blob);
+    const formData = new FormData();
+    formData.set("file", assetParams.blob, assetParams.name ?? `${assetParams.title}.png`);
+    formData.set("nodeId", `pending-${Date.now()}`);
+    formData.set("title", assetParams.title);
+
     const response = await authedFetch(client, `/api/projects/${params.projectId}/snapshot/assets`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        images: [
-          {
-            nodeId: `pending-${Date.now()}`,
-            title: assetParams.title,
-            dataUrl,
-          },
-        ],
-      }),
+      body: formData,
     });
     const payload = (await response.json().catch(() => ({}))) as SnapshotAssetPersistResponse;
     const persisted = payload.data?.images?.[0];
