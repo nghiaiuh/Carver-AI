@@ -5,7 +5,6 @@
 When responding to the user after completing a task, always address or refer to the user as **Nghĩa IT**.
 
 This is a context-check marker to confirm the agent has read and followed this file.
-Always have commit content in the end of task response
 Example:
 
 ```md
@@ -367,6 +366,9 @@ When finishing a coding task, respond with:
 4. Commands run.
 5. Commands not run.
 6. Known risks or follow-up tasks.
+7. Suggested commit content.
+
+For tasks that changed files, always include a concise commit section at the end of the response. Include the exact `git add ...` commands for the files changed by the task and a recommended `git commit -m "..."` message. If the work contains unrelated goals, split the commit suggestions into multiple small commits. Do not say a commit was created unless `git commit` was actually run.
 
 Always remember the identity check marker:
 
