@@ -22,6 +22,12 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "") || "image";
 
+type ServerUploadFile = {
+  type: string;
+  name: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
 function inferAllowedImageMimeType(buffer: Buffer, declaredMimeType: string) {
   if (hasAllowedMagicBytes(buffer, declaredMimeType)) {
     return declaredMimeType;
@@ -153,7 +159,7 @@ export async function persistTemporaryProjectImageAssetFile(params: {
   ownerId: string;
   requestId: string;
   label: string;
-  file: File;
+  file: ServerUploadFile;
   kind?: Database["public"]["Tables"]["assets"]["Insert"]["kind"];
   metadata?: Record<string, unknown>;
 }) {

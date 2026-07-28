@@ -20,6 +20,13 @@ const MAX_SNAPSHOT_IMAGE_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_SNAPSHOT_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const logger = createSafeLogger("web.snapshot-assets");
 
+type SnapshotUploadFile = {
+  size: number;
+  type: string;
+  name: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
 type SnapshotAssetRequestItem = {
   nodeId: string;
   title: string;
@@ -29,10 +36,29 @@ type SnapshotAssetRequestItem = {
     file?: never;
   }
   | {
-    file: File;
+    file: SnapshotUploadFile;
     dataUrl?: never;
   }
 );
+
+function isSnapshotUploadFile(value: unknown): value is SnapshotUploadFile {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as {
+    arrayBuffer?: unknown;
+    size?: unknown;
+    type?: unknown;
+    name?: unknown;
+  };
+  return (
+    typeof candidate.arrayBuffer === "function" &&
+    typeof candidate.size === "number" &&
+    typeof candidate.type === "string" &&
+    typeof candidate.name === "string"
+  );
+}
 
 function readSnapshotAssetItems(body: Record<string, unknown>): SnapshotAssetRequestItem[] {
   const value = body.images;
@@ -84,7 +110,7 @@ async function readSnapshotAssetFormItems(request: Request): Promise<SnapshotAss
     : "";
 
   if (
-    !(file instanceof File) ||
+    !isSnapshotUploadFile(file) ||
     file.size <= 0 ||
     file.size > 8 * 1024 * 1024 ||
     !nodeId ||
@@ -102,8 +128,10 @@ async function readSnapshotAssetFormItems(request: Request): Promise<SnapshotAss
   } satisfies SnapshotAssetRequestItem];
 }
 
-function isFileSnapshotAssetItem(image: SnapshotAssetRequestItem): image is SnapshotAssetRequestItem & { file: File } {
-  return "file" in image && image.file instanceof File;
+function isFileSnapshotAssetItem(
+  image: SnapshotAssetRequestItem,
+): image is SnapshotAssetRequestItem & { file: SnapshotUploadFile } {
+  return "file" in image && isSnapshotUploadFile((image as { file?: unknown }).file);
 }
 
 function classifySnapshotAssetError(error: unknown) {
