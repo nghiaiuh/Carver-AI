@@ -4,6 +4,7 @@ import {
   badRequestResponse,
   readJsonObject,
 } from "../../../../_lib/http";
+import { getSupabaseAdmin } from "@carver/db/server";
 import { createSafeLogger } from "@carver/shared";
 import { requireProjectOwner, requireRequestContext } from "../../../../_lib/authz";
 import {
@@ -110,7 +111,14 @@ function classifySnapshotAssetError(error: unknown) {
     return { code: "SNAPSHOT_ASSET_UPLOAD_FAILED", status: 500 };
   }
 
-  const message = error instanceof Error ? error.message : "";
+  const maybeError = error as {
+    code?: string;
+    name?: string;
+    Code?: string;
+    message?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  const message = maybeError.message ?? "";
   if (
     message.includes("too large") ||
     message.includes("dimensions are invalid") ||
@@ -124,12 +132,40 @@ function classifySnapshotAssetError(error: unknown) {
     };
   }
 
+  if (
+    maybeError.code === "P0001" ||
+    message.includes("ASSET_OWNERSHIP_INVALID") ||
+    message.includes("ASSET_STORAGE_PATH_INVALID") ||
+    message.includes("ASSET_IMMUTABLE_FIELD")
+  ) {
+    return { code: "ASSET_METADATA_POLICY_FAILED", status: 500 };
+  }
+
+  if (
+    maybeError.code === "42P01" ||
+    maybeError.code === "42703" ||
+    message.includes("schema cache") ||
+    message.includes("column") ||
+    message.includes("relation")
+  ) {
+    return { code: "ASSET_SCHEMA_ERROR", status: 500 };
+  }
+
   if (message.includes("Missing required environment variable:")) {
     return { code: "ASSET_STORAGE_CONFIG_MISSING", status: 500 };
   }
 
   if (message.includes("Missing ASSET_GATEWAY_SIGNING_SECRET")) {
     return { code: "ASSET_GATEWAY_CONFIG_MISSING", status: 500 };
+  }
+
+  if (
+    maybeError.$metadata?.httpStatusCode === 403 ||
+    maybeError.name === "AccessDenied" ||
+    maybeError.Code === "AccessDenied" ||
+    message.includes("AccessDenied")
+  ) {
+    return { code: "ASSET_STORAGE_ACCESS_FAILED", status: 500 };
   }
 
   return { code: "SNAPSHOT_ASSET_UPLOAD_FAILED", status: 500 };
@@ -191,9 +227,10 @@ export async function POST(
   }> = [];
 
   try {
+    const adminSupabase = getSupabaseAdmin();
     for (const [index, image] of images.entries()) {
       const commonParams = {
-        supabase: context.supabase,
+        supabase: adminSupabase,
         projectId: projectResult.project.id,
         ownerId: context.user.id,
         requestId: `${requestId}-${index}`,
@@ -254,12 +291,18 @@ export async function POST(
       imageCount: images.length,
       error,
     });
-    await deletePersistedProjectImageAssets({
-      supabase: context.supabase,
-      projectId: projectResult.project.id,
-      ownerId: context.user.id,
-      assets: persistedImages,
-    }).catch(() => undefined);
+    if (persistedImages.length > 0) {
+      try {
+        await deletePersistedProjectImageAssets({
+          supabase: getSupabaseAdmin(),
+          projectId: projectResult.project.id,
+          ownerId: context.user.id,
+          assets: persistedImages,
+        });
+      } catch {
+        // Best-effort cleanup. The orphan cleanup pass can safely remove leftovers later.
+      }
+    }
     const classified = classifySnapshotAssetError(error);
     return apiFailure(
       classified.code,
