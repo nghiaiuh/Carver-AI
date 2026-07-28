@@ -233,6 +233,7 @@ export default function FloatingToolRail({ activeTool, onTool, onAddNode }: Floa
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
 
       if (event.key === "Escape") {
         closeStickers();

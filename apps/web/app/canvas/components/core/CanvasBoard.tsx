@@ -188,6 +188,12 @@ type ImageSourceMetadata = {
   preserveTitle?: boolean;
 };
 
+type CanvasClipboardItem = {
+  kind: "node";
+  node: CanvasNode;
+  copiedAt: number;
+};
+
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
@@ -324,6 +330,10 @@ function isCanvasInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
+function isTextEditingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest("textarea,input,[contenteditable='true']"));
+}
+
 function loadImageDimensions(imageUrl: string): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const image = new window.Image();
@@ -356,6 +366,50 @@ function getPastedImageNodeSize(dimensions: { width: number; height: number } | 
     width: Math.max(1, Math.round(maxCrispWidthAtWorldScale * fitScale)),
     height: Math.max(1, Math.round(maxCrispHeightAtWorldScale * fitScale)),
   };
+}
+
+function cloneCanvasNodeForPaste(node: CanvasNode, existingNodeCount: number): CanvasNode {
+  const nextId = `node-${Date.now()}-${existingNodeCount}`;
+  const copy = structuredClone(node) as CanvasNode;
+
+  return {
+    ...copy,
+    id: nextId,
+    x: copy.x + 36,
+    y: copy.y + 36,
+    title: copy.title.endsWith(" Copy") ? copy.title : `${copy.title} Copy`,
+    createdAt: new Date().toISOString(),
+    inputPorts: copy.inputPorts?.map((port) => ({ ...port })) ?? getDefaultInputPorts(),
+  };
+}
+
+function getClipboardImageBlob(data: DataTransfer | null) {
+  const items = data?.items;
+  if (!items) return null;
+
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith("image/")) {
+      return items[i].getAsFile();
+    }
+  }
+
+  return null;
+}
+
+function extractImageUrlFromClipboardData(data: DataTransfer | null) {
+  if (!data) return null;
+
+  const uriList = data.getData("text/uri-list").trim();
+  if (uriList) return uriList.split(/\r?\n/).find((line) => line && !line.startsWith("#")) ?? null;
+
+  const html = data.getData("text/html");
+  const srcMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (srcMatch?.[1]) return srcMatch[1];
+
+  const text = data.getData("text/plain").trim();
+  if (/^https?:\/\//i.test(text) || text.startsWith("/api/assets/")) return text;
+
+  return null;
 }
 
 export default function CanvasBoard({
@@ -450,6 +504,7 @@ export default function CanvasBoard({
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
   const [createdNodeStack, setCreatedNodeStack] = useState<CanvasNode[]>([]);
   const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<DeletedNodeSnapshot[]>([]);
+  const canvasClipboardRef = useRef<CanvasClipboardItem | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
   const [miniMapDragging, setMiniMapDragging] = useState(false);
@@ -738,34 +793,111 @@ export default function CanvasBoard({
     [addImageNode, onPersistCanvasNodeImageAsset, onToast],
   );
 
+  const copySelectedCanvasNode = useCallback(() => {
+    if (selectedItem.type !== "node" && selectedItem.type !== "image") {
+      return false;
+    }
+
+    const node = nodes.find((item) => item.id === selectedItem.id);
+    if (!node) {
+      return false;
+    }
+
+    canvasClipboardRef.current = {
+      kind: "node",
+      node,
+      copiedAt: Date.now(),
+    };
+    onToast("Canvas image copied");
+    return true;
+  }, [nodes, onToast, selectedItem]);
+
+  const pasteCopiedCanvasNode = useCallback(() => {
+    const copied = canvasClipboardRef.current;
+    if (!copied || copied.kind !== "node") {
+      return false;
+    }
+
+    const pastedNode = cloneCanvasNodeForPaste(copied.node, nodes.length);
+    onNodesChange((current) => [...current, pastedNode]);
+    setCreatedNodeStack((current) => [...current, pastedNode]);
+    setCreatedNodeRedoStack([]);
+    onSetActiveNode(pastedNode.id);
+    onSelect({ type: "node", id: pastedNode.id });
+    onToast("Canvas image pasted");
+    return true;
+  }, [nodes.length, onNodesChange, onSelect, onSetActiveNode, onToast]);
+
+  const pasteClipboardImageUrl = useCallback(
+    async (url: string) => {
+      const resolvedUrl = url.startsWith("/") ? new URL(url, window.location.origin).toString() : url;
+      const response = await fetch(resolvedUrl, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error("Unable to read image from clipboard URL.");
+      }
+
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) {
+        throw new Error("Clipboard URL is not an image.");
+      }
+
+      await addLocalImageNode(blob, "Pasted Image", {
+        mimeType: blob.type,
+        sizeBytes: blob.size,
+      });
+    },
+    [addLocalImageNode],
+  );
+
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-prompt-composer]") || target?.closest("textarea,input,[contenteditable='true']")) return;
+      if (target?.closest("[data-prompt-composer]") || isTextEditingTarget(target)) return;
 
-      const items = e.clipboardData?.items;
-      if (!items) return;
+      const blob = getClipboardImageBlob(e.clipboardData);
+      if (blob) {
+        e.preventDefault();
+        void addLocalImageNode(blob, "Pasted Image", {
+          mimeType: blob.type,
+          sizeBytes: blob.size,
+        }).catch((error) => {
+          onToast(error instanceof Error ? error.message : "Unable to add pasted image.");
+        });
+        return;
+      }
 
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf("image") !== -1) {
-          const blob = items[i].getAsFile();
-          if (blob) {
-            e.preventDefault();
-            void addLocalImageNode(blob, "Pasted Image", {
-              mimeType: blob.type,
-              sizeBytes: blob.size,
-            }).catch((error) => {
-              onToast(error instanceof Error ? error.message : "Unable to add pasted image.");
-            });
-          }
-          break;
-        }
+      const imageUrl = extractImageUrlFromClipboardData(e.clipboardData);
+      if (imageUrl) {
+        e.preventDefault();
+        void pasteClipboardImageUrl(imageUrl).catch((error) => {
+          onToast(error instanceof Error ? error.message : "Unable to paste image URL.");
+        });
+        return;
+      }
+
+      if (pasteCopiedCanvasNode()) {
+        e.preventDefault();
       }
     };
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [addLocalImageNode, onToast]);
+  }, [addLocalImageNode, onToast, pasteClipboardImageUrl, pasteCopiedCanvasNode]);
+
+  useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-prompt-composer]") || isTextEditingTarget(target)) return;
+
+      if (!copySelectedCanvasNode()) return;
+
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", "Carver canvas image");
+    };
+
+    window.addEventListener("copy", handleCopy);
+    return () => window.removeEventListener("copy", handleCopy);
+  }, [copySelectedCanvasNode]);
 
   useEffect(() => {
     if (!pendingLibraryInsertAsset) return;
@@ -1586,6 +1718,10 @@ export default function CanvasBoard({
         event.preventDefault();
         setEraserPreview((current) => ({ ...current, visible: false }));
         clearEraserSession();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
         return;
       }
 
