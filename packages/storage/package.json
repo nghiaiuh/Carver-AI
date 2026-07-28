@@ -20,6 +20,11 @@
       "module": "./src/imageData.ts",
       "default": "./dist/imageData.js"
     },
+    "./image-format": {
+      "types": "./src/imageFormat.ts",
+      "module": "./src/imageFormat.ts",
+      "default": "./src/imageFormat.ts"
+    },
     "./library": {
       "types": "./dist/library.d.ts",
       "module": "./src/library.ts",

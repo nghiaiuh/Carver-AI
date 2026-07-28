@@ -1,7 +1,6 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import sharp from "sharp";
 import type { Database } from "@carver/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -13,7 +12,7 @@ import {
   extensionForMimeType,
   hasAllowedMagicBytes,
   parseDataUrlImage,
-} from "@carver/storage/image-data";
+} from "@carver/storage/image-format";
 
 const slugify = (value: string) =>
   value
@@ -55,30 +54,21 @@ async function persistProjectImageBuffer(params: {
   kind?: Database["public"]["Tables"]["assets"]["Insert"]["kind"];
   metadata?: Record<string, unknown>;
 }) {
+  if (params.buffer.length === 0 || params.buffer.length > 8 * 1024 * 1024) {
+    throw new Error("Inline image is too large.");
+  }
+
   const sourceMimeType = inferAllowedImageMimeType(params.buffer, params.sourceMimeType);
   if (!sourceMimeType) {
     throw new Error("Inline image content does not match the declared MIME type.");
   }
 
-  const image = sharp(params.buffer, {
-    failOn: "none",
-    limitInputPixels: 40_000_000,
-  }).rotate();
-  const metadata = await image.metadata();
-  if (!metadata.width || !metadata.height || metadata.width > 8_000 || metadata.height > 8_000) {
-    throw new Error("Inline image dimensions are invalid.");
-  }
-
-  const buffer = await image.webp({ quality: 90 }).toBuffer();
-  if (buffer.length === 0 || buffer.length > 8 * 1024 * 1024) {
-    throw new Error("Inline image is too large after processing.");
-  }
   const parsed = {
-    buffer,
-    mimeType: "image/webp" as const,
-    sizeBytes: buffer.length,
-    width: metadata.width,
-    height: metadata.height,
+    buffer: params.buffer,
+    mimeType: sourceMimeType,
+    sizeBytes: params.buffer.length,
+    width: null,
+    height: null,
   };
   const assetId = randomUUID();
   const fileExtension = extensionForMimeType(parsed.mimeType);

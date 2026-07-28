@@ -28,7 +28,7 @@ import {
   resolveProjectChatMessageAssetUrls,
 } from "./assetService";
 import { createChatCompletion, type ChatInputImage } from "./openaiChat";
-import { parseDataUrlImage } from "@carver/storage";
+import { parseDataUrlImage } from "@carver/storage/image-format";
 
 type ChatRole = "user" | "assistant";
 
