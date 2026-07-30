@@ -84,7 +84,11 @@ export default function CanvasEdges({
   };
 
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible", zIndex: 10 }}>
+    <svg
+      className="absolute inset-0 h-full w-full pointer-events-none"
+      shapeRendering="geometricPrecision"
+      style={{ overflow: "visible", zIndex: 10 }}
+    >
       {/* Render established edges */}
       {edges.map((edge) => {
         let sourceCenter: { x: number; y: number } | null = null;
@@ -136,7 +140,12 @@ export default function CanvasEdges({
             onClick={(e) => onEdgeClick(edge.id, e)}
           >
             {/* Invisible thick path for easier hovering/clicking */}
-            <path d={pathData} fill="none" stroke="transparent" strokeWidth="20" />
+            <path
+              d={pathData}
+              fill="none"
+              stroke="transparent"
+              strokeWidth="20"
+            />
             
             {/* Visible path */}
             <path
@@ -146,14 +155,6 @@ export default function CanvasEdges({
               strokeWidth={isSelected ? "2.8" : "2.2"}
               strokeLinecap="round"
               className="opacity-90 transition-opacity group-hover:opacity-100"
-            />
-
-            <circle
-              cx={targetCenter.x}
-              cy={targetCenter.y}
-              r={isSelected ? "4.5" : "3.5"}
-              fill={strokeColor}
-              className="opacity-90 transition group-hover:scale-125"
             />
 
             {/* Hover Label */}
