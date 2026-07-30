@@ -1932,7 +1932,7 @@ export default function CanvasBoard({
   return (
     <section
       ref={containerRef}
-      className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[#FAF9F6]"
+      className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[var(--canvas-theme-canvas)]"
       style={{ cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
       onClick={(event) => {
         if (suppressCanvasBackgroundClickRef.current) {
@@ -1977,7 +1977,7 @@ export default function CanvasBoard({
 
         {marqueeSelection.rect ? (
           <div
-            className="pointer-events-none absolute border border-blue-400/80 bg-blue-400/10"
+            className="pointer-events-none absolute border border-[var(--canvas-theme-guide)] bg-[var(--canvas-theme-guide-soft)]"
             style={{
               left: marqueeSelection.rect.x,
               top: marqueeSelection.rect.y,
@@ -2175,11 +2175,11 @@ export default function CanvasBoard({
                   top: node.top,
                   width: node.widthPx,
                   height: node.heightPx,
-                  backgroundColor: "var(--canvas-theme-surface-muted)",
+                  backgroundColor: "var(--canvas-theme-connector)",
                 }}
               />
             ))}
-            <div className="pointer-events-none absolute inset-0 border border-white/10" />
+            <div className="pointer-events-none absolute inset-0 border border-[var(--canvas-theme-selection)]" />
           </div>
         </div>
       ) : null}

@@ -114,17 +114,17 @@ export default function CanvasEdges({
             <path
               d={pathData}
               fill="none"
-              stroke={isSelected ? "#EA7542" : "#94A3B8"}
+              stroke={isSelected ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector)"}
               strokeWidth={isSelected ? "2.2" : "1.5"}
               strokeLinecap="round"
-              className="opacity-70 transition-colors group-hover:stroke-[#3B82F6] group-hover:opacity-100"
+              className="opacity-70 transition-colors group-hover:stroke-[var(--canvas-theme-connector-hover)] group-hover:opacity-100"
             />
 
             <circle
               cx={targetCenter.x}
               cy={targetCenter.y}
               r={isSelected ? "4" : "3"}
-              fill={isSelected ? "#EA7542" : "#3B82F6"}
+              fill={isSelected ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector-hover)"}
               className="opacity-90 transition group-hover:scale-125"
             />
 
@@ -132,8 +132,8 @@ export default function CanvasEdges({
             <foreignObject x={midX - 35} y={midY - 12} width="70" height="24">
               <div className={`flex h-full w-full items-center justify-center rounded-full border text-[10px] font-bold uppercase tracking-wider shadow-sm transition ${
                 isSelected 
-                  ? "bg-[#FFF5F0] border-[#EA7542] text-[#EA7542] opacity-100"
-                  : "bg-white border-[#E5E3DC] text-[#827E75] opacity-0 group-hover:opacity-100 group-hover:border-[#3B82F6] group-hover:text-[#3B82F6]"
+                  ? "bg-[var(--canvas-theme-selection-soft)] border-[var(--canvas-theme-connector-active)] text-[var(--canvas-theme-connector-active)] opacity-100"
+                  : "bg-[var(--canvas-theme-surface-panel)] border-[var(--canvas-theme-border)] text-[var(--canvas-theme-text-muted)] opacity-0 group-hover:opacity-100 group-hover:border-[var(--canvas-theme-connector-hover)] group-hover:text-[var(--canvas-theme-connector-hover)]"
               }`}>
                 {edge.label}
               </div>
@@ -177,7 +177,7 @@ export default function CanvasEdges({
           <path
             d={pathData}
             fill="none"
-            stroke={isSnapped ? "#466E55" : "#9CAF9A"}
+            stroke={isSnapped ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector)"}
             strokeWidth={isSnapped ? "2.2" : "1.5"}
             strokeDasharray={isSnapped ? "none" : "4 4"}
             className={isSnapped ? "opacity-90" : "opacity-70 animate-pulse"}

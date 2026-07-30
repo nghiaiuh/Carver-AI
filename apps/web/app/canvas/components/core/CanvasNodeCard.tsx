@@ -77,18 +77,18 @@ function getNodeFrameClassName({
   isConnectionTarget: boolean;
 }) {
   if (selected) {
-    return "border-[#EA7542] ring-2 ring-[#EA7542]/15 shadow-[0_8px_24px_rgba(234,117,66,0.1)]";
+    return "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)] shadow-[0_8px_24px_var(--canvas-theme-selection-ring)]";
   }
 
   if (isGenerationTarget) {
-    return "border-[#EA7542] ring-2 ring-[#EA7542]/20";
+    return "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]";
   }
 
   if (isConnectionTarget) {
-    return "border-[#3B82F6] ring-2 ring-[#3B82F6]/15";
+    return "border-[var(--canvas-theme-connector-active)] ring-2 ring-[var(--canvas-theme-guide-soft)]";
   }
 
-  return "border-[#E5E3DC] hover:border-[#D8D5CB] shadow-[0_4px_20px_rgba(0,0,0,0.03)]";
+  return "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)] shadow-[0_4px_20px_rgba(0,0,0,0.03)]";
 }
 
 function getPortTopOffset({
@@ -245,7 +245,7 @@ export default function CanvasNodeCard({
         <div className="relative">
           <div
             className={[
-              "relative overflow-hidden rounded-[18px] border bg-[#F8F4EA] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
+              "relative overflow-hidden rounded-[18px] border bg-[var(--canvas-theme-surface-soft)] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
               nodeFrameClassName,
             ].join(" ")}
             style={{ height: displayHeight }}
@@ -269,7 +269,7 @@ export default function CanvasNodeCard({
                 viewportZoom={viewportZoom}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[#9CA3AF]">
+              <div className="flex h-full w-full items-center justify-center text-[var(--canvas-theme-text-muted)]">
                 <ImagePlus className="h-8 w-8 opacity-50" />
               </div>
             )}
@@ -279,7 +279,7 @@ export default function CanvasNodeCard({
               <button
                 key={object.id}
                 type="button"
-                className="added-object absolute z-30 flex min-h-7 min-w-10 items-center justify-center gap-1 rounded-lg border border-[#315D42] bg-[#F7F1DE]/95 px-2 text-[10px] font-semibold text-[#173225] shadow-[0_4px_12px_rgba(23,50,37,0.16)] transition hover:bg-white"
+                className="added-object absolute z-30 flex min-h-7 min-w-10 items-center justify-center gap-1 rounded-lg border border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-selection-soft)]/95 px-2 text-[10px] font-semibold text-[var(--canvas-theme-text)] shadow-[0_4px_12px_rgba(23,50,37,0.16)] transition hover:bg-[var(--canvas-theme-surface-panel)]"
                 style={{
                   left: `${object.x}%`,
                   top: `${object.y}%`,
@@ -312,7 +312,7 @@ export default function CanvasNodeCard({
                 }}
                 title={marker.label}
               >
-                <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-white bg-[#315D42] text-white shadow-md">
+                <span className="grid h-7 w-7 place-items-center rounded-full border-2 border-[var(--canvas-theme-handle-bg)] bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)] shadow-md">
                   <MapPin className="h-3.5 w-3.5" aria-hidden />
                 </span>
               </button>
@@ -371,12 +371,12 @@ export default function CanvasNodeCard({
         </div>
 
         <div className="px-1 pb-1 text-left" style={{ marginTop: "10px" }}>
-          <h3 className="truncate font-[var(--font-botanical-display)] text-[17px] leading-tight text-[#102A1F]">
+          <h3 className="truncate font-[var(--font-botanical-display)] text-[17px] leading-tight text-[var(--canvas-theme-text)]">
             {node.title}
           </h3>
           {node.prompt ? (
             <p
-              className="mt-1 line-clamp-1 text-xs leading-snug text-[#6F7B6F]"
+              className="mt-1 line-clamp-1 text-xs leading-snug text-[var(--canvas-theme-text-muted)]"
               title={node.prompt}
             >
               {node.prompt}
@@ -434,8 +434,8 @@ function ImageNodeHandle({
       type="button"
       data-canvas-interactive="true"
       className={[
-        "absolute top-1/2 z-[150] flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-[#827E75] bg-white shadow-sm transition hover:scale-125 hover:border-[#EA7542] hover:ring-2 hover:ring-[#EA7542]/20",
-        active ? "border-[#EA7542] ring-2 ring-[#EA7542]/30" : "",
+        "absolute top-1/2 z-[150] flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-handle-bg)] shadow-sm transition hover:scale-125 hover:border-[var(--canvas-theme-selection-hover)] hover:ring-2 hover:ring-[var(--canvas-theme-selection-ring)]",
+        active ? "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]" : "",
       ].join(" ")}
       style={{
         left: side === "left" ? `${handleOffset}px` : "auto",
@@ -446,7 +446,7 @@ function ImageNodeHandle({
       aria-label={`Start connection from ${side} port`}
       onPointerDown={onPointerDown}
     >
-      <span className="h-1.5 w-1.5 rounded-full bg-[#EA7542]" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--canvas-theme-handle-dot)]" />
     </button>
   );
 }
@@ -468,18 +468,18 @@ function InputPortHandle({
   isNodeActive: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  let borderClass = "border-[#827E75] bg-white";
-  let dotClass = "bg-[#827E75]";
+  let borderClass = "border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-handle-bg)]";
+  let dotClass = "bg-[var(--canvas-theme-handle-dot)]";
 
   if (isPendingReplace) {
-    borderClass = "border-[#F59E0B] bg-[#FFFBEB] ring-2 ring-[#F59E0B]/30";
-    dotClass = "bg-[#D97706]";
+    borderClass = "border-[var(--canvas-theme-warning)] bg-[var(--canvas-theme-warning-soft)] ring-2 ring-[var(--canvas-theme-guide-soft)]";
+    dotClass = "bg-[var(--canvas-theme-warning)]";
   } else if (isHovered) {
-    borderClass = "border-[#3B82F6] bg-white ring-2 ring-[#3B82F6]/20";
-    dotClass = "bg-[#3B82F6]";
+    borderClass = "border-[var(--canvas-theme-connector-hover)] bg-[var(--canvas-theme-handle-bg)] ring-2 ring-[var(--canvas-theme-guide-soft)]";
+    dotClass = "bg-[var(--canvas-theme-connector-hover)]";
   } else if (isConnected) {
-    borderClass = "border-[#3B82F6] bg-[#EFF6FF]";
-    dotClass = "bg-[#3B82F6]";
+    borderClass = "border-[var(--canvas-theme-connector-active)] bg-[var(--canvas-theme-selection-soft)]";
+    dotClass = "bg-[var(--canvas-theme-connector-active)]";
   }
 
   return (
@@ -488,7 +488,7 @@ function InputPortHandle({
         type="button"
         data-canvas-interactive="true"
         className={[
-          "relative flex h-4 w-4 items-center justify-center rounded-full border shadow-sm transition hover:scale-125 hover:border-[#EA7542]",
+          "relative flex h-4 w-4 items-center justify-center rounded-full border shadow-sm transition hover:scale-125 hover:border-[var(--canvas-theme-selection-hover)]",
           borderClass,
         ].join(" ")}
         aria-label={`${port.label}${isConnected ? " (connected)" : " (empty)"}`}
@@ -499,7 +499,7 @@ function InputPortHandle({
       </button>
       <span
         className={[
-          "pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md border border-[#E5E3DC] bg-white px-2 py-0.5 text-[10px] font-semibold text-[#1A1918] shadow-sm transition",
+          "pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-0.5 text-[10px] font-semibold text-[var(--canvas-theme-text)] shadow-sm transition",
           isNodeActive || isHovered || isPendingReplace
             ? "translate-x-0 opacity-100"
             : "-translate-x-1 opacity-0 group-hover/port:translate-x-0 group-hover/port:opacity-100",
@@ -546,14 +546,14 @@ function ReplacePortPopover({
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="flex items-center gap-1 rounded-xl border border-[#F59E0B]/60 bg-[#1C1917] p-1 shadow-xl shadow-black/40">
+      <div className="flex items-center gap-1 rounded-xl border border-[var(--canvas-theme-warning)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-black/40">
         <button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
             onReplace();
           }}
-          className="rounded-lg bg-[#F59E0B] px-2.5 py-1 text-[11px] font-bold text-[#1C1917] transition hover:bg-[#FBBF24]"
+          className="rounded-lg bg-[var(--canvas-theme-warning)] px-2.5 py-1 text-[11px] font-bold text-[var(--canvas-theme-surface-panel)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
         >
           Replace
         </button>
@@ -563,7 +563,7 @@ function ReplacePortPopover({
             event.stopPropagation();
             onCancel();
           }}
-          className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-[#9CA3AF] transition hover:bg-[#374151] hover:text-white"
+          className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
         >
           Cancel
         </button>

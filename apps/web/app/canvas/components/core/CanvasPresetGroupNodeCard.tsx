@@ -182,10 +182,10 @@ function PresetThumb({
       className={[
         "absolute overflow-hidden rounded-xl border-2 shadow-[0_10px_22px_rgba(15,23,42,0.1)] transition cursor-grab active:cursor-grabbing",
         isActive
-          ? "border-[#202833] shadow-[0_0_0_2px_rgba(32,40,51,0.12)]"
+          ? "border-[var(--canvas-theme-selection)] shadow-[0_0_0_2px_var(--canvas-theme-selection-ring)]"
           : "border-transparent hover:border-white/60",
         isHovered ? "scale-105" : "",
-        isSelectedChild ? "border-[#202833]/70" : "",
+        isSelectedChild ? "border-[var(--canvas-theme-selection)]" : "",
       ].join(" ")}
       style={{
         left,
@@ -246,11 +246,11 @@ function PresetThumb({
       />
 
       {/* Drag-to-connect visual hint — subtle right-edge glow on hover */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-1 rounded-r-md bg-[#202833]/0 transition-all group-hover:bg-[#202833]/16" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-1 rounded-r-md bg-[var(--canvas-theme-selection)]/0 transition-all group-hover:bg-[var(--canvas-theme-selection)]/16" />
 
       {/* Active star — bottom-right corner */}
       {isActive ? (
-        <div className="absolute bottom-1 right-1 z-10 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#202833] text-white">
+        <div className="absolute bottom-1 right-1 z-10 grid h-3.5 w-3.5 place-items-center rounded-full bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)]">
           <Star className="h-2 w-2 fill-current" aria-hidden="true" />
         </div>
       ) : null}
@@ -338,7 +338,7 @@ export default function CanvasPresetGroupNodeCard({
     "absolute z-20 flex h-7 w-4 cursor-crosshair items-center justify-center",
     "rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_8px_18px_rgba(15,23,42,0.12)] backdrop-blur-md transition",
     "opacity-0 group-hover:opacity-100",
-    "hover:border-[#202833] hover:bg-[#F5F5F2]",
+    "hover:border-[var(--canvas-theme-selection)] hover:bg-[var(--canvas-theme-hover)]",
   ].join(" ");
 
   return (
@@ -376,7 +376,7 @@ export default function CanvasPresetGroupNodeCard({
           onStartConnection(node.id, "left", event);
         }}
       >
-        <MoveRight className="h-2.5 w-2.5 rotate-180 text-[#94A3B8]" aria-hidden="true" />
+        <MoveRight className="h-2.5 w-2.5 rotate-180 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
       </button>
 
       {/* Right connection handle */}
@@ -391,7 +391,7 @@ export default function CanvasPresetGroupNodeCard({
           onStartConnection(node.id, "right", event);
         }}
       >
-        <MoveRight className="h-2.5 w-2.5 text-[#94A3B8]" aria-hidden="true" />
+        <MoveRight className="h-2.5 w-2.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
       </button>
 
       {/* Gray box — contains thumbnails only */}
@@ -399,10 +399,10 @@ export default function CanvasPresetGroupNodeCard({
         className={[
           "absolute inset-x-0 top-0 overflow-hidden rounded-[18px] border shadow-[0_12px_30px_rgba(15,23,42,0.08)] transition",
           selected
-            ? "border-[#C9CED6] bg-[#ECEEEB] ring-2 ring-[#202833]/12 ring-offset-1"
+            ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-muted)] ring-2 ring-[var(--canvas-theme-selection-ring)] ring-offset-1"
             : isConnectionTarget
-              ? "border-[#C9CED6] bg-[#ECEEEB] ring-2 ring-[#202833]/10"
-              : "border-white/55 bg-[#ECEEEB] hover:bg-[#E4E7E3]",
+              ? "border-[var(--canvas-theme-connector-active)] bg-[var(--canvas-theme-surface-muted)] ring-2 ring-[var(--canvas-theme-guide-soft)]"
+              : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] hover:bg-[var(--canvas-theme-hover)]",
         ].join(" ")}
         style={{ height: boxHeight }}
       >
@@ -452,7 +452,7 @@ export default function CanvasPresetGroupNodeCard({
         className="absolute inset-x-0 flex items-center justify-center"
         style={{ top: boxHeight, height: PRESET_GROUP_TITLE_HEIGHT * objectScale }}
       >
-        <p className="whitespace-nowrap text-center text-[14px] font-semibold leading-tight text-[#2F3742]">
+        <p className="whitespace-nowrap text-center text-[14px] font-semibold leading-tight text-[var(--canvas-theme-text)]">
           {node.title}
         </p>
       </div>
