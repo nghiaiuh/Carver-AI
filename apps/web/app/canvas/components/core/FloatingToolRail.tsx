@@ -85,14 +85,14 @@ function RailButton({
         "focus-visible:outline-none",
         raised ? "z-30" : "",
         disabled
-          ? "cursor-default text-[#BDBDBD]"
+          ? "cursor-default text-[var(--canvas-theme-text-muted)] opacity-50"
           : embeddedState === "selected"
-            ? "cursor-pointer rounded-xl bg-[#EA7542] text-white"
+            ? "cursor-pointer rounded-xl bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)]"
             : embeddedState === "hover"
-              ? "cursor-pointer bg-[#F0F0F0] text-[#3F3F3F]"
+              ? "cursor-pointer bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-text-soft)]"
             : active
-              ? "cursor-pointer bg-[#EA7542] text-white"
-              : "cursor-pointer bg-transparent text-[#4A4A4A]",
+              ? "cursor-pointer bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)]"
+              : "cursor-pointer bg-transparent text-[var(--canvas-theme-icon)]",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -101,12 +101,12 @@ function RailButton({
       {hasSubmenu ? (
         <span
           className={`absolute bottom-2 right-1.5 h-0 w-0 border-b-[5px] border-l-[5px] border-l-transparent ${
-            active ? "border-b-[#FAFAFA]" : embeddedState || hideSubmenuIndicator ? "border-b-transparent" : "border-b-[#171717]"
+            active ? "border-b-[var(--canvas-theme-surface-panel)]" : embeddedState || hideSubmenuIndicator ? "border-b-transparent" : "border-b-[var(--canvas-theme-icon)]"
           }`}
         />
       ) : null}
       {showHint && !hasSubmenu ? (
-        <span className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-30 hidden -translate-y-1/2 whitespace-nowrap rounded-xl border border-[#E8E8E8] bg-[#FAFAFA] px-2 py-1 text-[11px] font-medium text-[#3C3C3C] shadow-[0_4px_12px_rgba(0,0,0,0.08)] group-hover:block">
+        <span className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-30 hidden -translate-y-1/2 whitespace-nowrap rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1 text-[11px] font-medium text-[var(--canvas-theme-text)] shadow-[0_4px_12px_rgba(0,0,0,0.08)] group-hover:block">
           {label}
         </span>
       ) : null}
@@ -135,7 +135,7 @@ function StickerFlyoutButton({
       onClick={onClick}
       onMouseEnter={onHoverStart}
       className={`grid h-[38px] w-[38px] place-items-center rounded-xl transition-colors duration-150 ${
-        selected ? "bg-[#EA7542] text-white" : "bg-transparent text-[#3F3F3F]"
+        selected ? "bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)]" : "bg-transparent text-[var(--canvas-theme-text-soft)]"
       }`}
     >
       <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
@@ -172,13 +172,13 @@ function StickersFlyout({
         open ? "pointer-events-auto translate-x-0 opacity-100" : "pointer-events-none -translate-x-1 opacity-0"
       }`}
     >
-      <div className="relative flex h-[42px] items-center rounded-xl border border-[#DDDDDD] bg-[#FAFAFA] py-0.5 pl-[50px] pr-1 shadow-[0_8px_24px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)]">
+      <div className="relative flex h-[42px] items-center rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] py-0.5 pl-[50px] pr-1 shadow-[0_8px_24px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)]">
         {hovered && tooltipIndex >= 0 ? (
           <div
-            className="pointer-events-none absolute -top-10 z-40 -translate-x-1/2 whitespace-nowrap rounded-xl border border-[#E8E8E8] bg-[#FAFAFA] px-2.5 py-1.5 text-sm font-medium text-[#3A3A3A] shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+            className="pointer-events-none absolute -top-10 z-40 -translate-x-1/2 whitespace-nowrap rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1.5 text-sm font-medium text-[var(--canvas-theme-text)] shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
             style={{ left: `${26 + tooltipIndex * 39}px` }}
           >
-            {hovered.label} <span className="ml-1 text-[#999999]">{hovered.shortcut}</span>
+            {hovered.label} <span className="ml-1 text-[var(--canvas-theme-text-muted)]">{hovered.shortcut}</span>
           </div>
         ) : null}
         {childActions.map((action) => (
@@ -285,12 +285,12 @@ export default function FloatingToolRail({ activeTool, onTool, onAddNode }: Floa
 
   return (
     <div ref={rootRef} className="absolute left-6 top-1/2 z-[90] -translate-y-1/2" data-canvas-ui="true">
-      <div className="flex h-[420px] w-[52px] flex-col gap-y-1 items-center overflow-visible rounded-2xl border border-[#E8E8E8] bg-[#FAFAFA] px-[6px] py-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)]">
+      <div className="flex h-[420px] w-[52px] flex-col gap-y-1 items-center overflow-visible rounded-2xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-[6px] py-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)]">
         <RailButton label="Add" icon={Plus} onClick={onAddNode} />
         <RailButton label="Select" icon={MousePointer2} active={activeTool === "select"} onClick={() => onTool("select")} />
         <RailButton label="Hand" icon={Hand} active={activeTool === "add-source"} onClick={() => onTool("add-source")} />
 
-        <div className="my-1.5 h-px w-[26px] bg-[#ECECEC]" />
+        <div className="my-1.5 h-px w-[26px] bg-[var(--canvas-theme-border)]" />
 
         <RailButton
           label="Cut"
