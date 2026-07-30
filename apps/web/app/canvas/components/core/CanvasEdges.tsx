@@ -12,6 +12,8 @@ import type { CanvasNode, CanvasEdge } from "../../types/canvas";
 import { getVisibleInputPorts } from "../../types/canvas";
 import {
   buildBezierPath,
+  getAggregateHandlePoint,
+  getEdgeConnectionKind,
   getImageHandlePoint,
   getInputPortHandlePoint,
 } from "./canvasConnectionGeometry";
@@ -30,6 +32,7 @@ type CanvasEdgesProps = {
   draftEdge?: {
     sourceId: string;
     sourceHandle?: CanvasEdge["fromHandle"];
+    connectionKind: "text" | "image";
     targetX: number;
     targetY: number;
     snappedPortId?: string | null;
@@ -59,9 +62,14 @@ export default function CanvasEdges({
     if (!node) return null;
 
     const targetEdge = edges.find((edge) => edge.targetId === nodeId && edge.targetPortId === targetPortId);
+    const connectionKind = targetEdge ? getEdgeConnectionKind(targetEdge) : "image";
     if (targetEdge?.targetPresetChildId && isPresetGroupNode(node)) {
       const childAnchor = getPresetChildAnchor(node, targetEdge.targetPresetChildId);
       if (childAnchor) return childAnchor;
+    }
+
+    if (!isPresetGroupNode(node)) {
+      return getAggregateHandlePoint(node, targetEdge?.toHandle ?? (connectionKind === "text" ? "left" : "right"), connectionKind, edges);
     }
 
     const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
@@ -87,7 +95,18 @@ export default function CanvasEdges({
           }
         }
         if (!sourceCenter) {
-          sourceCenter = getSourceAnchor(edge.sourceId, edge.fromHandle ?? "right");
+          const sourceNode = nodes.find((n) => n.id === edge.sourceId);
+          if (sourceNode && !isPresetGroupNode(sourceNode)) {
+            const connectionKind = getEdgeConnectionKind(edge);
+            sourceCenter = getAggregateHandlePoint(
+              sourceNode,
+              edge.fromHandle ?? (connectionKind === "text" ? "left" : "right"),
+              connectionKind,
+              edges,
+            );
+          } else {
+            sourceCenter = getSourceAnchor(edge.sourceId, edge.fromHandle ?? "right");
+          }
         }
         const targetCenter = getTargetPortAnchor(edge.targetId, edge.targetPortId);
         
@@ -95,6 +114,15 @@ export default function CanvasEdges({
 
         const isSelected = selectedEdgeId === edge.id;
         const pathData = buildBezierPath(sourceCenter, targetCenter);
+        const connectionKind = getEdgeConnectionKind(edge);
+        const strokeColor =
+          connectionKind === "text"
+            ? "var(--canvas-theme-connection-text)"
+            : "var(--canvas-theme-connection-image)";
+        const badgeBackground =
+          connectionKind === "text"
+            ? "var(--canvas-theme-connection-text-soft)"
+            : "var(--canvas-theme-connection-image-soft)";
 
         // Calculate midpoint for a compact hover label.
         const midX = (sourceCenter.x + targetCenter.x) / 2;
@@ -114,17 +142,17 @@ export default function CanvasEdges({
             <path
               d={pathData}
               fill="none"
-              stroke={isSelected ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector)"}
-              strokeWidth={isSelected ? "2.2" : "1.5"}
+              stroke={strokeColor}
+              strokeWidth={isSelected ? "2.8" : "2.2"}
               strokeLinecap="round"
-              className="opacity-70 transition-colors group-hover:stroke-[var(--canvas-theme-connector-hover)] group-hover:opacity-100"
+              className="opacity-90 transition-opacity group-hover:opacity-100"
             />
 
             <circle
               cx={targetCenter.x}
               cy={targetCenter.y}
-              r={isSelected ? "4" : "3"}
-              fill={isSelected ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector-hover)"}
+              r={isSelected ? "4.5" : "3.5"}
+              fill={strokeColor}
               className="opacity-90 transition group-hover:scale-125"
             />
 
@@ -132,10 +160,11 @@ export default function CanvasEdges({
             <foreignObject x={midX - 35} y={midY - 12} width="70" height="24">
               <div className={`flex h-full w-full items-center justify-center rounded-full border text-[10px] font-bold uppercase tracking-wider shadow-sm transition ${
                 isSelected 
-                  ? "bg-[var(--canvas-theme-selection-soft)] border-[var(--canvas-theme-connector-active)] text-[var(--canvas-theme-connector-active)] opacity-100"
-                  : "bg-[var(--canvas-theme-surface-panel)] border-[var(--canvas-theme-border)] text-[var(--canvas-theme-text-muted)] opacity-0 group-hover:opacity-100 group-hover:border-[var(--canvas-theme-connector-hover)] group-hover:text-[var(--canvas-theme-connector-hover)]"
-              }`}>
-                {edge.label}
+                  ? "opacity-100"
+                  : "bg-[var(--canvas-theme-surface-panel)] border-[var(--canvas-theme-border)] text-[var(--canvas-theme-text-muted)] opacity-0 group-hover:opacity-100"
+              }`}
+              style={isSelected ? { background: badgeBackground, borderColor: strokeColor, color: strokeColor } : undefined}>
+                {connectionKind}
               </div>
             </foreignObject>
           </g>
@@ -155,7 +184,17 @@ export default function CanvasEdges({
         }
 
         if (!sourceCenter) {
-          sourceCenter = getSourceAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
+          const sourceNode = nodes.find((n) => n.id === draftEdge.sourceId);
+          if (sourceNode && !isPresetGroupNode(sourceNode)) {
+            sourceCenter = getAggregateHandlePoint(
+              sourceNode,
+              draftEdge.sourceHandle ?? (draftEdge.connectionKind === "text" ? "left" : "right"),
+              draftEdge.connectionKind,
+              edges,
+            );
+          } else {
+            sourceCenter = getSourceAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
+          }
         }
 
         if (!sourceCenter) return null;
@@ -172,13 +211,17 @@ export default function CanvasEdges({
 
         const pathData = buildBezierPath(sourceCenter, targetPoint);
         const isSnapped = !!draftEdge.snappedPortId;
+        const strokeColor =
+          draftEdge.connectionKind === "text"
+            ? "var(--canvas-theme-connection-text)"
+            : "var(--canvas-theme-connection-image)";
 
         return (
           <path
             d={pathData}
             fill="none"
-            stroke={isSnapped ? "var(--canvas-theme-connector-active)" : "var(--canvas-theme-connector)"}
-            strokeWidth={isSnapped ? "2.2" : "1.5"}
+            stroke={strokeColor}
+            strokeWidth={isSnapped ? "2.8" : "2.2"}
             strokeDasharray={isSnapped ? "none" : "4 4"}
             className={isSnapped ? "opacity-90" : "opacity-70 animate-pulse"}
           />

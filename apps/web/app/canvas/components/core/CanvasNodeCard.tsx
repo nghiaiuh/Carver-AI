@@ -7,23 +7,25 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type {
   AddedObject,
+  CanvasConnectionKind,
   CanvasEdge,
   CanvasNode,
   EditorTool,
-  InputPort,
   Marker,
   SelectedItem,
   SketchGroup,
   SketchLine,
 } from "../../types/canvas";
-import { getDefaultInputPorts, getVisibleInputPorts } from "../../types/canvas";
-import { Box, Copy, ImagePlus, MapPin, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Box, Copy, Image as ImageIcon, ImagePlus, MapPin, RefreshCw, Sparkles, Trash2, Type } from "lucide-react";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import {
-  INPUT_PORT_GAP,
-  INPUT_PORT_HANDLE_CENTER_OFFSET,
+  AGGREGATE_HANDLE_GAP,
+  AGGREGATE_HANDLE_OFFSET,
+  getAggregateHandleCenterY,
+  getNodeConnectionCountsBySide,
   type ImageHandlePosition,
 } from "./canvasConnectionGeometry";
 
@@ -91,24 +93,6 @@ function getNodeFrameClassName({
   return "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)] shadow-[0_4px_20px_rgba(0,0,0,0.03)]";
 }
 
-function getPortTopOffset({
-  displayHeight,
-  visibleIndex,
-  totalVisible,
-}: {
-  displayHeight: number;
-  visibleIndex: number;
-  totalVisible: number;
-}) {
-  if (totalVisible <= 1) {
-    return displayHeight / 2;
-  }
-
-  const clusterHeight = (totalVisible - 1) * INPUT_PORT_GAP;
-  const startY = displayHeight / 2 - clusterHeight / 2;
-  return startY + visibleIndex * INPUT_PORT_GAP;
-}
-
 function getNodeKindLabel(role: CanvasNode["role"]) {
   if (role === "output") {
     return "Image";
@@ -136,10 +120,13 @@ type CanvasNodeCardProps = {
   selectedSketchLineIds: string[];
   viewportZoom: number;
   isConnectionTarget?: boolean;
-  hoveredPortId?: string | null;
-  pendingReplacePortId?: string | null;
   onSelect: (id: string, event?: React.MouseEvent | React.PointerEvent) => void;
-  onStartConnection: (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onStartConnection: (
+    nodeId: string,
+    handle: ImageHandlePosition,
+    connectionKind: CanvasConnectionKind,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
   onSelectOverlay: (item: SelectedItem) => void;
   onAddSketchLine: (line: SketchLine) => void;
   onSelectSketchLine: (id: string, additive: boolean) => void;
@@ -155,8 +142,6 @@ type CanvasNodeCardProps = {
   onToast: (message: string) => void;
   onSetActiveNode: (id: string) => void;
   onDelete: (id: string) => void;
-  onRequestPortReplace?: (portId: string) => void;
-  onCancelPortReplace?: () => void;
 };
 
 export default function CanvasNodeCard({
@@ -171,8 +156,6 @@ export default function CanvasNodeCard({
   addedObjects,
   viewportZoom,
   isConnectionTarget = false,
-  hoveredPortId,
-  pendingReplacePortId,
   onSelect,
   onStartConnection,
   onSelectOverlay,
@@ -183,12 +166,9 @@ export default function CanvasNodeCard({
   onMultiAngle,
   onAddObject,
   onTool,
-  onRealityCheck,
   onToast,
   onSetActiveNode,
   onDelete,
-  onRequestPortReplace,
-  onCancelPortReplace,
 }: CanvasNodeCardProps) {
   const objectScale = node.scale ?? 1;
   const displayWidth = node.width * objectScale;
@@ -196,9 +176,22 @@ export default function CanvasNodeCard({
   // Asset-backed nodes may restore their runtime URL into sourceImage.url first,
   // so rendering should not depend on imageUrl alone.
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
-  const nodePorts = node.inputPorts || getDefaultInputPorts();
-  const visiblePorts = getVisibleInputPorts(nodePorts, edges, node.id);
-  const connectedPortIds = new Set(edges.filter((edge) => edge.targetId === node.id).map((edge) => edge.targetPortId));
+  const connectionCountsBySide = getNodeConnectionCountsBySide(node.id, edges);
+  const leftHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
+  const rightHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
+
+  if (connectionCountsBySide.left.text > 0) {
+    leftHandles.push({ kind: "text", count: connectionCountsBySide.left.text });
+  }
+  if (connectionCountsBySide.left.image > 0 || selected) {
+    leftHandles.push({ kind: "image", count: connectionCountsBySide.left.image });
+  }
+  if (connectionCountsBySide.right.text > 0) {
+    rightHandles.push({ kind: "text", count: connectionCountsBySide.right.text });
+  }
+  if (connectionCountsBySide.right.image > 0 || selected) {
+    rightHandles.push({ kind: "image", count: connectionCountsBySide.right.image });
+  }
   const nodeFrameClassName = getNodeFrameClassName({
     selected,
     isGenerationTarget,
@@ -319,55 +312,34 @@ export default function CanvasNodeCard({
             ))}
           </div>
 
-          {visiblePorts.map((port, visibleIndex) => {
-            const isConnected = connectedPortIds.has(port.id);
-            const isHovered = hoveredPortId === port.id;
-            const isPendingReplace = pendingReplacePortId === port.id;
-            const isMaxReached = visiblePorts.length === nodePorts.length && !isConnected;
-            const totalVisible = visiblePorts.length;
-            // Keep all visible input ports centered as a vertical cluster so the
-            // node edge does not visually "drift" as ports are added or removed.
-            const topPx = getPortTopOffset({
-              displayHeight,
-              visibleIndex,
-              totalVisible,
-            });
-
-            return (
-              <div
-                key={port.id}
-                className="absolute z-[150]"
-                style={{
-                  left: `${-(INPUT_PORT_HANDLE_CENTER_OFFSET + 16)}px`,
-                  top: `${topPx}px`,
-                  transform: "translateY(-50%)",
-                }}
-              >
-                <InputPortHandle
-                  port={port}
-                  isConnected={isConnected}
-                  isHovered={isHovered}
-                  isPendingReplace={isPendingReplace}
-                  isMaxReached={isMaxReached}
-                  isNodeActive={selected || isConnectionTarget}
-                  onPointerDown={(event) => onStartConnection(node.id, "left", event)}
-                />
-                {isPendingReplace && onRequestPortReplace && onCancelPortReplace ? (
-                  <ReplacePortPopover
-                    viewportZoom={viewportZoom}
-                    onReplace={() => onRequestPortReplace(port.id)}
-                    onCancel={onCancelPortReplace}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-
-          <ImageNodeHandle
-            side="right"
-            active={selected || isConnectionTarget}
-            onPointerDown={(event) => onStartConnection(node.id, "right", event)}
-          />
+          {leftHandles.map((handle, index) => (
+            <ConnectionHandleSlot
+              key={`left-${handle.kind}`}
+              count={handle.count}
+              kind={handle.kind}
+              side="left"
+              selected={selected}
+              isConnectionTarget={isConnectionTarget}
+              displayHeight={displayHeight}
+              visibleIndex={index}
+              totalVisible={leftHandles.length}
+              onPointerDown={(event) => onStartConnection(node.id, "left", handle.kind, event)}
+            />
+          ))}
+          {rightHandles.map((handle, index) => (
+            <ConnectionHandleSlot
+              key={`right-${handle.kind}`}
+              count={handle.count}
+              kind={handle.kind}
+              side="right"
+              selected={selected}
+              isConnectionTarget={isConnectionTarget}
+              displayHeight={displayHeight}
+              visibleIndex={index}
+              totalVisible={rightHandles.length}
+              onPointerDown={(event) => onStartConnection(node.id, "right", handle.kind, event)}
+            />
+          ))}
         </div>
 
         <div className="px-1 pb-1 text-left" style={{ marginTop: "10px" }}>
@@ -418,157 +390,160 @@ export default function CanvasNodeCard({
   );
 }
 
-function ImageNodeHandle({
+function getHandleTopOffset({
+  displayHeight,
+  visibleIndex,
+  totalVisible,
+}: {
+  displayHeight: number;
+  visibleIndex: number;
+  totalVisible: number;
+}) {
+  if (totalVisible <= 1) {
+    return getAggregateHandleCenterY(0, displayHeight);
+  }
+
+  const clusterHeight = (totalVisible - 1) * AGGREGATE_HANDLE_GAP;
+  const startY = getAggregateHandleCenterY(0, displayHeight) - clusterHeight / 2;
+  return startY + visibleIndex * AGGREGATE_HANDLE_GAP;
+}
+
+function getConnectionHandleStyles(kind: CanvasConnectionKind) {
+  if (kind === "text") {
+    return {
+      border: "var(--canvas-theme-connection-text)",
+      background: "var(--canvas-theme-surface-panel)",
+      ring: "var(--canvas-theme-connection-text-soft)",
+      text: "var(--canvas-theme-connection-text)",
+    };
+  }
+
+  return {
+    border: "var(--canvas-theme-connection-image)",
+    background: "var(--canvas-theme-surface-panel)",
+    ring: "var(--canvas-theme-connection-image-soft)",
+    text: "var(--canvas-theme-connection-image)",
+  };
+}
+
+function ConnectionHandleSlot({
+  count,
+  kind,
   side,
+  selected,
+  isConnectionTarget,
+  displayHeight,
+  visibleIndex,
+  totalVisible,
+  onPointerDown,
+}: {
+  count: number;
+  kind: CanvasConnectionKind;
+  side: ImageHandlePosition;
+  selected: boolean;
+  isConnectionTarget: boolean;
+  displayHeight: number;
+  visibleIndex: number;
+  totalVisible: number;
+  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
+}) {
+  const shouldRenderVisibleHandle = count > 0 || (selected && kind === "image");
+  const shouldRenderHiddenLaunchZone = count === 0 && selected && kind === "text";
+  const top = getHandleTopOffset({
+    displayHeight,
+    visibleIndex,
+    totalVisible,
+  });
+
+  if (!shouldRenderVisibleHandle && !shouldRenderHiddenLaunchZone) {
+    return null;
+  }
+
+  return (
+    <div
+      className="absolute z-[150]"
+      style={{
+        width: "32px",
+        height: "32px",
+        top,
+        left: side === "left" ? `${-AGGREGATE_HANDLE_OFFSET}px` : "auto",
+        right: side === "right" ? `${-AGGREGATE_HANDLE_OFFSET}px` : "auto",
+        transform: "translateY(-50%)",
+      }}
+    >
+      {shouldRenderVisibleHandle ? (
+        <AggregateConnectionHandle
+          count={count}
+          kind={kind}
+          selected={selected}
+          active={selected || isConnectionTarget}
+          onPointerDown={onPointerDown}
+        />
+      ) : null}
+      {shouldRenderHiddenLaunchZone ? (
+        <button
+          type="button"
+          data-canvas-interactive="true"
+          aria-label={`Create ${kind} connection`}
+          className="absolute inset-0 h-8 w-8 rounded-full opacity-0"
+          onPointerDown={onPointerDown}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AggregateConnectionHandle({
+  count,
+  kind,
+  selected,
   active,
   onPointerDown,
 }: {
-  side: ImageHandlePosition;
+  count: number;
+  kind: CanvasConnectionKind;
+  selected: boolean;
   active: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  const handleOffset = -6;
+  const styles = getConnectionHandleStyles(kind);
+  const showCount = selected && count >= 2;
+  const Icon = kind === "text" ? Type : ImageIcon;
 
   return (
     <button
       type="button"
       data-canvas-interactive="true"
-      className={[
-        "absolute top-1/2 z-[150] flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-handle-bg)] shadow-sm transition hover:scale-125 hover:border-[var(--canvas-theme-selection-hover)] hover:ring-2 hover:ring-[var(--canvas-theme-selection-ring)]",
-        active ? "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]" : "",
-      ].join(" ")}
+      aria-label={`${kind} connection${count > 1 ? ` (${count})` : ""}`}
+      title={count > 1 ? `${count} ${kind} connections` : `${kind} connection`}
+      className="relative flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition duration-150 hover:scale-[1.04]"
       style={{
-        left: side === "left" ? `${handleOffset}px` : "auto",
-        right: side === "right" ? `${handleOffset}px` : "auto",
-        transform: "translateY(-50%)",
-        transformOrigin: "center",
+        borderColor: styles.border,
+        background: styles.background,
+        boxShadow: active
+          ? `0 0 0 3px ${styles.ring}, 0 8px 18px rgba(15,23,42,0.14)`
+          : "0 8px 18px rgba(15,23,42,0.14)",
       }}
-      aria-label={`Start connection from ${side} port`}
       onPointerDown={onPointerDown}
     >
-      <span className="h-1.5 w-1.5 rounded-full bg-[var(--canvas-theme-handle-dot)]" />
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={showCount ? `count-${count}` : `icon-${kind}`}
+          initial={{ opacity: 0, scale: 0.76, y: 2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.78, y: -2 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+          className="flex h-4.5 w-4.5 items-center justify-center"
+          style={{ color: styles.text }}
+        >
+          {showCount ? (
+            <span className="text-[11px] font-semibold leading-none">{count}</span>
+          ) : (
+            <Icon className="h-[14px] w-[14px]" strokeWidth={1.9} />
+          )}
+        </motion.span>
+      </AnimatePresence>
     </button>
-  );
-}
-
-function InputPortHandle({
-  port,
-  isConnected,
-  isHovered,
-  isPendingReplace,
-  isMaxReached,
-  isNodeActive,
-  onPointerDown,
-}: {
-  port: InputPort;
-  isConnected: boolean;
-  isHovered: boolean;
-  isPendingReplace: boolean;
-  isMaxReached: boolean;
-  isNodeActive: boolean;
-  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
-}) {
-  let borderClass = "border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-handle-bg)]";
-  let dotClass = "bg-[var(--canvas-theme-handle-dot)]";
-
-  if (isPendingReplace) {
-    borderClass = "border-[var(--canvas-theme-warning)] bg-[var(--canvas-theme-warning-soft)] ring-2 ring-[var(--canvas-theme-guide-soft)]";
-    dotClass = "bg-[var(--canvas-theme-warning)]";
-  } else if (isHovered) {
-    borderClass = "border-[var(--canvas-theme-connector-hover)] bg-[var(--canvas-theme-handle-bg)] ring-2 ring-[var(--canvas-theme-guide-soft)]";
-    dotClass = "bg-[var(--canvas-theme-connector-hover)]";
-  } else if (isConnected) {
-    borderClass = "border-[var(--canvas-theme-connector-active)] bg-[var(--canvas-theme-selection-soft)]";
-    dotClass = "bg-[var(--canvas-theme-connector-active)]";
-  }
-
-  return (
-    <div className="group/port relative flex items-center">
-      <button
-        type="button"
-        data-canvas-interactive="true"
-        className={[
-          "relative flex h-4 w-4 items-center justify-center rounded-full border shadow-sm transition hover:scale-125 hover:border-[var(--canvas-theme-selection-hover)]",
-          borderClass,
-        ].join(" ")}
-        aria-label={`${port.label}${isConnected ? " (connected)" : " (empty)"}`}
-        title={isMaxReached ? "Max input ports reached" : port.label}
-        onPointerDown={onPointerDown}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-      </button>
-      <span
-        className={[
-          "pointer-events-none absolute left-full ml-2 whitespace-nowrap rounded-md border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-0.5 text-[10px] font-semibold text-[var(--canvas-theme-text)] shadow-sm transition",
-          isNodeActive || isHovered || isPendingReplace
-            ? "translate-x-0 opacity-100"
-            : "-translate-x-1 opacity-0 group-hover/port:translate-x-0 group-hover/port:opacity-100",
-        ].join(" ")}
-      >
-        {port.label}
-      </span>
-    </div>
-  );
-}
-
-function ReplacePortPopover({
-  viewportZoom,
-  onReplace,
-  onCancel,
-}: {
-  viewportZoom: number;
-  onReplace: () => void;
-  onCancel: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleOutsideClick = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        onCancel();
-      }
-    };
-    window.addEventListener("pointerdown", handleOutsideClick);
-    return () => window.removeEventListener("pointerdown", handleOutsideClick);
-  }, [onCancel]);
-
-  const scale = 1 / viewportZoom;
-
-  return (
-    <div
-      ref={ref}
-      className="absolute z-[200] mt-1"
-      style={{
-        left: "0px",
-        top: "100%",
-        transform: `scale(${scale})`,
-        transformOrigin: "top left",
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <div className="flex items-center gap-1 rounded-xl border border-[var(--canvas-theme-warning)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-black/40">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onReplace();
-          }}
-          className="rounded-lg bg-[var(--canvas-theme-warning)] px-2.5 py-1 text-[11px] font-bold text-[var(--canvas-theme-surface-panel)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
-        >
-          Replace
-        </button>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onCancel();
-          }}
-          className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-[var(--canvas-theme-text-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-text)]"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
   );
 }
 
