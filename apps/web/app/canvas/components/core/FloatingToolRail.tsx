@@ -201,7 +201,13 @@ function isEditableTarget(target: EventTarget | null) {
   return target.isContentEditable || EDITABLE_ELEMENT_TAGS.has(target.tagName);
 }
 
-export default function FloatingToolRail({ activeTool, onTool, onAddNode }: FloatingToolRailProps) {
+export default function FloatingToolRail({
+  activeTool,
+  onTool,
+  onAddNode,
+  onUndo,
+  onRedo,
+}: FloatingToolRailProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [stickersOpen, setStickersOpen] = useState(false);
   const [selectedStickerAction, setSelectedStickerAction] = useState<StickerActionId>("sticky");
@@ -338,8 +344,8 @@ export default function FloatingToolRail({ activeTool, onTool, onAddNode }: Floa
           active={activeTool === "mark-position"}
           onClick={() => onTool("mark-position")}
         />
-        <RailButton label="Undo" icon={Undo2} disabled onClick={() => undefined} />
-        <RailButton label="Redo" icon={Redo2} disabled onClick={() => undefined} />
+        <RailButton label="Undo" icon={Undo2} disabled={!onUndo} onClick={() => onUndo?.()} />
+        <RailButton label="Redo" icon={Redo2} disabled={!onRedo} onClick={() => onRedo?.()} />
 
         <div className="mt-auto" />
         <RailButton

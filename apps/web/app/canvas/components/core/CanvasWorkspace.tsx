@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { gsap, useGSAP } from "../../../components/gsapSetup";
 import { useCanvasWorkspace } from "../../hooks/useCanvasWorkspace";
 import type { PresetGroupCategory } from "../../types/canvas";
@@ -38,7 +38,23 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [isCanvasLocked, setIsCanvasLocked] = useState(false);
   const [activeRecipeModal, setActiveRecipeModal] = useState<SceneRecipeItemId | null>(null);
+  const canvasHistoryActionsRef = useRef<{
+    undo: () => void;
+    redo: () => void;
+  } | null>(null);
   const dismissDraftWarning = actions.dismissDraftWarning;
+  const handleHistoryActionsChange = useCallback((nextActions: {
+    undo: () => void;
+    redo: () => void;
+  } | null) => {
+    canvasHistoryActionsRef.current = nextActions;
+  }, []);
+  const triggerUndo = useCallback(() => {
+    canvasHistoryActionsRef.current?.undo();
+  }, []);
+  const triggerRedo = useCallback(() => {
+    canvasHistoryActionsRef.current?.redo();
+  }, []);
   // GSAP entry animation needs rootRef attached to DOM, so it lives here.
   useGSAP(
     () => {
@@ -197,8 +213,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
         <div className="absolute right-6 top-4 z-[90]">
           <FloatingControlCluster
             creditsAmount={state.creditsAmount}
-            onUndo={() => actions.showToast("Undo (Ctrl+Z)")}
-            onRedo={() => actions.showToast("Redo (Ctrl+Shift+Z)")}
+            onUndo={triggerUndo}
+            onRedo={triggerRedo}
             onShare={() => actions.showToast("Share options opened")}
           />
         </div>
@@ -209,8 +225,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           onTool={actions.handleTool}
           onAddNode={() => setQuickAddOpen(true)}
           onOpenLibrary={() => setActiveRecipeModal("style")}
-          onUndo={() => actions.showToast("Undo action")}
-          onRedo={() => actions.showToast("Redo action")}
+          onUndo={triggerUndo}
+          onRedo={triggerRedo}
         />
 
         {/* Bottom-Left Page Controls */}
@@ -318,6 +334,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onSaveVersion={() => void actions.saveVersion()}
               studioChrome
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
+              onHistoryActionsChange={handleHistoryActionsChange}
             />
 
             <CanvasAssetLibraryModal

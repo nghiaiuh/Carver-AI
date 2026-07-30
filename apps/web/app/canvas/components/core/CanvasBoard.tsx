@@ -162,6 +162,10 @@ type CanvasBoardProps = {
     role?: CanvasNode["role"];
     preserveTitle?: boolean;
   }>;
+  onHistoryActionsChange?: (actions: {
+    undo: () => void;
+    redo: () => void;
+  } | null) => void;
 };
 
 type DeletedNodeSnapshot = {
@@ -468,6 +472,7 @@ export default function CanvasBoard({
   onSaveVersion,
   studioChrome = false,
   onPersistCanvasNodeImageAsset,
+  onHistoryActionsChange,
 }: CanvasBoardProps) {
   const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
@@ -1837,6 +1842,36 @@ export default function CanvasBoard({
     return true;
   }, [createdNodeRedoStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
 
+  const handleUndoAction = useCallback(() => {
+    if (undoPenErase()) {
+      onToast("Erase undone");
+      return;
+    }
+    if (undoDeleteNode()) return;
+    if (undoCreateNode()) return;
+    onToast("Nothing to undo");
+  }, [onToast, undoCreateNode, undoDeleteNode, undoPenErase]);
+
+  const handleRedoAction = useCallback(() => {
+    if (redoPenErase()) {
+      onToast("Erase redone");
+      return;
+    }
+    if (redoCreateNode()) return;
+    onToast("Nothing to redo");
+  }, [onToast, redoCreateNode, redoPenErase]);
+
+  useEffect(() => {
+    onHistoryActionsChange?.({
+      undo: handleUndoAction,
+      redo: handleRedoAction,
+    });
+
+    return () => {
+      onHistoryActionsChange?.(null);
+    };
+  }, [handleRedoAction, handleUndoAction, onHistoryActionsChange]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1867,23 +1902,13 @@ export default function CanvasBoard({
 
       if ((event.ctrlKey || event.metaKey) && ((event.shiftKey && event.key.toLowerCase() === "z") || event.key.toLowerCase() === "y")) {
         event.preventDefault();
-        if (redoPenErase()) {
-          onToast("Erase redone");
-          return;
-        }
-        if (redoCreateNode()) return;
+        handleRedoAction();
         return;
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        if (undoPenErase()) {
-          onToast("Erase undone");
-          return;
-        }
-        if (undoDeleteNode()) return;
-        if (undoCreateNode()) return;
-        onToast("Nothing to undo");
+        handleUndoAction();
         return;
       }
 
@@ -1902,7 +1927,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, handleRedoAction, handleUndoAction, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, selectedItem]);
 
   const zoomIn = () =>
     onViewportZoomChange(
