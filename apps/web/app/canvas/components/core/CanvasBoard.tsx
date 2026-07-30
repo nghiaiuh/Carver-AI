@@ -59,6 +59,15 @@ import {
   getPresetGroupNodeSize,
   isPresetGroupNode,
 } from "../../utils/presetGroupHelpers";
+import {
+  clampCanvasViewportZoom,
+  DEFAULT_CANVAS_VIEWPORT_ZOOM,
+  MAX_CANVAS_VIEWPORT_ZOOM,
+  normalizeCanvasWheelDelta,
+  screenToCanvasWorldPoint,
+  type CanvasViewportState,
+  zoomCanvasViewportAtPoint,
+} from "../../utils/canvasViewport";
 
 type CanvasBoardProps = {
   projectId?: string;
@@ -92,6 +101,7 @@ type CanvasBoardProps = {
   onNodesChange: (nodes: CanvasNode[] | ((prev: CanvasNode[]) => CanvasNode[])) => void;
   onEdgesChange: (edges: CanvasEdge[] | ((prev: CanvasEdge[]) => CanvasEdge[])) => void;
   viewportZoom: number;
+  viewportResetVersion: number;
   onViewportZoomChange: (zoom: number) => void;
   activeGenerationTargetId: string | null;
   activeNodeId: string | null;
@@ -195,10 +205,9 @@ type CanvasClipboardItem = {
   copiedAt: number;
 };
 
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
-const WHEEL_ZOOM_SENSITIVITY = 0.0035;
+const WHEEL_ZOOM_SENSITIVITY = 0.0012;
+const WHEEL_ZOOM_COMMIT_DEBOUNCE_MS = 160;
 const MAX_PASTED_IMAGE_WIDTH = 420;
 const MAX_PASTED_IMAGE_HEIGHT = 320;
 const FALLBACK_PASTED_IMAGE_WIDTH = 240;
@@ -257,28 +266,6 @@ function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLEle
   return getPointerPointInContainer(event, container);
 }
 
-function getNextPanForCursorZoom({
-  cursorX,
-  cursorY,
-  prevPan,
-  prevZoom,
-  nextZoom,
-}: {
-  cursorX: number;
-  cursorY: number;
-  prevPan: Point;
-  prevZoom: number;
-  nextZoom: number;
-}): Point {
-  const worldX = (cursorX - prevPan.x) / prevZoom;
-  const worldY = (cursorY - prevPan.y) / prevZoom;
-
-  return {
-    x: cursorX - worldX * nextZoom,
-    y: cursorY - worldY * nextZoom,
-  };
-}
-
 function getWorldPointFromPointer({
   point,
   pan,
@@ -288,10 +275,10 @@ function getWorldPointFromPointer({
   pan: Point;
   zoom: number;
 }): Point {
-  return {
-    x: (point.x - pan.x) / zoom,
-    y: (point.y - pan.y) / zoom,
-  };
+  return screenToCanvasWorldPoint(point, {
+    pan,
+    zoom,
+  });
 }
 
 function distance(a: Point, b: Point) {
@@ -354,7 +341,7 @@ function getPastedImageNodeSize(dimensions: { width: number; height: number } | 
     return { width: FALLBACK_PASTED_IMAGE_WIDTH, height: FALLBACK_PASTED_IMAGE_HEIGHT };
   }
 
-  const maxViewportScale = MAX_ZOOM * getDevicePixelRatio();
+  const maxViewportScale = MAX_CANVAS_VIEWPORT_ZOOM * getDevicePixelRatio();
   const maxCrispWidthAtWorldScale = dimensions.width / maxViewportScale;
   const maxCrispHeightAtWorldScale = dimensions.height / maxViewportScale;
   const fitScale = Math.min(
@@ -445,6 +432,7 @@ export default function CanvasBoard({
   onNodesChange,
   onEdgesChange,
   viewportZoom,
+  viewportResetVersion,
   onViewportZoomChange,
   activeGenerationTargetId,
   activeNodeId,
@@ -489,15 +477,23 @@ export default function CanvasBoard({
   const importImagesInputRef = useRef<HTMLInputElement>(null);
   const miniMapFrameRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  // Zoom is owned by the workspace so it is captured by autosave snapshots.
-  // Panning remains transient UI state; reopening at the saved zoom is stable
-  // across screen sizes without restoring an unsuitable screen offset.
-  const zoom = clamp(viewportZoom, MIN_ZOOM, MAX_ZOOM);
-  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const committedViewportZoom = clampCanvasViewportZoom(viewportZoom);
+  const [viewport, setViewport] = useState<CanvasViewportState>({
+    pan: { x: 0, y: 0 },
+    zoom: committedViewportZoom,
+  });
+  const [imageRasterZoom, setImageRasterZoom] = useState(committedViewportZoom);
+  const [isWheelZooming, setIsWheelZooming] = useState(false);
+  const viewportRef = useRef<CanvasViewportState>(viewport);
+  const lastCommittedZoomRef = useRef(committedViewportZoom);
+  const lastViewportResetVersionRef = useRef(viewportResetVersion);
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const wheelZoomTimeout = useRef<number | null>(null);
+  const wheelZoomRafRef = useRef<number | null>(null);
+  const pendingWheelDeltaRef = useRef(0);
+  const pendingWheelCursorRef = useRef<Point | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectName, setProjectName] = useState(text.common.untitled);
   const [editingProjectName, setEditingProjectName] = useState(false);
@@ -520,6 +516,17 @@ export default function CanvasBoard({
     currentPoint: null,
     rect: null,
   });
+  const pan = viewport.pan;
+  const zoom = viewport.zoom;
+  const setPan = useCallback((nextPan: Point | ((currentPan: Point) => Point)) => {
+    setViewport((currentViewport) => ({
+      ...currentViewport,
+      pan:
+        typeof nextPan === "function"
+          ? nextPan(currentViewport.pan)
+          : nextPan,
+    }));
+  }, []);
   const selectedNodeIds = useMemo(
     () => marqueeSelectedNodeIds ?? (selectedItem.type === "node" ? [selectedItem.id] : []),
     [marqueeSelectedNodeIds, selectedItem],
@@ -571,6 +578,137 @@ export default function CanvasBoard({
       height: maxY - minY,
     };
   }, [isMultiNodeSelection, selectedNodes]);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
+  const clearWheelZoomRaf = useCallback(() => {
+    if (wheelZoomRafRef.current !== null) {
+      window.cancelAnimationFrame(wheelZoomRafRef.current);
+      wheelZoomRafRef.current = null;
+    }
+  }, []);
+
+  const clearWheelZoomCommit = useCallback(() => {
+    if (wheelZoomTimeout.current !== null) {
+      window.clearTimeout(wheelZoomTimeout.current);
+      wheelZoomTimeout.current = null;
+    }
+  }, []);
+
+  const commitViewportZoom = useCallback(
+    (nextZoom: number) => {
+      const normalizedZoom = clampCanvasViewportZoom(nextZoom);
+      setImageRasterZoom(normalizedZoom);
+      setIsWheelZooming(false);
+
+      if (Math.abs(lastCommittedZoomRef.current - normalizedZoom) < 0.0001) {
+        return;
+      }
+
+      lastCommittedZoomRef.current = normalizedZoom;
+      onViewportZoomChange(normalizedZoom);
+    },
+    [onViewportZoomChange],
+  );
+
+  const scheduleWheelZoomCommit = useCallback(() => {
+    clearWheelZoomCommit();
+    wheelZoomTimeout.current = window.setTimeout(() => {
+      wheelZoomTimeout.current = null;
+      commitViewportZoom(viewportRef.current.zoom);
+    }, WHEEL_ZOOM_COMMIT_DEBOUNCE_MS);
+  }, [clearWheelZoomCommit, commitViewportZoom]);
+
+  const flushPendingWheelZoom = useCallback(() => {
+    wheelZoomRafRef.current = null;
+    const cursor = pendingWheelCursorRef.current;
+    const accumulatedDelta = pendingWheelDeltaRef.current;
+    pendingWheelCursorRef.current = null;
+    pendingWheelDeltaRef.current = 0;
+
+    if (!cursor || Math.abs(accumulatedDelta) < 0.001) {
+      return;
+    }
+
+    setViewport((currentViewport) => {
+      const nextZoom = clampCanvasViewportZoom(
+        currentViewport.zoom * Math.exp(-accumulatedDelta * WHEEL_ZOOM_SENSITIVITY),
+      );
+
+      if (Math.abs(nextZoom - currentViewport.zoom) < 0.0001) {
+        return currentViewport;
+      }
+
+      return zoomCanvasViewportAtPoint(currentViewport, cursor, nextZoom);
+    });
+    setIsWheelZooming(true);
+    scheduleWheelZoomCommit();
+  }, [scheduleWheelZoomCommit]);
+
+  const queueWheelZoomFrame = useCallback(() => {
+    if (wheelZoomRafRef.current !== null) {
+      return;
+    }
+
+    wheelZoomRafRef.current = window.requestAnimationFrame(flushPendingWheelZoom);
+  }, [flushPendingWheelZoom]);
+
+  useEffect(() => {
+    const nextZoom = clampCanvasViewportZoom(viewportZoom);
+    if (Math.abs(viewportRef.current.zoom - nextZoom) < 0.0001) {
+      lastCommittedZoomRef.current = nextZoom;
+      setImageRasterZoom(nextZoom);
+      return;
+    }
+
+    clearWheelZoomRaf();
+    clearWheelZoomCommit();
+    pendingWheelDeltaRef.current = 0;
+    pendingWheelCursorRef.current = null;
+    setIsWheelZooming(false);
+    lastCommittedZoomRef.current = nextZoom;
+    setImageRasterZoom(nextZoom);
+
+    const container = containerRef.current;
+    if (!container) {
+      setViewport((currentViewport) => ({
+        ...currentViewport,
+        zoom: nextZoom,
+      }));
+      return;
+    }
+
+    const viewportCenter = {
+      x: container.clientWidth / 2,
+      y: container.clientHeight / 2,
+    };
+
+    setViewport((currentViewport) =>
+      zoomCanvasViewportAtPoint(currentViewport, viewportCenter, nextZoom),
+    );
+  }, [clearWheelZoomCommit, clearWheelZoomRaf, viewportZoom]);
+
+  useEffect(() => {
+    if (viewportResetVersion === lastViewportResetVersionRef.current) {
+      return;
+    }
+
+    lastViewportResetVersionRef.current = viewportResetVersion;
+    clearWheelZoomRaf();
+    clearWheelZoomCommit();
+    pendingWheelDeltaRef.current = 0;
+    pendingWheelCursorRef.current = null;
+    setIsWheelZooming(false);
+    const nextZoom = clampCanvasViewportZoom(viewportZoom);
+    lastCommittedZoomRef.current = nextZoom;
+    setImageRasterZoom(nextZoom);
+    setViewport({
+      pan: { x: 0, y: 0 },
+      zoom: nextZoom,
+    });
+  }, [clearWheelZoomCommit, clearWheelZoomRaf, viewportResetVersion, viewportZoom]);
 
   // ── Node Dragging State ───────────────────────────────────────────────────
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -994,31 +1132,14 @@ export default function CanvasBoard({
     const container = containerRef.current;
     if (!container) return;
 
-    if (wheelZoomTimeout.current) {
-      window.clearTimeout(wheelZoomTimeout.current);
-    }
-
-    wheelZoomTimeout.current = window.setTimeout(() => {
-      wheelZoomTimeout.current = null;
-    }, 90);
-
-    const cursor = getCursorPointRelativeToContainer(event, container);
-
-    const delta = clamp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY, -ZOOM_STEP, ZOOM_STEP);
-    const nextZoom = clamp(zoom + delta, MIN_ZOOM, MAX_ZOOM);
-    if (nextZoom === zoom) return;
-
-    setPan((currentPan) =>
-      getNextPanForCursorZoom({
-        cursorX: cursor.x,
-        cursorY: cursor.y,
-        prevPan: currentPan,
-        prevZoom: zoom,
-        nextZoom,
-      }),
-    );
-    onViewportZoomChange(nextZoom);
-  }, [isRegionEditing, onViewportZoomChange, zoom]);
+    pendingWheelCursorRef.current = getCursorPointRelativeToContainer(event, container);
+    pendingWheelDeltaRef.current += normalizeCanvasWheelDelta({
+      deltaY: event.deltaY,
+      deltaMode: event.deltaMode,
+      ctrlKey: event.ctrlKey,
+    });
+    queueWheelZoomFrame();
+  }, [isRegionEditing, queueWheelZoomFrame]);
 
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -1348,7 +1469,7 @@ export default function CanvasBoard({
       });
       setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
-  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isRegionEditing, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, updateEraserPreview, zoom]);
+  }, [activeTool, applyEraserAt, draftEdge, draftPenStroke, draggingNodeId, edges, isRegionEditing, isResizingPanel, marqueeSelection, nodes, onNodesChange, pan, setPan, updateEraserPreview, zoom]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent) => {
     if (isRegionEditing) return;
@@ -1571,9 +1692,10 @@ export default function CanvasBoard({
 
   useEffect(() => {
     return () => {
-      if (wheelZoomTimeout.current) window.clearTimeout(wheelZoomTimeout.current);
+      clearWheelZoomCommit();
+      clearWheelZoomRaf();
     };
-  }, []);
+  }, [clearWheelZoomCommit, clearWheelZoomRaf]);
 
   useEffect(() => {
     if (activeTool === "eraser") return;
@@ -1782,11 +1904,17 @@ export default function CanvasBoard({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, redoCreateNode, redoPenErase, selectedItem, undoCreateNode, undoDeleteNode, undoPenErase]);
 
-  const zoomIn = () => onViewportZoomChange(clamp(parseFloat((zoom + ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
-  const zoomOut = () => onViewportZoomChange(clamp(parseFloat((zoom - ZOOM_STEP).toFixed(2)), MIN_ZOOM, MAX_ZOOM));
+  const zoomIn = () =>
+    onViewportZoomChange(
+      clampCanvasViewportZoom(parseFloat((zoom + ZOOM_STEP).toFixed(2))),
+    );
+  const zoomOut = () =>
+    onViewportZoomChange(
+      clampCanvasViewportZoom(parseFloat((zoom - ZOOM_STEP).toFixed(2))),
+    );
   const resetZoom = () => {
     setPan({ x: 0, y: 0 });
-    onViewportZoomChange(1);
+    onViewportZoomChange(DEFAULT_CANVAS_VIEWPORT_ZOOM);
   };
 
   const selectedNodeSummary = useMemo(() => {
@@ -1934,7 +2062,7 @@ export default function CanvasBoard({
         y: start.panY - dy,
       });
     },
-    [],
+    [setPan],
   );
 
   const handleMiniMapPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -2066,6 +2194,7 @@ export default function CanvasBoard({
               sketchGroups={sketchGroups}
               selectedSketchLineIds={selectedSketchLineIds}
               viewportZoom={zoom}
+              imageRasterZoom={isWheelZooming ? imageRasterZoom : zoom}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
                 const groupedNodeIds = getGroupedNodeIds(id);

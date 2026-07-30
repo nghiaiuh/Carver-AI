@@ -425,9 +425,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [viewportZoom, setViewportZoom] = useState(DEFAULT_CANVAS_VIEWPORT_ZOOM);
+  const [viewportResetVersion, setViewportResetVersion] = useState(0);
   const setCanvasViewportZoom = useCallback((value: number) => {
     const nextZoom = normalizeCanvasViewportZoom(value);
     setViewportZoom((currentZoom) => currentZoom === nextZoom ? currentZoom : nextZoom);
+  }, []);
+  const resetCanvasViewport = useCallback(() => {
+    setViewportZoom(DEFAULT_CANVAS_VIEWPORT_ZOOM);
+    setViewportResetVersion((current) => current + 1);
   }, []);
   const [canvasTheme, setCanvasThemeState] = useState<CanvasTheme>(DEFAULT_CANVAS_THEME);
 
@@ -2531,6 +2536,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       nodes,
       edges,
       viewportZoom,
+      viewportResetVersion,
       canvasTheme,
       promptText,
       activeGenerationTargetId,
@@ -2623,6 +2629,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       setNodes,
       setEdges,
       setViewportZoom: setCanvasViewportZoom,
+      resetViewport: resetCanvasViewport,
       setActiveNodeId,
 
       // Prompt

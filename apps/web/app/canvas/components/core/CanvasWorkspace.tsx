@@ -232,7 +232,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
             onZoomOut={() => actions.setViewportZoom(state.viewportZoom - 0.1)}
             onZoomSelect={(zoomPercentage) => actions.setViewportZoom(zoomPercentage / 100)}
             onFitAll={() => actions.setViewportZoom(1)}
-            onResetView={() => actions.setViewportZoom(1)}
+            onResetView={actions.resetViewport}
             onToggleMinimap={actions.toggleMiniMap}
             onGiveFeedback={() => actions.showToast("Feedback dialog opened")}
           />
@@ -282,6 +282,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onNodesChange={actions.setNodes}
               onEdgesChange={actions.setEdges}
               viewportZoom={state.viewportZoom}
+              viewportResetVersion={state.viewportResetVersion}
               onViewportZoomChange={actions.setViewportZoom}
               activeGenerationTargetId={state.activeGenerationTargetId}
               activeNodeId={state.activeNodeId}

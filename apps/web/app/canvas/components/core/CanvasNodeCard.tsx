@@ -119,6 +119,7 @@ type CanvasNodeCardProps = {
   sketchGroups: SketchGroup[];
   selectedSketchLineIds: string[];
   viewportZoom: number;
+  imageRasterZoom?: number;
   isConnectionTarget?: boolean;
   onSelect: (id: string, event?: React.MouseEvent | React.PointerEvent) => void;
   onStartConnection: (
@@ -155,6 +156,7 @@ export default function CanvasNodeCard({
   markers,
   addedObjects,
   viewportZoom,
+  imageRasterZoom = viewportZoom,
   isConnectionTarget = false,
   onSelect,
   onStartConnection,
@@ -259,7 +261,7 @@ export default function CanvasNodeCard({
                 title={node.title}
                 displayWidth={displayWidth}
                 displayHeight={displayHeight}
-                viewportZoom={viewportZoom}
+                viewportZoom={imageRasterZoom}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-[var(--canvas-theme-text-muted)]">
@@ -591,8 +593,8 @@ function AdaptiveImageRenderer({
     const image = imageRef.current;
     if (!canvas || !image || !ready || displayWidth <= 0 || displayHeight <= 0) return;
 
-    // We rasterize into a canvas sized to the current viewport zoom so nodes
-    // stay crisp while users pan and zoom around the workspace.
+    // The board can zoom every frame while the wheel gesture is active, so we
+    // only reraster when the zoom settles instead of on every intermediate tick.
     const rasterScale = Math.max(viewportZoom * getDevicePixelRatio(), DEFAULT_DEVICE_PIXEL_RATIO);
     const rasterWidth = Math.max(1, Math.ceil(displayWidth * rasterScale));
     const rasterHeight = Math.max(1, Math.ceil(displayHeight * rasterScale));
