@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MoveRight, Star, X } from "lucide-react";
-import type { CanvasEdge, CanvasPresetGroupNode, ImageHandlePosition, SelectedItem } from "../../types/canvas";
+import type {
+  CanvasConnectionKind,
+  CanvasEdge,
+  CanvasPresetGroupNode,
+  ImageHandlePosition,
+  SelectedItem,
+} from "../../types/canvas";
 import {
   PRESET_GROUP_TITLE_HEIGHT,
   getPresetChildRects,
@@ -298,7 +304,12 @@ type CanvasPresetGroupNodeCardProps = {
   onRemovePresetChild: (nodeId: string, childId: string) => void;
   onMovePresetChild: (nodeId: string, childId: string, direction: "left" | "right") => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
-  onStartConnection: (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onStartConnection: (
+    nodeId: string,
+    handle: ImageHandlePosition,
+    connectionKind: CanvasConnectionKind,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
   /** Called when user drags from a child thumbnail to start a connection line */
   onStartChildConnection: (nodeId: string, childId: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectContextMenu: (id: string, x: number, y: number) => void;
@@ -373,7 +384,7 @@ export default function CanvasPresetGroupNodeCard({
         style={{ left: -8, top: boxHeight / 2 - 14 }}
         onPointerDown={(event) => {
           event.stopPropagation();
-          onStartConnection(node.id, "left", event);
+          onStartConnection(node.id, "left", "image", event);
         }}
       >
         <MoveRight className="h-2.5 w-2.5 rotate-180 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
@@ -388,7 +399,7 @@ export default function CanvasPresetGroupNodeCard({
         style={{ right: -8, top: boxHeight / 2 - 14 }}
         onPointerDown={(event) => {
           event.stopPropagation();
-          onStartConnection(node.id, "right", event);
+          onStartConnection(node.id, "right", "image", event);
         }}
       >
         <MoveRight className="h-2.5 w-2.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />

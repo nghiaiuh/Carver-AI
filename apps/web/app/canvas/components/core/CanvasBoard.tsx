@@ -22,6 +22,7 @@ import {
 import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type {
   AddedObject,
+  CanvasConnectionKind,
   CanvasEdge,
   MaskData,
   CanvasNode,
@@ -598,6 +599,7 @@ export default function CanvasBoard({
   const [draftEdge, setDraftEdge] = useState<{
     sourceId: string;
     sourceHandle: ImageHandlePosition;
+    connectionKind: CanvasConnectionKind;
     targetX: number;
     targetY: number;
     /** Set when the connection originates from a preset child thumbnail */
@@ -1174,7 +1176,12 @@ export default function CanvasBoard({
   }, [canUngroupSelectedNodes, onNodesChange, onSelect, onToast, selectedNodes]);
 
   const handleConnectionHandlePointerDown = useCallback(
-    (nodeId: string, handle: ImageHandlePosition, event: React.PointerEvent<HTMLButtonElement>) => {
+    (
+      nodeId: string,
+      handle: ImageHandlePosition,
+      connectionKind: CanvasConnectionKind,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
       if (isResizingPanel) return;
       event.preventDefault();
       event.stopPropagation();
@@ -1186,6 +1193,7 @@ export default function CanvasBoard({
       setDraftEdge({
         sourceId: nodeId,
         sourceHandle: handle,
+        connectionKind,
         targetX: startPoint.x,
         targetY: startPoint.y,
       });
@@ -1213,6 +1221,7 @@ export default function CanvasBoard({
       setDraftEdge({
         sourceId: nodeId,
         sourceHandle: "right",
+        connectionKind: "image",
         targetX: anchor.x,
         targetY: anchor.y,
         sourcePresetChildId: childId,
@@ -1456,7 +1465,12 @@ export default function CanvasBoard({
 
         if (targetNode) {
           const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
-          const role = sourceNode ? inferConnectionRoleFromNode(sourceNode) : "generic_reference";
+          const role =
+            draftEdge.connectionKind === "text"
+              ? "generic_reference"
+              : sourceNode
+                ? inferConnectionRoleFromNode(sourceNode)
+                : "generic_reference";
           const sourceIsPresetGroup = sourceNode ? isPresetGroupNode(sourceNode) : false;
 
           const edgeExists = draftEdge.sourcePresetChildId
@@ -1493,11 +1507,15 @@ export default function CanvasBoard({
               id: `edge-${Date.now()}`,
               sourceId: draftEdge.sourceId,
               targetId: targetNode.id,
+              kind: draftEdge.connectionKind,
               targetPortId,
               fromHandle: draftEdge.sourceHandle,
               toHandle: draftEdge.sourceHandle === "right" ? "left" : "right",
               role,
-              label: role.replace("_reference", "").replaceAll("_", " "),
+              label:
+                draftEdge.connectionKind === "text"
+                  ? "prompt"
+                  : role.replace("_reference", "").replaceAll("_", " "),
               createdAt: new Date().toISOString(),
               ...(draftEdge.sourcePresetChildId ? { sourcePresetChildId: draftEdge.sourcePresetChildId } : {}),
             };
