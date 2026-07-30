@@ -2179,7 +2179,7 @@ export default function CanvasBoard({
                 }}
               />
             ))}
-            <div className="pointer-events-none absolute inset-0 border border-[var(--canvas-theme-selection)]" />
+            <div className="pointer-events-none absolute inset-0" />
           </div>
         </div>
       ) : null}
