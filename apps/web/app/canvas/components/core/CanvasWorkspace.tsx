@@ -169,6 +169,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
       ref={rootRef}
       className="relative min-h-screen overflow-hidden bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       style={state.canvasThemeStyle}
+      data-canvas-theme={state.canvasTheme}
     >
       {/* Desktop layout */}
       <div className="hidden h-screen w-screen flex-col overflow-hidden bg-[var(--canvas-theme-surface)] xl:flex">
@@ -225,6 +226,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
         <div className="absolute bottom-6 right-6 z-[90]">
           <FloatingZoomControls
             zoomPercentage={state.viewportZoom * 100}
+            theme={state.canvasTheme}
+            onThemeChange={actions.setCanvasTheme}
             onZoomIn={() => actions.setViewportZoom(state.viewportZoom + 0.1)}
             onZoomOut={() => actions.setViewportZoom(state.viewportZoom - 0.1)}
             onZoomSelect={(zoomPercentage) => actions.setViewportZoom(zoomPercentage / 100)}

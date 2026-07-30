@@ -17,14 +17,19 @@ import {
   type CanvasSnapshotDocument,
   type CarverAiJobRecord,
 } from "@carver/shared";
-import { buildCanvasThemeStyle } from "../components/core/canvasThemeStyle";
+import {
+  buildCanvasThemeStyle,
+  CANVAS_THEME_STORAGE_KEY,
+  DEFAULT_CANVAS_THEME,
+  isCanvasTheme,
+  type CanvasTheme,
+} from "../components/core/canvasThemeStyle";
 import { DEFAULT_CANVAS_LANGUAGE } from "../i18n";
 import { gsap } from "../../components/gsapSetup";
 import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
 import {
   type CanvasPresetChild,
   type CanvasPresetGroupNode,
-  DEFAULT_CANVAS_THEME,
   DEFAULT_PEN_SETTINGS,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
@@ -424,6 +429,24 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const nextZoom = normalizeCanvasViewportZoom(value);
     setViewportZoom((currentZoom) => currentZoom === nextZoom ? currentZoom : nextZoom);
   }, []);
+  const [canvasTheme, setCanvasThemeState] = useState<CanvasTheme>(DEFAULT_CANVAS_THEME);
+
+  // Read browser preference after hydration so this client-only choice never affects SSR markup.
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      const storedTheme = window.localStorage.getItem(CANVAS_THEME_STORAGE_KEY);
+      if (isCanvasTheme(storedTheme)) {
+        setCanvasThemeState(storedTheme);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+
+  const setCanvasTheme = useCallback((theme: CanvasTheme) => {
+    setCanvasThemeState(theme);
+    window.localStorage.setItem(CANVAS_THEME_STORAGE_KEY, theme);
+  }, []);
 
   // ── Generation / AI ─────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
@@ -522,7 +545,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [supabase]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
-  const canvasThemeStyle = buildCanvasThemeStyle(DEFAULT_CANVAS_THEME);
+  const canvasThemeStyle = useMemo(() => buildCanvasThemeStyle(canvasTheme), [canvasTheme]);
   const isResizingPanel = false;
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
   const activeGenerationTarget =
@@ -2508,6 +2531,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       nodes,
       edges,
       viewportZoom,
+      canvasTheme,
       promptText,
       activeGenerationTargetId,
       generationAssistantMessages,
@@ -2557,6 +2581,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Toast
       showToast,
       dismissDraftWarning,
+      setCanvasTheme,
 
       toggleMiniMap: () => setMiniMapOpen((current) => !current),
 
