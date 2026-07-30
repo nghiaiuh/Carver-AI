@@ -250,7 +250,7 @@ export default function FloatingToolRail({
       const toolByKey: Record<string, EditorTool> = {
         v: "select",
         h: "add-source",
-        x: "edit-elements",
+        x: "cut",
         c: "mark-position",
       };
 
@@ -301,9 +301,9 @@ export default function FloatingToolRail({
         <RailButton
           label="Cut"
           icon={Scissors}
-          active={activeTool === "edit-elements"}
+          active={activeTool === "cut"}
           hasSubmenu
-          onClick={() => onTool("edit-elements")}
+          onClick={() => onTool("cut")}
         />
         <div
           className="relative"

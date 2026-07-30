@@ -15,6 +15,7 @@ import {
   Group,
   History,
   Menu,
+  Scissors,
   Sparkles,
   Ungroup,
   Zap,
@@ -239,6 +240,7 @@ const TOOL_LABELS: Record<EditorTool, string> = {
   "add-object": "Object",
   generate: "Generate",
   "edit-elements": "Edit Elements",
+  cut: "Cut connections",
   "move-object": "Move Object",
   region: "Region Edit",
 };
@@ -521,6 +523,7 @@ export default function CanvasBoard({
     currentPoint: null,
     rect: null,
   });
+  const [cutCursorPoint, setCutCursorPoint] = useState<Point | null>(null);
   const pan = viewport.pan;
   const zoom = viewport.zoom;
   const setPan = useCallback((nextPan: Point | ((currentPan: Point) => Point)) => {
@@ -1161,6 +1164,7 @@ export default function CanvasBoard({
       }
 
       if (event.button !== 0) return;
+      if (activeTool === "cut") return;
       if (activeTool === "pen") {
         event.stopPropagation();
         if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
@@ -1361,6 +1365,13 @@ export default function CanvasBoard({
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (isRegionEditing) return;
     if (isResizingPanel) return;
+    if (activeTool === "cut") {
+      const container = containerRef.current;
+      if (container) {
+        setCutCursorPoint(getPointerPointInContainer(event, container));
+      }
+      return;
+    }
     if (isPanning.current && panStart.current) {
       const start = panStart.current;
       const dx = event.clientX - start.x;
@@ -1785,6 +1796,21 @@ export default function CanvasBoard({
     [activeNodeId, edges, nodes, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast],
   );
 
+  const cutConnection = useCallback(
+    (edgeId: string) => {
+      const edge = edges.find((currentEdge) => currentEdge.id === edgeId);
+      if (!edge) return;
+
+      onEdgesChange((currentEdges) => currentEdges.filter((currentEdge) => currentEdge.id !== edgeId));
+      setMarqueeSelectedNodeIds(null);
+      if (selectedItem.type === "edge" && selectedItem.id === edgeId) {
+        onSelect({ type: "none" });
+      }
+      onToast("Connection removed");
+    },
+    [edges, onEdgesChange, onSelect, onToast, selectedItem],
+  );
+
   const undoDeleteNode = useCallback(() => {
     const snapshot = deletedNodeStack.at(-1);
     if (!snapshot) {
@@ -2104,7 +2130,16 @@ export default function CanvasBoard({
     <section
       ref={containerRef}
       className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[var(--canvas-theme-canvas)]"
-      style={{ cursor: isPanningCanvas ? "grabbing" : activeTool === "pen" || marqueeSelection.isSelecting ? "crosshair" : "default" }}
+      style={{
+        cursor:
+          isPanningCanvas
+            ? "grabbing"
+            : activeTool === "cut"
+              ? "none"
+              : activeTool === "pen" || marqueeSelection.isSelecting
+                ? "crosshair"
+                : "default",
+      }}
       onClick={(event) => {
         if (suppressCanvasBackgroundClickRef.current) {
           suppressCanvasBackgroundClickRef.current = false;
@@ -2119,7 +2154,12 @@ export default function CanvasBoard({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onPointerLeave={handlePointerUp}
+      onPointerLeave={(event) => {
+        if (activeTool === "cut") {
+          setCutCursorPoint(null);
+        }
+        handlePointerUp(event);
+      }}
     >
       <CanvasContourOverlay />
       <div
@@ -2162,11 +2202,13 @@ export default function CanvasBoard({
           nodes={nodes}
           edges={edges}
           selectedEdgeId={selectedItem.type === "edge" ? selectedItem.id : null}
+          cutMode={activeTool === "cut"}
           onEdgeClick={(id, e) => {
             e.stopPropagation();
             setMarqueeSelectedNodeIds(null);
             onSelect({ type: "edge", id });
           }}
+          onEdgeCut={cutConnection}
           draftEdge={draftEdge}
         />
 
@@ -2303,6 +2345,20 @@ export default function CanvasBoard({
           />
         ) : null}
       </div>
+
+      {activeTool === "cut" && cutCursorPoint ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute z-[180] text-[var(--canvas-theme-selection)] drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)]"
+          style={{
+            left: cutCursorPoint.x,
+            top: cutCursorPoint.y,
+            transform: "translate(-55%, -55%) rotate(-90deg)",
+          }}
+        >
+          <Scissors className="h-5 w-5" strokeWidth={2} />
+        </div>
+      ) : null}
 
       {isRegionEditing && selectedNode ? (
         <RegionMaskLightbox

@@ -27,7 +27,9 @@ type CanvasEdgesProps = {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   selectedEdgeId: string | null;
+  cutMode?: boolean;
   onEdgeClick: (id: string, e: React.MouseEvent) => void;
+  onEdgeCut?: (id: string) => void;
   // For interactive dragging — includes optional snappedPortId from hit-radius resolution
   draftEdge?: {
     sourceId: string;
@@ -46,7 +48,9 @@ export default function CanvasEdges({
   nodes,
   edges,
   selectedEdgeId,
+  cutMode = false,
   onEdgeClick,
+  onEdgeCut,
   draftEdge,
 }: CanvasEdgesProps) {
   /** Get the output (right-side) anchor for a source node. */
@@ -136,8 +140,17 @@ export default function CanvasEdges({
           <g
             key={edge.id}
             data-canvas-interactive="true"
-            className="group pointer-events-auto cursor-pointer"
-            onClick={(e) => onEdgeClick(edge.id, e)}
+            className={`group pointer-events-auto ${cutMode ? "cursor-none" : "cursor-pointer"}`}
+            onClick={(event) => {
+              if (cutMode) {
+                event.preventDefault();
+                event.stopPropagation();
+                onEdgeCut?.(edge.id);
+                return;
+              }
+
+              onEdgeClick(edge.id, event);
+            }}
           >
             {/* Invisible thick path for easier hovering/clicking */}
             <path

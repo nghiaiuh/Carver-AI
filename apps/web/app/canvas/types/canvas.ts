@@ -35,6 +35,7 @@ export type EditorTool =
   | "add-object"
   | "generate"
   | "edit-elements"
+  | "cut"
   | "move-object"
   | "region";
 
