@@ -332,6 +332,7 @@ function sanitizeGraphEdge(edge: unknown): CanvasEdge | null {
     id,
     sourceId,
     targetId,
+    kind: source?.kind === "text" || source?.kind === "image" ? source.kind : undefined,
     targetPortId,
     targetPresetChildId: nullableStringValue(source?.targetPresetChildId),
     sourcePresetChildId: nullableStringValue(source?.sourcePresetChildId),

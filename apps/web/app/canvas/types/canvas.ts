@@ -20,6 +20,8 @@ export type ImageConnectionRole =
   | "output_result"
   | "generic_reference";
 
+export type CanvasConnectionKind = "text" | "image";
+
 // ── Tool & Selection ──────────────────────────────────────────────────────────
 
 export type EditorTool =
@@ -262,6 +264,7 @@ export type CanvasEdge = {
   id: string;
   sourceId: string;
   targetId: string;
+  kind?: CanvasConnectionKind;
   /** Which input port on the target node this edge connects to. */
   targetPortId: string;
   targetPresetChildId?: string | null;

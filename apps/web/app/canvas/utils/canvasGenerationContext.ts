@@ -282,6 +282,7 @@ export function buildCanvasSnapshotWithGraph(params: {
         id: edge.id,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
+        kind: edge.kind,
         targetPortId: edge.targetPortId,
         targetPresetChildId: edge.targetPresetChildId ?? null,
         sourcePresetChildId: edge.sourcePresetChildId ?? null,

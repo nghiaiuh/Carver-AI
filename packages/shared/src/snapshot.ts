@@ -159,6 +159,7 @@ export type CanvasGraphEdgeSnapshot = {
   id: string;
   sourceId: string;
   targetId: string;
+  kind?: "text" | "image";
   targetPortId: string;
   targetPresetChildId?: string | null;
   sourcePresetChildId?: string | null;
