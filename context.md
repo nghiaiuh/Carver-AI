@@ -228,6 +228,11 @@ Current direction:
 - unsupported job kinds should fail fast instead of silently returning placeholder results
 - BullMQ payloads should stay minimal (`jobId` plus non-sensitive tracing/idempotency metadata).
 - Worker uses service role, so it must load job/user/project/snapshot/output path from DB before calling providers.
+- R2 lifecycle cleanup is worker-owned:
+  - immediate delete attempts run after project/library metadata deletion;
+  - failed or partial writes are rolled back best-effort;
+  - `apps/worker/src/services/r2-orphan-cleanup-service.ts` removes only stale,
+    unreferenced objects in Carver-managed prefixes after its configured TTL.
 - Generate enqueue is idempotent via `ai_jobs.idempotency_key`; duplicate action retries should return the existing job instead of double-charging.
 - Legacy public `/api/generate` is disabled and should not bypass queued `ai-jobs`.
 

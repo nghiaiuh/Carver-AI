@@ -27,6 +27,9 @@ test("graceful shutdown drains active work once and closes resources in order", 
     stopLibrarySyncScheduler: () => {
       calls.push("library.stop");
     },
+    stopR2OrphanCleanupScheduler: () => {
+      calls.push("orphan-cleanup.stop");
+    },
     stopStalledJobReconciliation: () => {
       calls.push("reconciliation.stop");
     },
@@ -47,6 +50,7 @@ test("graceful shutdown drains active work once and closes resources in order", 
   assert.deepEqual(calls, [
     "health.markShuttingDown",
     "library.stop",
+    "orphan-cleanup.stop",
     "reconciliation.stop",
     "worker.pause",
     "events.close",

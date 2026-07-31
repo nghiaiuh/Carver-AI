@@ -17,6 +17,7 @@ export function createGracefulShutdownCoordinator(params: {
   worker: PausableClosable;
   healthServer: Closable & { markShuttingDown: () => void };
   stopLibrarySyncScheduler: () => void;
+  stopR2OrphanCleanupScheduler?: () => void;
   stopStalledJobReconciliation: () => void;
   stopWorkerEvents?: () => Promise<void>;
   timeoutMs: number;
@@ -32,6 +33,7 @@ export function createGracefulShutdownCoordinator(params: {
     shutdownPromise = (async () => {
       params.healthServer.markShuttingDown();
       params.stopLibrarySyncScheduler();
+      params.stopR2OrphanCleanupScheduler?.();
       params.stopStalledJobReconciliation();
 
       let timeout: NodeJS.Timeout | undefined;

@@ -9,6 +9,7 @@ import type { PersistedGeneratedImage } from "@carver/shared";
 import { createGeneratedAsset } from "../repositories/asset-repository";
 import { getSupabaseAdmin } from "@carver/db/server";
 import {
+  deleteR2Objects,
   extensionForMimeType,
   getR2Bucket,
   getR2ObjectBuffer,
@@ -143,23 +144,46 @@ export const persistGeneratedImageAsset = async (params: {
     contentType: params.mimeType,
   });
 
-  const asset = await createGeneratedAsset({
-    assetId,
-    projectId: params.projectId,
-    ownerId: params.ownerId,
-    storageBucket: getR2Bucket(),
-    storagePath,
-    mimeType: params.mimeType,
-    width: params.width,
-    height: params.height,
-    sizeBytes: params.buffer.length,
-    sourceJobId: params.jobId,
-    metadata: {
-      title: params.title,
-      prompt: params.prompt,
-      provider: params.provider,
-    },
-  });
+  let asset: Awaited<ReturnType<typeof createGeneratedAsset>>;
+  try {
+    asset = await createGeneratedAsset({
+      assetId,
+      projectId: params.projectId,
+      ownerId: params.ownerId,
+      storageBucket: getR2Bucket(),
+      storagePath,
+      mimeType: params.mimeType,
+      width: params.width,
+      height: params.height,
+      sizeBytes: params.buffer.length,
+      sourceJobId: params.jobId,
+      metadata: {
+        title: params.title,
+        prompt: params.prompt,
+        provider: params.provider,
+      },
+    });
+  } catch (error) {
+    // The output path is deterministic. Keep it only when a matching asset row
+    // survived from an earlier retry; otherwise avoid leaving an orphan binary.
+    const supabase = getSupabaseAdmin();
+    let persistedAsset: { storage_path: string } | null = null;
+    try {
+      const { data } = await supabase
+        .from("assets")
+        .select("storage_path")
+        .eq("id", assetId)
+        .maybeSingle();
+      persistedAsset = data;
+    } catch {
+      // The scheduled orphan pass handles a storage cleanup miss if the
+      // metadata lookup itself is unavailable.
+    }
+    if (persistedAsset?.storage_path !== storagePath) {
+      await deleteR2Objects([storagePath]).catch(() => undefined);
+    }
+    throw error;
+  }
 
   const generatedImage: PersistedGeneratedImage = {
     id: asset.id ?? assetId,
