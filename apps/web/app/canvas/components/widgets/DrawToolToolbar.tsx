@@ -23,7 +23,7 @@ type DrawToolToolbarProps = {
 type Flyout = "shapes" | "colors" | "width" | null;
 type InstrumentKind = "pencil" | "eraser";
 
-const COLORS = ["#FFFFFF", "#F04444", "#FF7417", "#F4B900", "#25C66A", "#3B82F6", "#8757E8", "#E84393", "#8B95A7"];
+const COLORS = ["#111111", "#FFFFFF", "#F04444", "#FF7417", "#F4B900", "#25C66A", "#3B82F6", "#8757E8", "#E84393", "#8B95A7"];
 const SHAPES: Array<{ id: PenGeometryShape; label: string; icon: typeof Square }> = [
   { id: "rectangle", label: "Rectangle", icon: Square },
   { id: "square", label: "Square", icon: Square },
@@ -93,12 +93,14 @@ function LiftToolButton({
   kind,
   raised,
   selected,
+  graphiteColor,
   onHoverChange,
   onClick,
 }: {
   kind: InstrumentKind;
   raised: boolean;
   selected: boolean;
+  graphiteColor: string;
   onHoverChange: (kind: InstrumentKind | null) => void;
   onClick: () => void;
 }) {
@@ -126,7 +128,7 @@ function LiftToolButton({
         )}
       >
         {kind === "pencil" ? (
-          <PencilIcon className="block h-auto w-5 shrink-0" />
+          <PencilIcon className="block h-auto w-5 shrink-0" graphiteColor={graphiteColor} />
         ) : (
           <EraserIcon className="block h-auto w-5 shrink-0" />
         )}
@@ -195,6 +197,7 @@ export default function DrawToolToolbar({ activeTool, penSettings, onTool, onPen
                   kind={kind}
                   selected={selected}
                   raised={raised}
+                  graphiteColor={penSettings.color}
                   onHoverChange={setHoveredInstrument}
                   onClick={() => selectInstrument(kind)}
                 />

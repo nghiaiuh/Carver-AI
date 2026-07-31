@@ -1,9 +1,24 @@
 import { useId, type SVGProps } from "react";
 
 type DrawInstrumentIconProps = SVGProps<SVGSVGElement>;
+type PencilIconProps = DrawInstrumentIconProps & {
+  graphiteColor?: string;
+};
+
+function withAlpha(hexOrColor: string, alpha: string) {
+  if (/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(hexOrColor)) {
+    const normalized =
+      hexOrColor.length === 4
+        ? `#${hexOrColor[1]}${hexOrColor[1]}${hexOrColor[2]}${hexOrColor[2]}${hexOrColor[3]}${hexOrColor[3]}`
+        : hexOrColor;
+    return `${normalized}${alpha}`;
+  }
+
+  return hexOrColor;
+}
 
 /** A self-contained vertical pencil so each toolbar instance keeps isolated SVG defs. */
-export function PencilIcon({ className, ...props }: DrawInstrumentIconProps) {
+export function PencilIcon({ className, graphiteColor = "#0C1426", ...props }: PencilIconProps) {
   const prefix = `pencil-${useId().replace(/:/g, "")}`;
   const barrelBottom = 380;
   const collarTop = 365;
@@ -20,9 +35,9 @@ export function PencilIcon({ className, ...props }: DrawInstrumentIconProps) {
     >
       <defs>
         <linearGradient id={`${prefix}-graphite`} x1="35" y1="0" x2="66" y2="34" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#0C1426" />
-          <stop offset="0.5" stopColor="#536178" />
-          <stop offset="1" stopColor="#10182E" />
+          <stop stopColor={withAlpha(graphiteColor, "FF")} />
+          <stop offset="0.5" stopColor={withAlpha(graphiteColor, "B8")} />
+          <stop offset="1" stopColor={withAlpha(graphiteColor, "D9")} />
         </linearGradient>
         <linearGradient id={`${prefix}-wood`} x1="50" y1="34" x2="50" y2="113" gradientUnits="userSpaceOnUse">
           <stop stopColor="#F5D2AF" />
