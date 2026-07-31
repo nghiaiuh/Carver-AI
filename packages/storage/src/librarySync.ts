@@ -406,18 +406,26 @@ export async function syncLibraryFromBucket(params: {
 
       const contentType =
         mimeType === "image/webp" ? "image/webp" : targetFormat === "png" ? "image/png" : "image/jpeg";
-      await Promise.all([
-        uploadR2Object({
-          key: thumbStoragePath,
-          body: thumbBuffer,
-          contentType,
-        }),
-        uploadR2Object({
-          key: previewStoragePath,
-          body: previewBuffer,
-          contentType,
-        }),
-      ]);
+      const generatedVariantKeys = [thumbStoragePath, previewStoragePath];
+      try {
+        await Promise.all([
+          uploadR2Object({
+            key: thumbStoragePath,
+            body: thumbBuffer,
+            contentType,
+          }),
+          uploadR2Object({
+            key: previewStoragePath,
+            body: previewBuffer,
+            contentType,
+          }),
+        ]);
+      } catch (error) {
+        // A partial Promise.all upload must not leave an unreferenced derived
+        // variant behind when the sibling write fails.
+        await deleteR2Objects(generatedVariantKeys).catch(() => undefined);
+        throw error;
+      }
 
       const { data, error } = await supabase
         .from("library_assets")
@@ -455,7 +463,7 @@ export async function syncLibraryFromBucket(params: {
         .single();
 
       if (error || !data) {
-        await deleteR2Objects([thumbStoragePath, previewStoragePath]);
+        await deleteR2Objects(generatedVariantKeys).catch(() => undefined);
         throw new Error(error?.message || "Unable to save synced library asset.");
       }
 

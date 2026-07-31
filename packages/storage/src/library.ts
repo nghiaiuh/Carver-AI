@@ -281,6 +281,10 @@ const encodeImage = async (
 const getFileExtension = (format: "png" | "jpeg") => (format === "png" ? "png" : "jpg");
 const MAX_IMAGE_DIMENSION = 8000;
 
+async function removeLibraryObjectsBestEffort(keys: string[]) {
+  await deleteR2Objects(keys).catch(() => undefined);
+}
+
 export const listLibrary = async (ownerId: string) => {
   const supabase = getSupabaseAdmin();
 
@@ -363,23 +367,31 @@ export const uploadLibraryAssets = async (params: {
     const previewStoragePath = createR2ObjectKey([...baseParts, "preview"], `${safeFileName}.${extension}`);
 
     const contentType = targetFormat === "png" ? "image/png" : "image/jpeg";
-    await Promise.all([
-      uploadR2Object({
-        key: originalStoragePath,
-        body: originalBuffer,
-        contentType,
-      }),
-      uploadR2Object({
-        key: thumbStoragePath,
-        body: thumbBuffer,
-        contentType,
-      }),
-      uploadR2Object({
-        key: previewStoragePath,
-        body: previewBuffer,
-        contentType,
-      }),
-    ]);
+    const uploadedKeys = [originalStoragePath, thumbStoragePath, previewStoragePath];
+    try {
+      await Promise.all([
+        uploadR2Object({
+          key: originalStoragePath,
+          body: originalBuffer,
+          contentType,
+        }),
+        uploadR2Object({
+          key: thumbStoragePath,
+          body: thumbBuffer,
+          contentType,
+        }),
+        uploadR2Object({
+          key: previewStoragePath,
+          body: previewBuffer,
+          contentType,
+        }),
+      ]);
+    } catch (error) {
+      // A Promise.all failure may still leave sibling variant uploads in R2.
+      // Every key is new and unique, so it is safe to roll all of them back.
+      await removeLibraryObjectsBestEffort(uploadedKeys);
+      throw error;
+    }
 
     const title =
       params.title?.trim() ||
@@ -421,7 +433,7 @@ export const uploadLibraryAssets = async (params: {
       .single();
 
     if (error || !data) {
-      await deleteR2Objects([thumbStoragePath, previewStoragePath, originalStoragePath]);
+      await removeLibraryObjectsBestEffort(uploadedKeys);
       throw new Error(error?.message || "Unable to save library asset.");
     }
 

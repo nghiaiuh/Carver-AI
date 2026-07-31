@@ -106,19 +106,37 @@ export async function uploadR2Object(params: {
 }
 
 export async function deleteR2Objects(keys: string[]) {
-  if (keys.length === 0) return;
+  const uniqueKeys = [...new Set(keys.filter((key) => key.trim().length > 0))];
+  if (uniqueKeys.length === 0) return;
 
   const env = getR2Env();
   const client = getR2Client();
-  const input: DeleteObjectsCommandInput = {
-    Bucket: env.bucket,
-    Delete: {
-      Objects: keys.map((Key) => ({ Key })),
-      Quiet: true,
-    },
-  };
 
-  await client.send(new DeleteObjectsCommand(input));
+  // S3-compatible DeleteObjects accepts at most 1,000 keys. R2 can also
+  // return per-key failures without rejecting the SDK request, so inspect the
+  // response instead of reporting a false cleanup success.
+  for (let start = 0; start < uniqueKeys.length; start += 1_000) {
+    const batch = uniqueKeys.slice(start, start + 1_000);
+    const input: DeleteObjectsCommandInput = {
+      Bucket: env.bucket,
+      Delete: {
+        Objects: batch.map((Key) => ({ Key })),
+        Quiet: true,
+      },
+    };
+
+    const response = await client.send(new DeleteObjectsCommand(input));
+    if ((response.Errors?.length ?? 0) > 0) {
+      const codes = [...new Set(
+        response.Errors
+          ?.map((error) => error.Code)
+          .filter((code): code is string => Boolean(code)),
+      )];
+      throw new Error(
+        `R2 could not delete ${response.Errors?.length ?? 0} object(s)${codes.length > 0 ? ` (${codes.join(", ")})` : ""}.`,
+      );
+    }
+  }
 }
 
 export type R2ObjectSummary = {
