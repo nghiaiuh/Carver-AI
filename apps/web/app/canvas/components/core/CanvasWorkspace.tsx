@@ -17,7 +17,7 @@ import type { LibraryAsset } from "../../types/library";
 import AddObjectMenu from "../panels/AddObjectMenu";
 import CanvasBoard from "./CanvasBoard";
 import CanvasAssetLibraryModal from "./CanvasAssetLibraryModal";
-import SceneRecipeBar, { type SceneRecipeItemId } from "./SceneRecipeBar";
+import type { SceneRecipeItemId } from "../../types/sceneRecipe";
 import FloatingProjectNav from "./FloatingProjectNav";
 import FloatingControlCluster from "./FloatingControlCluster";
 import FloatingToolRail from "./FloatingToolRail";
@@ -29,7 +29,6 @@ import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
 import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
-import { isPresetGroupNode } from "../../utils/presetGroupHelpers";
 
 export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const canvas = useCanvasWorkspace({ projectId });
@@ -92,17 +91,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   ]);
 
   const projectName = state.nodes[0]?.title || "Living Landscape Studio";
-  const siteLabel = state.activeGenerationTarget?.title || state.nodes[0]?.title || "Select site";
-  const recipeCounts = useMemo(() => {
-    const groups = state.nodes.filter(isPresetGroupNode);
-    return {
-      style: groups.filter((node) => node.presetGroup.category === "garden-styles" || node.presetGroup.category === "environment").length,
-      plants: groups.filter((node) => node.presetGroup.category === "plants" || node.presetGroup.category === "planting-zones").length,
-      materials: groups.filter((node) => node.presetGroup.category === "material" || node.presetGroup.category === "rocks-terrain").length,
-      objects: groups.filter((node) => node.presetGroup.category === "decor" || node.presetGroup.category === "hardscape").length,
-    };
-  }, [state.nodes]);
-
   const addLibraryAssetsFromRecipe = (assets: LibraryAsset[]) => {
     if (assets.length === 0) return;
 
@@ -268,8 +256,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           <div className="relative min-w-0 flex-1 overflow-hidden">
             <CanvasBoard
               projectId={projectId}
-              language={state.language}
-              onLanguageChange={actions.setLanguage}
               selectedItem={state.selectedItem}
               activeTool={state.activeTool}
               markers={state.markers}
@@ -331,8 +317,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onBrushSizeChange={actions.setBrushSize}
               onBrushSoftnessChange={actions.setBrushSoftness}
               onCloseRegionEditor={actions.exitRegionMode}
-              onSaveVersion={() => void actions.saveVersion()}
-              studioChrome
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
               onHistoryActionsChange={handleHistoryActionsChange}
             />

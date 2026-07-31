@@ -3,7 +3,7 @@
 import { Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LibraryAsset, LibraryFolder } from "../../types/library";
-import type { SceneRecipeItemId } from "./SceneRecipeBar";
+import type { SceneRecipeItemId } from "../../types/sceneRecipe";
 
 type CanvasAssetLibraryModalProps = {
   open: boolean;

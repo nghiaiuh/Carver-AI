@@ -5,17 +5,20 @@ import {
   Hand,
   MessageSquare,
   MousePointer2,
-  PenTool,
   Plus,
   Redo2,
-  Scissors,
   Settings,
-  Smile,
-  Square,
   Undo2,
   type LucideIcon,
 } from "lucide-react";
 import type { EditorTool } from "../../types/canvas";
+import {
+  CANVAS_TOOL_SHORTCUTS,
+  CONNECTION_TOOL_ACTIONS,
+  STICKER_TOOL_ACTIONS,
+  type ConnectionActionId,
+  type StickerActionId,
+} from "../../interactions/toolRegistry";
 
 type FloatingToolRailProps = {
   activeTool: EditorTool;
@@ -40,21 +43,8 @@ type RailButtonProps = {
   onClick: () => void;
 };
 
-type StickerActionId = "sticky" | "draw" | "reaction";
-
-type StickerAction = {
-  id: StickerActionId;
-  label: string;
-  shortcut: string;
-  icon: LucideIcon;
-  tool: EditorTool;
-};
-
-const STICKER_ACTIONS: readonly StickerAction[] = [
-  { id: "sticky", label: "Sticky note", shortcut: "T", icon: Square, tool: "text-note" },
-  { id: "draw", label: "Draw", shortcut: "P", icon: PenTool, tool: "pen" },
-  { id: "reaction", label: "Stickers", shortcut: "S", icon: Smile, tool: "mark-position" },
-];
+const STICKER_ACTIONS = STICKER_TOOL_ACTIONS;
+const CONNECTION_ACTIONS = CONNECTION_TOOL_ACTIONS;
 
 const EDITABLE_ELEMENT_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
@@ -196,6 +186,52 @@ function StickersFlyout({
   );
 }
 
+function ConnectionFlyout({
+  open,
+  selectedAction,
+  hoveredAction,
+  activeTool,
+  onHoverAction,
+  onAction,
+}: {
+  open: boolean;
+  selectedAction: ConnectionActionId;
+  hoveredAction: ConnectionActionId | null;
+  activeTool: EditorTool;
+  onHoverAction: (action: ConnectionActionId) => void;
+  onAction: (action: ConnectionActionId) => void;
+}) {
+  const hovered = CONNECTION_ACTIONS.find((action) => action.id === hoveredAction);
+  const childActions = CONNECTION_ACTIONS.slice(1);
+
+  return (
+    <div
+      aria-hidden={!open}
+      className={`absolute -left-[6px] top-1/2 z-20 -translate-y-1/2 transition-[opacity,transform] duration-150 ease-out ${
+        open ? "pointer-events-auto translate-x-0 opacity-100" : "pointer-events-none -translate-x-1 opacity-0"
+      }`}
+    >
+      <div className="relative flex h-[42px] items-center rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] py-0.5 pl-[50px] pr-1 shadow-[0_8px_24px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)]">
+        {hovered ? (
+          <div className="pointer-events-none absolute -top-10 z-40 whitespace-nowrap rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1.5 text-sm font-medium text-[var(--canvas-theme-text)] shadow-[0_4px_12px_rgba(0,0,0,0.08)]" style={{ left: "44px" }}>
+            {hovered.label} <span className="ml-1 text-[var(--canvas-theme-text-muted)]">{hovered.shortcut}</span>
+          </div>
+        ) : null}
+        {childActions.map((action) => (
+          <StickerFlyoutButton
+            key={action.id}
+            label={action.label}
+            icon={action.icon}
+            selected={selectedAction === action.id && activeTool === action.tool}
+            onHoverStart={() => onHoverAction(action.id)}
+            onClick={() => onAction(action.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || EDITABLE_ELEMENT_TAGS.has(target.tagName);
@@ -214,6 +250,10 @@ export default function FloatingToolRail({
   const [representedStickerAction, setRepresentedStickerAction] = useState<StickerActionId>("sticky");
   const [hoveredStickerAction, setHoveredStickerAction] = useState<StickerActionId | null>(null);
   const [hasExplicitStickerSelection, setHasExplicitStickerSelection] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [selectedConnectionAction, setSelectedConnectionAction] = useState<ConnectionActionId>("cut");
+  const [representedConnectionAction, setRepresentedConnectionAction] = useState<ConnectionActionId>("cut");
+  const [hoveredConnectionAction, setHoveredConnectionAction] = useState<ConnectionActionId | null>(null);
 
   const closeStickers = useCallback(() => {
     if (hasExplicitStickerSelection) {
@@ -230,10 +270,23 @@ export default function FloatingToolRail({
     onTool(nextAction.tool);
   }, [onTool]);
 
+  const closeConnection = useCallback(() => {
+    setConnectionOpen(false);
+    setHoveredConnectionAction(null);
+    setRepresentedConnectionAction(selectedConnectionAction);
+  }, [selectedConnectionAction]);
+
+  const selectConnectionAction = useCallback((action: ConnectionActionId) => {
+    setSelectedConnectionAction(action);
+    const nextAction = CONNECTION_ACTIONS.find((item) => item.id === action) ?? CONNECTION_ACTIONS[0];
+    onTool(nextAction.tool);
+  }, [onTool]);
+
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         closeStickers();
+        closeConnection();
       }
     };
 
@@ -243,17 +296,11 @@ export default function FloatingToolRail({
 
       if (event.key === "Escape") {
         closeStickers();
+        closeConnection();
         return;
       }
 
       const key = event.key.toLowerCase();
-      const toolByKey: Record<string, EditorTool> = {
-        v: "select",
-        h: "add-source",
-        x: "cut",
-        c: "mark-position",
-      };
-
       if (key === "s") {
         event.preventDefault();
         selectStickerAction("sticky");
@@ -262,11 +309,12 @@ export default function FloatingToolRail({
         return;
       }
 
-      const tool = toolByKey[key];
+      const tool = CANVAS_TOOL_SHORTCUTS[key];
       if (tool) {
         event.preventDefault();
         onTool(tool);
         closeStickers();
+        closeConnection();
       }
     };
 
@@ -276,11 +324,14 @@ export default function FloatingToolRail({
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [closeStickers, onTool, selectStickerAction]);
+  }, [closeConnection, closeStickers, onTool, selectStickerAction]);
 
   const representativeAction =
     STICKER_ACTIONS.find((action) => action.id === representedStickerAction) ?? STICKER_ACTIONS[0];
   const stickyAction = STICKER_ACTIONS[0];
+  const representedConnectionActionDefinition =
+    CONNECTION_ACTIONS.find((action) => action.id === representedConnectionAction) ?? CONNECTION_ACTIONS[0];
+  const cutAction = CONNECTION_ACTIONS[0];
   const embeddedStickerState = stickersOpen
     ? hasExplicitStickerSelection &&
       selectedStickerAction === stickyAction.id &&
@@ -298,13 +349,35 @@ export default function FloatingToolRail({
 
         <div className="my-1.5 h-px w-[26px] bg-[var(--canvas-theme-border)]" />
 
-        <RailButton
-          label="Cut"
-          icon={Scissors}
-          active={activeTool === "cut"}
-          hasSubmenu
-          onClick={() => onTool("cut")}
-        />
+        <div
+          className="relative"
+          onMouseEnter={() => setConnectionOpen(true)}
+          onMouseLeave={closeConnection}
+        >
+          <RailButton
+            label={connectionOpen ? cutAction.label : representedConnectionActionDefinition.label}
+            icon={connectionOpen ? cutAction.icon : representedConnectionActionDefinition.icon}
+            active={!connectionOpen && activeTool === representedConnectionActionDefinition.tool}
+            hasSubmenu
+            embeddedState={connectionOpen ? "hover" : undefined}
+            raised={connectionOpen}
+            hideSubmenuIndicator={connectionOpen}
+            showHint={!connectionOpen}
+            onHoverStart={() => setHoveredConnectionAction(cutAction.id)}
+            onClick={() => {
+              selectConnectionAction(connectionOpen ? cutAction.id : representedConnectionActionDefinition.id);
+              setConnectionOpen(true);
+            }}
+          />
+          <ConnectionFlyout
+            open={connectionOpen}
+            selectedAction={selectedConnectionAction}
+            hoveredAction={hoveredConnectionAction}
+            activeTool={activeTool}
+            onHoverAction={setHoveredConnectionAction}
+            onAction={selectConnectionAction}
+          />
+        </div>
         <div
           className="relative"
           onMouseEnter={() => setStickersOpen(true)}

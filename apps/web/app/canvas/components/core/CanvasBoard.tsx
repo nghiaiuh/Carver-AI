@@ -8,19 +8,15 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   Download,
   Group,
-  History,
-  Menu,
+  Link2,
   Scissors,
-  Sparkles,
   Ungroup,
   Zap,
 } from "lucide-react";
-import { getCanvasText, type CanvasLanguage } from "../../i18n";
 import type {
   AddedObject,
   CanvasConnectionKind,
@@ -62,18 +58,31 @@ import {
 } from "../../utils/presetGroupHelpers";
 import {
   clampCanvasViewportZoom,
-  DEFAULT_CANVAS_VIEWPORT_ZOOM,
-  MAX_CANVAS_VIEWPORT_ZOOM,
   normalizeCanvasWheelDelta,
-  screenToCanvasWorldPoint,
   type CanvasViewportState,
   zoomCanvasViewportAtPoint,
 } from "../../utils/canvasViewport";
+import {
+  canvasPointDistance as distance,
+  canvasRectsIntersect as doRectsIntersect,
+  clampCanvasValue as clamp,
+  createCanvasSelectionRect as createRectFromPoints,
+  getCanvasNodeDisplayBounds as getNodeDisplayBounds,
+  getCanvasPointerPoint as getPointerPointInContainer,
+  getCanvasWorldPoint as getWorldPointFromPointer,
+  type CanvasPoint as Point,
+  type CanvasSelectionRect as SelectionRect,
+} from "../../utils/canvasBoardGeometry";
+import {
+  cloneCanvasNodeForPaste,
+  extractCanvasImageUrlFromClipboard as extractImageUrlFromClipboardData,
+  getClipboardImageBlob,
+  getPastedCanvasImageSize as getPastedImageNodeSize,
+  loadCanvasImageDimensions as loadImageDimensions,
+} from "../../utils/canvasClipboard";
 
 type CanvasBoardProps = {
   projectId?: string;
-  language: CanvasLanguage;
-  onLanguageChange: (language: CanvasLanguage) => void;
   selectedItem: SelectedItem;
   activeTool: EditorTool;
   markers: Marker[];
@@ -145,8 +154,6 @@ type CanvasBoardProps = {
   onBrushSizeChange: (value: number) => void;
   onBrushSoftnessChange: (value: number) => void;
   onCloseRegionEditor: () => void;
-  onSaveVersion: () => void;
-  studioChrome?: boolean;
   onPersistCanvasNodeImageAsset: (params: {
     blob: Blob;
     title: string;
@@ -174,16 +181,8 @@ type DeletedNodeSnapshot = {
   edges: CanvasEdge[];
 };
 
-type Point = {
-  x: number;
-  y: number;
-};
-
-type SelectionRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+type CreatedEdgeSnapshot = {
+  edge: CanvasEdge;
 };
 
 type MarqueeSelectionState = {
@@ -210,14 +209,8 @@ type CanvasClipboardItem = {
   copiedAt: number;
 };
 
-const ZOOM_STEP = 0.1;
 const WHEEL_ZOOM_SENSITIVITY = 0.0012;
 const WHEEL_ZOOM_COMMIT_DEBOUNCE_MS = 160;
-const MAX_PASTED_IMAGE_WIDTH = 420;
-const MAX_PASTED_IMAGE_HEIGHT = 320;
-const FALLBACK_PASTED_IMAGE_WIDTH = 240;
-const FALLBACK_PASTED_IMAGE_HEIGHT = 180;
-const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 const MINIMAP_WORLD_PADDING = 48;
 const MINIMAP_DRAG_SPEED = 0.8;
 const MARQUEE_SELECTION_THRESHOLD = 5;
@@ -229,79 +222,8 @@ const ERASER_MAX_SIZE = 60;
 const ERASER_SPEED_SCALE = 0.17;
 const ERASER_SIZE_SMOOTHING = 0.22;
 
-const TOOL_LABELS: Record<EditorTool, string> = {
-  select: "Select",
-  pen: "Sketch Pen",
-  eraser: "Erase Notes",
-  "mark-position": "Marker",
-  "add-source": "Add Source",
-  grid: "Grid",
-  "text-note": "Text Note",
-  "add-object": "Object",
-  generate: "Generate",
-  "edit-elements": "Edit Elements",
-  cut: "Cut connections",
-  "move-object": "Move Object",
-  region: "Region Edit",
-};
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function getNodeDisplayBounds(node: CanvasNode) {
-  const scale = node.scale ?? 1;
-  return {
-    x: node.x,
-    y: node.y,
-    width: node.width * scale,
-    height: node.height * scale,
-  };
-}
-
-function getPointerPointInContainer(event: PointerEvent | React.PointerEvent | WheelEvent, container: HTMLElement): Point {
-  const rect = container.getBoundingClientRect();
-
-  return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
-  };
-}
-
 function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLElement): Point {
   return getPointerPointInContainer(event, container);
-}
-
-function getWorldPointFromPointer({
-  point,
-  pan,
-  zoom,
-}: {
-  point: Point;
-  pan: Point;
-  zoom: number;
-}): Point {
-  return screenToCanvasWorldPoint(point, {
-    pan,
-    zoom,
-  });
-}
-
-function distance(a: Point, b: Point) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function createRectFromPoints(a: Point, b: Point): SelectionRect {
-  return {
-    x: Math.min(a.x, b.x),
-    y: Math.min(a.y, b.y),
-    width: Math.abs(a.x - b.x),
-    height: Math.abs(a.y - b.y),
-  };
-}
-
-function doRectsIntersect(a: SelectionRect, b: SelectionRect): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
 function isCanvasInteractiveTarget(target: EventTarget | null): boolean {
@@ -324,92 +246,23 @@ function isCanvasInteractiveTarget(target: EventTarget | null): boolean {
   );
 }
 
+function isCanvasUiTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+
+  return Boolean(
+    target.closest(
+      "[data-canvas-ui],button,input,textarea,select,[contenteditable='true'],[role='menu']",
+    ),
+  );
+}
+
 function isTextEditingTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("textarea,input,[contenteditable='true']"));
 }
 
-function loadImageDimensions(imageUrl: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const image = new window.Image();
-    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = () => resolve(null);
-    image.src = imageUrl;
-  });
-}
-
-function getDevicePixelRatio() {
-  if (typeof window === "undefined") return DEFAULT_DEVICE_PIXEL_RATIO;
-  return Math.max(window.devicePixelRatio || DEFAULT_DEVICE_PIXEL_RATIO, DEFAULT_DEVICE_PIXEL_RATIO);
-}
-
-function getPastedImageNodeSize(dimensions: { width: number; height: number } | null) {
-  if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
-    return { width: FALLBACK_PASTED_IMAGE_WIDTH, height: FALLBACK_PASTED_IMAGE_HEIGHT };
-  }
-
-  const maxViewportScale = MAX_CANVAS_VIEWPORT_ZOOM * getDevicePixelRatio();
-  const maxCrispWidthAtWorldScale = dimensions.width / maxViewportScale;
-  const maxCrispHeightAtWorldScale = dimensions.height / maxViewportScale;
-  const fitScale = Math.min(
-    MAX_PASTED_IMAGE_WIDTH / maxCrispWidthAtWorldScale,
-    MAX_PASTED_IMAGE_HEIGHT / maxCrispHeightAtWorldScale,
-    1,
-  );
-
-  return {
-    width: Math.max(1, Math.round(maxCrispWidthAtWorldScale * fitScale)),
-    height: Math.max(1, Math.round(maxCrispHeightAtWorldScale * fitScale)),
-  };
-}
-
-function cloneCanvasNodeForPaste(node: CanvasNode, existingNodeCount: number): CanvasNode {
-  const nextId = `node-${Date.now()}-${existingNodeCount}`;
-  const copy = structuredClone(node) as CanvasNode;
-
-  return {
-    ...copy,
-    id: nextId,
-    x: copy.x + 36,
-    y: copy.y + 36,
-    title: copy.title.endsWith(" Copy") ? copy.title : `${copy.title} Copy`,
-    createdAt: new Date().toISOString(),
-    inputPorts: copy.inputPorts?.map((port) => ({ ...port })) ?? getDefaultInputPorts(),
-  };
-}
-
-function getClipboardImageBlob(data: DataTransfer | null) {
-  const items = data?.items;
-  if (!items) return null;
-
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].type.startsWith("image/")) {
-      return items[i].getAsFile();
-    }
-  }
-
-  return null;
-}
-
-function extractImageUrlFromClipboardData(data: DataTransfer | null) {
-  if (!data) return null;
-
-  const uriList = data.getData("text/uri-list").trim();
-  if (uriList) return uriList.split(/\r?\n/).find((line) => line && !line.startsWith("#")) ?? null;
-
-  const html = data.getData("text/html");
-  const srcMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-  if (srcMatch?.[1]) return srcMatch[1];
-
-  const text = data.getData("text/plain").trim();
-  if (/^https?:\/\//i.test(text) || text.startsWith("/api/assets/")) return text;
-
-  return null;
-}
 
 export default function CanvasBoard({
   projectId,
-  language,
-  onLanguageChange,
   selectedItem,
   activeTool,
   markers,
@@ -471,19 +324,12 @@ export default function CanvasBoard({
   onBrushSizeChange,
   onBrushSoftnessChange,
   onCloseRegionEditor,
-  onSaveVersion,
-  studioChrome = false,
   onPersistCanvasNodeImageAsset,
   onHistoryActionsChange,
 }: CanvasBoardProps) {
-  const text = getCanvasText(language);
   const containerRef = useRef<HTMLElement>(null);
   const worldLayerRef = useRef<HTMLDivElement>(null);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
-  const projectNameInputRef = useRef<HTMLInputElement>(null);
-  const importImagesInputRef = useRef<HTMLInputElement>(null);
   const miniMapFrameRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
   const committedViewportZoom = clampCanvasViewportZoom(viewportZoom);
   const [viewport, setViewport] = useState<CanvasViewportState>({
     pan: { x: 0, y: 0 },
@@ -501,13 +347,11 @@ export default function CanvasBoard({
   const wheelZoomRafRef = useRef<number | null>(null);
   const pendingWheelDeltaRef = useRef(0);
   const pendingWheelCursorRef = useRef<Point | null>(null);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [projectName, setProjectName] = useState(text.common.untitled);
-  const [editingProjectName, setEditingProjectName] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState(text.common.untitled);
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
   const [createdNodeStack, setCreatedNodeStack] = useState<CanvasNode[]>([]);
   const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<DeletedNodeSnapshot[]>([]);
+  const [createdEdgeStack, setCreatedEdgeStack] = useState<CreatedEdgeSnapshot[]>([]);
+  const [createdEdgeRedoStack, setCreatedEdgeRedoStack] = useState<CreatedEdgeSnapshot[]>([]);
   const canvasClipboardRef = useRef<CanvasClipboardItem | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
@@ -524,6 +368,7 @@ export default function CanvasBoard({
     rect: null,
   });
   const [cutCursorPoint, setCutCursorPoint] = useState<Point | null>(null);
+  const [connectionCursorPoint, setConnectionCursorPoint] = useState<Point | null>(null);
   const pan = viewport.pan;
   const zoom = viewport.zoom;
   const setPan = useCallback((nextPan: Point | ((currentPan: Point) => Point)) => {
@@ -1240,6 +1085,21 @@ export default function CanvasBoard({
     if (isResizingPanel) return;
     const node = nodes.find(n => n.id === id);
     if (!node) return;
+    if (activeTool === "connection") {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startPoint = getImageHandlePoint(node, "right");
+      setDraftEdge({
+        sourceId: id,
+        sourceHandle: "right",
+        connectionKind: "image",
+        targetX: startPoint.x,
+        targetY: startPoint.y,
+      });
+      setHoveredConnectionTargetId(null);
+      return;
+    }
     const groupedNodeIds = getGroupedNodeIds(id);
     const dragNodeIds =
       groupedNodeIds.length > 1
@@ -1371,6 +1231,16 @@ export default function CanvasBoard({
         setCutCursorPoint(getPointerPointInContainer(event, container));
       }
       return;
+    }
+    if (activeTool === "connection") {
+      const container = containerRef.current;
+      if (container) {
+        setConnectionCursorPoint(
+          isCanvasUiTarget(event.target)
+            ? null
+            : getPointerPointInContainer(event, container),
+        );
+      }
     }
     if (isPanning.current && panStart.current) {
       const start = panStart.current;
@@ -1657,6 +1527,8 @@ export default function CanvasBoard({
               ...(draftEdge.sourcePresetChildId ? { sourcePresetChildId: draftEdge.sourcePresetChildId } : {}),
             };
             onEdgesChange(prev => [...prev, newEdge]);
+            setCreatedEdgeStack((current) => [...current, { edge: newEdge }]);
+            setCreatedEdgeRedoStack([]);
             setMarqueeSelectedNodeIds(null);
             onSelect({ type: "edge", id: newEdge.id });
             onToast("Connection created");
@@ -1719,62 +1591,6 @@ export default function CanvasBoard({
     lastEraserMotionRef.current = null;
     clearEraserSession();
   }, [activeTool, clearEraserSession]);
-
-  useEffect(() => {
-    if (!projectMenuOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!projectMenuRef.current) return;
-      if (!projectMenuRef.current.contains(event.target as Node)) {
-        setProjectMenuOpen(false);
-      }
-    };
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [projectMenuOpen]);
-
-  useEffect(() => {
-    if (!editingProjectName) return;
-    projectNameInputRef.current?.focus();
-    projectNameInputRef.current?.select();
-  }, [editingProjectName]);
-
-  const startEditingProjectName = () => {
-    setProjectNameDraft(projectName);
-    setEditingProjectName(true);
-    setProjectMenuOpen(false);
-  };
-
-  const commitProjectName = () => {
-    const next = projectNameDraft.trim();
-    if (next) setProjectName(next);
-    setEditingProjectName(false);
-  };
-
-  const cancelProjectName = () => {
-    setProjectNameDraft(projectName);
-    setEditingProjectName(false);
-  };
-
-  const handleMenuSelect = (item: MenuItem) => {
-    setProjectMenuOpen(false);
-    item.onSelect?.();
-  };
-
-  const importImages = (files: FileList | null) => {
-    if (!files?.length) return;
-    Array.from(files)
-      .filter((file) => file.type.startsWith("image/"))
-      .forEach((file) => {
-        void addLocalImageNode(file, file.name, {
-          mimeType: file.type,
-          name: file.name,
-          sizeBytes: file.size,
-        }).catch((error) => {
-          onToast(error instanceof Error ? error.message : "Unable to import image.");
-        });
-      });
-    if (importImagesInputRef.current) importImagesInputRef.current.value = "";
-  };
 
   const deleteNode = useCallback(
     (nodeId: string) => {
@@ -1847,6 +1663,32 @@ export default function CanvasBoard({
     return true;
   }, [createdNodeStack, edges, onEdgesChange, onNodesChange, onSelect, onToast]);
 
+  const undoCreateEdge = useCallback(() => {
+    const latestAction = createdEdgeStack.at(-1);
+    if (!latestAction) return false;
+
+    setCreatedEdgeStack((current) => current.slice(0, -1));
+    setCreatedEdgeRedoStack((current) => [...current, latestAction]);
+    onEdgesChange((current) => current.filter((edge) => edge.id !== latestAction.edge.id));
+    onSelect({ type: "none" });
+    onToast("Connection undone");
+    return true;
+  }, [createdEdgeStack, onEdgesChange, onSelect, onToast]);
+
+  const redoCreateEdge = useCallback(() => {
+    const latestAction = createdEdgeRedoStack.at(-1);
+    if (!latestAction) return false;
+
+    setCreatedEdgeRedoStack((current) => current.slice(0, -1));
+    setCreatedEdgeStack((current) => [...current, latestAction]);
+    onEdgesChange((current) =>
+      current.some((edge) => edge.id === latestAction.edge.id) ? current : [...current, latestAction.edge],
+    );
+    onSelect({ type: "edge", id: latestAction.edge.id });
+    onToast("Connection restored");
+    return true;
+  }, [createdEdgeRedoStack, onEdgesChange, onSelect, onToast]);
+
   const redoCreateNode = useCallback(() => {
     const snapshot = createdNodeRedoStack.at(-1);
     if (!snapshot) {
@@ -1869,6 +1711,7 @@ export default function CanvasBoard({
   }, [createdNodeRedoStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
 
   const handleUndoAction = useCallback(() => {
+    if (undoCreateEdge()) return;
     if (undoPenErase()) {
       onToast("Erase undone");
       return;
@@ -1876,16 +1719,17 @@ export default function CanvasBoard({
     if (undoDeleteNode()) return;
     if (undoCreateNode()) return;
     onToast("Nothing to undo");
-  }, [onToast, undoCreateNode, undoDeleteNode, undoPenErase]);
+  }, [onToast, undoCreateEdge, undoCreateNode, undoDeleteNode, undoPenErase]);
 
   const handleRedoAction = useCallback(() => {
+    if (redoCreateEdge()) return;
     if (redoPenErase()) {
       onToast("Erase redone");
       return;
     }
     if (redoCreateNode()) return;
     onToast("Nothing to redo");
-  }, [onToast, redoCreateNode, redoPenErase]);
+  }, [onToast, redoCreateEdge, redoCreateNode, redoPenErase]);
 
   useEffect(() => {
     onHistoryActionsChange?.({
@@ -1915,6 +1759,14 @@ export default function CanvasBoard({
         return;
       }
 
+      if (event.key === "Escape" && activeTool === "connection" && draftEdge) {
+        event.preventDefault();
+        setDraftEdge(null);
+        setHoveredConnectionTargetId(null);
+        onToast("Connection cancelled");
+        return;
+      }
+
       if (event.key === "Escape" && activeTool === "eraser" && eraserPreview.visible) {
         event.preventDefault();
         setEraserPreview((current) => ({ ...current, visible: false }));
@@ -1938,6 +1790,18 @@ export default function CanvasBoard({
         return;
       }
 
+      if (
+        event.key.toLowerCase() === "l" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        containerRef.current?.contains(document.activeElement)
+      ) {
+        event.preventDefault();
+        onTool("connection");
+        return;
+      }
+
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       event.preventDefault();
       if (selectedItem.type === "node") {
@@ -1953,42 +1817,8 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftPenStroke, eraserPreview.visible, handleRedoAction, handleUndoAction, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, selectedItem]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftEdge, draftPenStroke, eraserPreview.visible, handleRedoAction, handleUndoAction, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, onTool, selectedItem]);
 
-  const zoomIn = () =>
-    onViewportZoomChange(
-      clampCanvasViewportZoom(parseFloat((zoom + ZOOM_STEP).toFixed(2))),
-    );
-  const zoomOut = () =>
-    onViewportZoomChange(
-      clampCanvasViewportZoom(parseFloat((zoom - ZOOM_STEP).toFixed(2))),
-    );
-  const resetZoom = () => {
-    setPan({ x: 0, y: 0 });
-    onViewportZoomChange(DEFAULT_CANVAS_VIEWPORT_ZOOM);
-  };
-
-  const selectedNodeSummary = useMemo(() => {
-    if (selectedItem.type === "node" || selectedItem.type === "image") {
-      const node = nodes.find((item) => item.id === selectedItem.id);
-      return node ? `${node.title} selected` : "No image selected";
-    }
-
-    if (selectedNodeIds.length > 1) return `${selectedNodeIds.length} images selected`;
-    if (selectedItem.type === "edge") return "Reference connection selected";
-    if (selectedItem.type === "marker") return "Instruction marker selected";
-    if (selectedItem.type === "object") return "Canvas object selected";
-    if (selectedItem.type === "pen-stroke") return "Sketch annotation selected";
-    if (selectedItem.type === "sketchGroup") return "Grouped sketch selected";
-    if (selectedItem.type === "sketchLine") return "Sketch line selected";
-
-    return "Ready to compose";
-  }, [nodes, selectedItem, selectedNodeIds.length]);
-
-  const sourceNodeCount = useMemo(
-    () => nodes.filter((node) => node.role !== "output").length,
-    [nodes],
-  );
   const snapshotStatusText = useMemo(() => {
     if (!projectId) {
       return "Local canvas";
@@ -2129,12 +1959,13 @@ export default function CanvasBoard({
   return (
     <section
       ref={containerRef}
-      className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[var(--canvas-theme-canvas)]"
+      tabIndex={0}
+      className="relative isolate h-full flex-1 touch-none select-none overflow-hidden bg-[var(--canvas-theme-canvas)] outline-none"
       style={{
         cursor:
           isPanningCanvas
             ? "grabbing"
-            : activeTool === "cut"
+            : activeTool === "cut" || (activeTool === "connection" && connectionCursorPoint)
               ? "none"
               : activeTool === "pen" || marqueeSelection.isSelecting
                 ? "crosshair"
@@ -2150,6 +1981,11 @@ export default function CanvasBoard({
         setMarqueeSelectedNodeIds(null);
         onSelect({ type: "none" });
       }}
+      onPointerDownCapture={(event) => {
+        if (!isTextEditingTarget(event.target)) {
+          event.currentTarget.focus({ preventScroll: true });
+        }
+      }}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -2157,6 +1993,9 @@ export default function CanvasBoard({
       onPointerLeave={(event) => {
         if (activeTool === "cut") {
           setCutCursorPoint(null);
+        }
+        if (activeTool === "connection") {
+          setConnectionCursorPoint(null);
         }
         handlePointerUp(event);
       }}
@@ -2357,6 +2196,20 @@ export default function CanvasBoard({
           }}
         >
           <Scissors className="h-5 w-5" strokeWidth={2} />
+        </div>
+      ) : null}
+
+      {activeTool === "connection" && connectionCursorPoint ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute z-[180] grid h-8 w-8 place-items-center rounded-full bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)] shadow-[0_4px_12px_rgba(0,0,0,0.18)]"
+          style={{
+            left: connectionCursorPoint.x,
+            top: connectionCursorPoint.y,
+            transform: "translate(-50%, -50%)",
+          }}
+        >
+          <Link2 className="h-4 w-4" strokeWidth={2} />
         </div>
       ) : null}
 
