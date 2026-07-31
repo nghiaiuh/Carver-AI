@@ -62,6 +62,7 @@ import {
   type CanvasViewportState,
   zoomCanvasViewportAtPoint,
 } from "../../utils/canvasViewport";
+import { buildPenGeometryPoints, hasMinimumPenGeometrySize } from "../../utils/penGeometry";
 import {
   canvasPointDistance as distance,
   canvasRectsIntersect as doRectsIntersect,
@@ -216,6 +217,7 @@ const MINIMAP_DRAG_SPEED = 0.8;
 const MARQUEE_SELECTION_THRESHOLD = 5;
 const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
 const MIN_POINT_DISTANCE = 1.5;
+const MIN_GEOMETRY_SIZE = 4;
 const ERASER_BASE_SIZE = 18;
 const ERASER_MIN_SIZE = 12;
 const ERASER_MAX_SIZE = 60;
@@ -585,6 +587,8 @@ export default function CanvasBoard({
   });
   const [penEraseUndoStack, setPenEraseUndoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
   const [penEraseRedoStack, setPenEraseRedoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
+  const [createdPenStrokeStack, setCreatedPenStrokeStack] = useState<PenStrokeObject[]>([]);
+  const [createdPenStrokeRedoStack, setCreatedPenStrokeRedoStack] = useState<PenStrokeObject[]>([]);
 
   // -- Edge Creation State
   const [draftEdge, setDraftEdge] = useState<{
@@ -1029,10 +1033,15 @@ export default function CanvasBoard({
         setDraftPenStroke({
           id: `pen-stroke-${Date.now()}`,
           type: "pen-stroke",
-          points: [startPoint],
+          points:
+            penSettings.drawingMode === "geometry"
+              ? buildPenGeometryPoints(penSettings.geometryShape, startPoint, startPoint)
+              : [startPoint],
           color: penSettings.color,
           opacity: penSettings.opacity,
           strokeWidth: penSettings.strokeWidth,
+          drawingMode: penSettings.drawingMode,
+          geometryShape: penSettings.geometryShape,
           createdAt: new Date().toISOString(),
         });
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -1077,7 +1086,7 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isRegionEditing, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
+    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isRegionEditing, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.drawingMode, penSettings.geometryShape, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
@@ -1264,6 +1273,17 @@ export default function CanvasBoard({
       setDraftPenStroke((currentStroke) => {
         if (!currentStroke) return currentStroke;
 
+        if (currentStroke.drawingMode === "geometry") {
+          return {
+            ...currentStroke,
+            points: buildPenGeometryPoints(
+              currentStroke.geometryShape ?? "rectangle",
+              currentStroke.points[0],
+              currentPoint,
+            ),
+          };
+        }
+
         const lastPoint = currentStroke.points[currentStroke.points.length - 1];
         if (distance(lastPoint, currentPoint) < MIN_POINT_DISTANCE) {
           return currentStroke;
@@ -1363,14 +1383,26 @@ export default function CanvasBoard({
     if (activeTool === "pen" && penPointerId.current === event.pointerId) {
       event.stopPropagation();
       if (draftPenStroke && draftPenStroke.points.length > 0) {
-        onAddPenStroke(
-          draftPenStroke.points.length === 1
-            ? {
-              ...draftPenStroke,
-              points: [...draftPenStroke.points, draftPenStroke.points[0]],
-            }
-            : draftPenStroke,
-        );
+        const completedStroke =
+          draftPenStroke.drawingMode === "geometry"
+            ? draftPenStroke
+            : draftPenStroke.points.length === 1
+              ? {
+                  ...draftPenStroke,
+                  points: [...draftPenStroke.points, draftPenStroke.points[0]],
+                }
+              : draftPenStroke;
+
+        if (
+          completedStroke.drawingMode !== "geometry" ||
+          hasMinimumPenGeometrySize(completedStroke.points, MIN_GEOMETRY_SIZE)
+        ) {
+          onAddPenStroke(completedStroke);
+          setCreatedPenStrokeStack((current) => [...current, completedStroke]);
+          setCreatedPenStrokeRedoStack([]);
+        } else {
+          onToast("Draw a larger shape");
+        }
       }
 
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -1675,6 +1707,18 @@ export default function CanvasBoard({
     return true;
   }, [createdEdgeStack, onEdgesChange, onSelect, onToast]);
 
+  const undoCreatePenStroke = useCallback(() => {
+    const stroke = createdPenStrokeStack.at(-1);
+    if (!stroke) return false;
+
+    setCreatedPenStrokeStack((current) => current.slice(0, -1));
+    setCreatedPenStrokeRedoStack((current) => [...current, stroke]);
+    onReplacePenStrokes(penStrokes.filter((item) => item.id !== stroke.id));
+    onSelect({ type: "none" });
+    onToast("Drawing undone");
+    return true;
+  }, [createdPenStrokeStack, onReplacePenStrokes, onSelect, onToast, penStrokes]);
+
   const redoCreateEdge = useCallback(() => {
     const latestAction = createdEdgeRedoStack.at(-1);
     if (!latestAction) return false;
@@ -1688,6 +1732,20 @@ export default function CanvasBoard({
     onToast("Connection restored");
     return true;
   }, [createdEdgeRedoStack, onEdgesChange, onSelect, onToast]);
+
+  const redoCreatePenStroke = useCallback(() => {
+    const stroke = createdPenStrokeRedoStack.at(-1);
+    if (!stroke) return false;
+
+    setCreatedPenStrokeRedoStack((current) => current.slice(0, -1));
+    setCreatedPenStrokeStack((current) => [...current, stroke]);
+    onReplacePenStrokes(
+      penStrokes.some((item) => item.id === stroke.id) ? penStrokes : [...penStrokes, stroke],
+    );
+    onSelect({ type: "pen-stroke", id: stroke.id });
+    onToast("Drawing restored");
+    return true;
+  }, [createdPenStrokeRedoStack, onReplacePenStrokes, onSelect, onToast, penStrokes]);
 
   const redoCreateNode = useCallback(() => {
     const snapshot = createdNodeRedoStack.at(-1);
@@ -1712,6 +1770,7 @@ export default function CanvasBoard({
 
   const handleUndoAction = useCallback(() => {
     if (undoCreateEdge()) return;
+    if (undoCreatePenStroke()) return;
     if (undoPenErase()) {
       onToast("Erase undone");
       return;
@@ -1719,17 +1778,18 @@ export default function CanvasBoard({
     if (undoDeleteNode()) return;
     if (undoCreateNode()) return;
     onToast("Nothing to undo");
-  }, [onToast, undoCreateEdge, undoCreateNode, undoDeleteNode, undoPenErase]);
+  }, [onToast, undoCreateEdge, undoCreateNode, undoCreatePenStroke, undoDeleteNode, undoPenErase]);
 
   const handleRedoAction = useCallback(() => {
     if (redoCreateEdge()) return;
+    if (redoCreatePenStroke()) return;
     if (redoPenErase()) {
       onToast("Erase redone");
       return;
     }
     if (redoCreateNode()) return;
     onToast("Nothing to redo");
-  }, [onToast, redoCreateEdge, redoCreateNode, redoPenErase]);
+  }, [onToast, redoCreateEdge, redoCreateNode, redoCreatePenStroke, redoPenErase]);
 
   useEffect(() => {
     onHistoryActionsChange?.({

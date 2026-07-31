@@ -572,9 +572,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         sketchLines,
         sketchGroups,
         penStrokes,
+        penSettings,
         viewportZoom,
       }),
-    [activeGenerationTargetId, addedObjects, edges, markers, nodes, penStrokes, sketchGroups, sketchLines, viewportZoom],
+    [activeGenerationTargetId, addedObjects, edges, markers, nodes, penSettings, penStrokes, sketchGroups, sketchLines, viewportZoom],
   );
   const currentSnapshotFingerprint = useMemo(
     () => createSnapshotFingerprint(currentSnapshotDocument),
@@ -660,6 +661,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setSketchLines(hydrated.sketchLines);
     setSketchGroups(hydrated.sketchGroups);
     setPenStrokes(hydrated.penStrokes);
+    setPenSettings(hydrated.penSettings);
     setActiveGenerationTargetId(hydrated.activeGenerationTargetId);
     setActiveNodeId(hydrated.activeGenerationTargetId);
     setSelectedItem(

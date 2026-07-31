@@ -29,6 +29,7 @@ import MultiAngleModal from "../panels/MultiAngleModal";
 import QuickEditModal from "../panels/QuickEditModal";
 import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
+import DrawToolToolbar from "../widgets/DrawToolToolbar";
 
 export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
   const canvas = useCanvasWorkspace({ projectId });
@@ -333,6 +334,17 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
 
           {state.activeTool === "region" && state.selectedNode ? (
             <RegionBrushToolbar workspace={canvas} />
+          ) : null}
+
+          {state.activeTool === "pen" || state.activeTool === "eraser" ? (
+            <DrawToolToolbar
+              activeTool={state.activeTool}
+              penSettings={state.penSettings}
+              onTool={actions.handleTool}
+              onPenSettingsChange={(update) =>
+                actions.setPenSettings((current) => ({ ...current, ...update }))
+              }
+            />
           ) : null}
 
           {/* ── Modals & overlays ────────────────────────────────────────────── */}
