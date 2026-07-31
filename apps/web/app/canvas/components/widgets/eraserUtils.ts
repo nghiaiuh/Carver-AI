@@ -98,6 +98,27 @@ export function clonePenStrokes(strokes: PenStrokeObject[]) {
 
 export function eraseStrokeByRect(stroke: PenStrokeObject, rect: EraserRect): PenStrokeObject[] {
   if (stroke.points.length === 0) return [];
+
+  // Geometry is a single semantic object. Splitting its two anchor points
+  // would corrupt its primitive renderer, so erase the whole shape on touch.
+  if (stroke.drawingMode === "geometry") {
+    const xs = stroke.points.map((point) => point.x);
+    const ys = stroke.points.map((point) => point.y);
+    const shapeBounds = {
+      left: Math.min(...xs) - stroke.strokeWidth / 2,
+      right: Math.max(...xs) + stroke.strokeWidth / 2,
+      top: Math.min(...ys) - stroke.strokeWidth / 2,
+      bottom: Math.max(...ys) + stroke.strokeWidth / 2,
+    };
+    const overlaps = !(
+      rect.right < shapeBounds.left ||
+      rect.left > shapeBounds.right ||
+      rect.bottom < shapeBounds.top ||
+      rect.top > shapeBounds.bottom
+    );
+    return overlaps ? [] : [stroke];
+  }
+
   if (stroke.points.length === 1) {
     return isPointInsideRect(stroke.points[0], rect) ? [] : [stroke];
   }
