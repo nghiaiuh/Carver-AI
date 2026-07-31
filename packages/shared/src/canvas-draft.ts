@@ -5,6 +5,7 @@ import {
   type CanvasGraphNodeSnapshot,
   type CanvasMarkerSnapshot,
   type CanvasPenStrokeSnapshot,
+  type CanvasPenSettingsSnapshot,
   type CanvasCameraState,
   type CanvasSketchGroupSnapshot,
   type CanvasSketchLineSnapshot,
@@ -72,6 +73,11 @@ export type CanvasDraftPenStrokesSetOperation = CanvasDraftOperationBase & {
   value: CanvasPenStrokeSnapshot[];
 };
 
+export type CanvasDraftPenSettingsSetOperation = CanvasDraftOperationBase & {
+  type: "pen-settings.set";
+  value: CanvasPenSettingsSnapshot;
+};
+
 export type CanvasDraftCameraSetOperation = CanvasDraftOperationBase & {
   type: "camera.set";
   value: CanvasCameraState;
@@ -88,6 +94,7 @@ export type CanvasDraftOperation =
   | CanvasDraftSketchLinesSetOperation
   | CanvasDraftSketchGroupsSetOperation
   | CanvasDraftPenStrokesSetOperation
+  | CanvasDraftPenSettingsSetOperation
   | CanvasDraftCameraSetOperation;
 
 export type CanvasDraftCheckpoint = {
@@ -146,6 +153,9 @@ export function applyCanvasDraftOperations(
         break;
       case "pen-strokes.set":
         nextDocument.penStrokes = operation.value;
+        break;
+      case "pen-settings.set":
+        nextDocument.penSettings = operation.value;
         break;
       case "camera.set":
         nextDocument.camera = operation.value;
@@ -314,6 +324,20 @@ export function buildCanvasDraftOperations(params: {
       ...createBase(),
       type: "pen-strokes.set",
       value: params.nextDocument.penStrokes,
+    });
+  }
+
+  if (!shallowArrayEqual(params.previousDocument.penSettings, params.nextDocument.penSettings)) {
+    operations.push({
+      ...createBase(),
+      type: "pen-settings.set",
+      value: params.nextDocument.penSettings ?? {
+        color: "#000000",
+        opacity: 1,
+        strokeWidth: 10,
+        drawingMode: "freehand",
+        geometryShape: "rectangle",
+      },
     });
   }
 

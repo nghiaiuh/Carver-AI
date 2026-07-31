@@ -5,6 +5,7 @@ import type {
   CanvasEdge,
   CanvasNode,
   Marker,
+  PenSettings,
   PenStrokeObject,
   CanvasPresetGroupNode,
   SketchGroup,
@@ -231,6 +232,7 @@ export function buildCanvasSnapshotWithGraph(params: {
   sketchLines?: SketchLine[];
   sketchGroups?: SketchGroup[];
   penStrokes?: PenStrokeObject[];
+  penSettings?: PenSettings;
   viewportZoom?: number;
 }): CanvasSnapshotDocument {
   const snapshot = createEmptyCanvasSnapshotDocument();
@@ -338,7 +340,18 @@ export function buildCanvasSnapshotWithGraph(params: {
       color: stroke.color,
       opacity: stroke.opacity,
       strokeWidth: stroke.strokeWidth,
+      drawingMode: stroke.drawingMode,
+      geometryShape: stroke.geometryShape,
       createdAt: stroke.createdAt,
     })),
+    penSettings: params.penSettings
+      ? {
+          color: params.penSettings.color,
+          opacity: params.penSettings.opacity,
+          strokeWidth: params.penSettings.strokeWidth,
+          drawingMode: params.penSettings.drawingMode,
+          geometryShape: params.penSettings.geometryShape,
+        }
+      : snapshot.penSettings,
   };
 }

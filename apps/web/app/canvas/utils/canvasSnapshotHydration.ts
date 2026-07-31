@@ -11,6 +11,7 @@ import type {
   MaskData,
   MaskHistory,
   PenStrokeObject,
+  PenSettings,
   CanvasPresetChild,
   CanvasPresetGroupNode,
   CanvasSourceImage,
@@ -18,7 +19,7 @@ import type {
   SketchGroup,
   SketchLine,
 } from "../types/canvas";
-import { getDefaultInputPorts } from "../types/canvas";
+import { DEFAULT_PEN_SETTINGS, getDefaultInputPorts } from "../types/canvas";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 
@@ -72,6 +73,7 @@ type HydratedCanvasSnapshotState = {
   sketchLines: SketchLine[];
   sketchGroups: SketchGroup[];
   penStrokes: PenStrokeObject[];
+  penSettings: PenSettings;
 };
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -467,6 +469,15 @@ function sanitizePenStroke(stroke: unknown): PenStrokeObject | null {
     color: stringValue(source?.color) ?? "#000000",
     opacity: numberValue(source?.opacity, 1),
     strokeWidth: Math.max(1, numberValue(source?.strokeWidth, 1)),
+    drawingMode: source?.drawingMode === "geometry" ? "geometry" : "freehand",
+    geometryShape:
+      source?.geometryShape === "square" ||
+      source?.geometryShape === "circle" ||
+      source?.geometryShape === "triangle" ||
+      source?.geometryShape === "arrow" ||
+      source?.geometryShape === "line"
+        ? source.geometryShape
+        : "rectangle",
     createdAt: stringValue(source?.createdAt) ?? new Date(0).toISOString(),
   };
 }
@@ -557,6 +568,22 @@ export function hydrateCanvasStateFromSnapshot(
         .filter((stroke): stroke is PenStrokeObject => stroke !== null)
     : [];
 
+  const storedPenSettings = objectValue(snapshot.penSettings);
+  const penSettings: PenSettings = {
+    color: stringValue(storedPenSettings?.color) ?? DEFAULT_PEN_SETTINGS.color,
+    opacity: Math.min(1, Math.max(0.1, numberValue(storedPenSettings?.opacity, DEFAULT_PEN_SETTINGS.opacity))),
+    strokeWidth: Math.min(42, Math.max(2, numberValue(storedPenSettings?.strokeWidth, DEFAULT_PEN_SETTINGS.strokeWidth))),
+    drawingMode: storedPenSettings?.drawingMode === "geometry" ? "geometry" : "freehand",
+    geometryShape:
+      storedPenSettings?.geometryShape === "square" ||
+      storedPenSettings?.geometryShape === "circle" ||
+      storedPenSettings?.geometryShape === "triangle" ||
+      storedPenSettings?.geometryShape === "arrow" ||
+      storedPenSettings?.geometryShape === "line"
+        ? storedPenSettings.geometryShape
+        : "rectangle",
+  };
+
   return {
     viewportZoom: normalizeCanvasViewportZoom(snapshot.camera?.zoom),
     nodes,
@@ -568,6 +595,7 @@ export function hydrateCanvasStateFromSnapshot(
     sketchLines,
     sketchGroups,
     penStrokes,
+    penSettings,
   };
 }
 

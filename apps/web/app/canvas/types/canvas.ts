@@ -88,10 +88,16 @@ export type SketchPoint = {
   y: number;
 };
 
+export type PenGeometryShape = "rectangle" | "square" | "circle" | "triangle" | "arrow" | "line";
+
+export type PenDrawingMode = "freehand" | "geometry";
+
 export type PenSettings = {
   color: string;
   opacity: number;
   strokeWidth: number;
+  drawingMode: PenDrawingMode;
+  geometryShape: PenGeometryShape;
 };
 
 export type PenStrokeObject = {
@@ -101,6 +107,9 @@ export type PenStrokeObject = {
   color: string;
   opacity: number;
   strokeWidth: number;
+  /** Geometry strokes store their drag start/end points and render as primitives. */
+  drawingMode?: PenDrawingMode;
+  geometryShape?: PenGeometryShape;
   createdAt: string;
 };
 
@@ -328,6 +337,8 @@ export const DEFAULT_PEN_SETTINGS: PenSettings = {
   color: "#000000",
   opacity: 1,
   strokeWidth: 10,
+  drawingMode: "freehand",
+  geometryShape: "rectangle",
 };
 
 export const DEFAULT_RIGHT_PANEL_WIDTH = 320;

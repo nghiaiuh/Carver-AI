@@ -208,7 +208,17 @@ export type CanvasPenStrokeSnapshot = {
   color: string;
   opacity: number;
   strokeWidth: number;
+  drawingMode?: "freehand" | "geometry";
+  geometryShape?: "rectangle" | "square" | "circle" | "triangle" | "arrow" | "line";
   createdAt: string;
+};
+
+export type CanvasPenSettingsSnapshot = {
+  color: string;
+  opacity: number;
+  strokeWidth: number;
+  drawingMode: "freehand" | "geometry";
+  geometryShape: "rectangle" | "square" | "circle" | "triangle" | "arrow" | "line";
 };
 
 export type CanvasSketchLineSnapshot = {
@@ -254,6 +264,7 @@ export type CanvasSnapshotDocument = {
   sketchLines: CanvasSketchLineSnapshot[];
   sketchGroups: CanvasSketchGroupSnapshot[];
   penStrokes: CanvasPenStrokeSnapshot[];
+  penSettings?: CanvasPenSettingsSnapshot;
   metadata: { [key: string]: SerializableJson | undefined };
 };
 
@@ -281,6 +292,13 @@ export const createEmptyCanvasSnapshotDocument = (): CanvasSnapshotDocument => (
   sketchLines: [],
   sketchGroups: [],
   penStrokes: [],
+  penSettings: {
+    color: "#000000",
+    opacity: 1,
+    strokeWidth: 10,
+    drawingMode: "freehand",
+    geometryShape: "rectangle",
+  },
   metadata: {},
 });
 
@@ -324,6 +342,7 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
     sketchLines?: CanvasSketchLineSnapshot[];
     sketchGroups?: CanvasSketchGroupSnapshot[];
     penStrokes?: CanvasPenStrokeSnapshot[];
+    penSettings?: CanvasPenSettingsSnapshot;
     metadata?: { [key: string]: SerializableJson | undefined };
   };
 
@@ -356,6 +375,7 @@ export const coerceCanvasSnapshotDocument = (value: unknown): CanvasSnapshotDocu
     sketchLines: Array.isArray(legacy.sketchLines) ? legacy.sketchLines : fallback.sketchLines,
     sketchGroups: Array.isArray(legacy.sketchGroups) ? legacy.sketchGroups : fallback.sketchGroups,
     penStrokes: Array.isArray(legacy.penStrokes) ? legacy.penStrokes : fallback.penStrokes,
+    penSettings: legacy.penSettings ?? fallback.penSettings,
     metadata: legacy.metadata ?? {
       legacyCanvas: value as SerializableJson,
     },
