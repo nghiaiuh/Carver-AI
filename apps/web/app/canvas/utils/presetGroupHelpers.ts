@@ -3,6 +3,7 @@
 import type {
   CanvasEdge,
   CanvasNode,
+  CanvasAssistantNode,
   CanvasPresetChild,
   CanvasPresetGroupNode,
   CanvasSourceImage,
@@ -16,6 +17,10 @@ const PRESET_GROUP_MAX_ROWS = 5;
 
 export function isPresetGroupNode(node: CanvasNode): node is CanvasPresetGroupNode {
   return node.kind === "presetGroup";
+}
+
+export function isAssistantNode(node: CanvasNode): node is CanvasAssistantNode {
+  return node.kind === "assistant";
 }
 
 export function buildPresetSourceImage(imageUrl: string, name: string): CanvasSourceImage {

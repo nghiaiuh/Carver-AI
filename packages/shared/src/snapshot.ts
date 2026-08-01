@@ -134,7 +134,7 @@ export type CanvasGraphPresetChild = {
 
 export type CanvasGraphNodeSnapshot = {
   id: string;
-  kind: "image" | "presetGroup";
+  kind: "image" | "presetGroup" | "assistant";
   title: string;
   role: string;
   imageUrl: string;
@@ -152,6 +152,15 @@ export type CanvasGraphNodeSnapshot = {
     activeChildId?: string | null;
     sourceFolderId?: string;
     children: CanvasGraphPresetChild[];
+  };
+  assistant?: {
+    mode: "prompt" | "result";
+    prompt: string;
+    response: string;
+    model: string;
+    outputFormat: "list" | "text";
+    status: "idle" | "generating" | "completed" | "error";
+    errorMessage?: string;
   };
 };
 

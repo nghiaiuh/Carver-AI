@@ -19,7 +19,7 @@ import type {
   CanvasSnapshotDocument,
 } from "@carver/shared";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
-import { isPresetGroupNode } from "./presetGroupHelpers";
+import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 import {
   sanitizePersistedSnapshotImageUrl,
@@ -103,7 +103,7 @@ export function resolveConnectedImageReferences(
     if (edge.sourcePresetChildId) continue;
 
     const sourceNode = nodes.find((node) => node.id === edge.sourceId);
-    if (!sourceNode || isPresetGroupNode(sourceNode)) continue;
+    if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode)) continue;
 
     const key = `${edge.sourceId}:${edge.sourcePresetChildId ?? "node"}:${edge.targetPresetChildId ?? "target"}`;
     if (references.has(key)) continue;
@@ -247,7 +247,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       activeGenerationTargetId: params.activeGenerationTargetId,
       nodes: params.nodes.map((node) => ({
         id: node.id,
-        kind: isPresetGroupNode(node) ? "presetGroup" : "image",
+        kind: isPresetGroupNode(node) ? "presetGroup" : isAssistantNode(node) ? "assistant" : "image",
         title: node.title,
         role: node.role,
         imageUrl: sanitizePersistedNodeImageUrl(node),
@@ -279,6 +279,7 @@ export function buildCanvasSnapshotWithGraph(params: {
               })),
             }
           : undefined,
+        assistant: isAssistantNode(node) ? node.assistant : undefined,
       })),
       edges: params.edges.map((edge) => ({
         id: edge.id,

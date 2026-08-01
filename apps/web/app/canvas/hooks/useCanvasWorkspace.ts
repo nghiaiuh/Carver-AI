@@ -31,6 +31,7 @@ import {
   type CanvasPresetChild,
   type CanvasPresetGroupNode,
   DEFAULT_PEN_SETTINGS,
+  getDefaultInputPorts,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
 } from "../types/canvas";
@@ -67,6 +68,7 @@ import type {
   SketchLine,
 } from "../types/canvas";
 import {
+  isAssistantNode,
   isPresetGroupNode,
   removePresetChildAndCleanupEdges,
   reorderPresetChildren,
@@ -555,7 +557,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const selectedNode = getSelectedNodeFromSelection(nodes, selectedItem);
   const activeGenerationTarget =
     activeGenerationTargetId
-      ? nodes.find((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node)) ?? null
+      ? nodes.find((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node) && !isAssistantNode(node)) ?? null
       : null;
   const activeGenerationContext =
     activeGenerationTarget
@@ -1340,7 +1342,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   useEffect(() => {
     if (!activeGenerationTargetId) return;
-    if (nodes.some((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node))) return;
+    if (nodes.some((node) => node.id === activeGenerationTargetId && !isPresetGroupNode(node) && !isAssistantNode(node))) return;
 
     queueMicrotask(() => {
       setActiveGenerationTargetId((current) =>
@@ -2016,12 +2018,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const addObject = (label: string) => {
     const selectedNodeId =
       selectedItem.type === "node" || selectedItem.type === "image"
-        ? selectedItem.id
+        ? nodes.find((node) => node.id === selectedItem.id && !isPresetGroupNode(node) && !isAssistantNode(node))?.id ?? null
         : null;
     const targetNodeId =
       selectedNodeId ??
       activeGenerationTargetId ??
-      nodes.find((node) => !isPresetGroupNode(node))?.id ??
+      nodes.find((node) => !isPresetGroupNode(node) && !isAssistantNode(node))?.id ??
       null;
     if (!targetNodeId) {
       showToast("Select a site image before placing an object.");
@@ -2046,6 +2048,44 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setShowAddObjectMenu(false);
     setActiveTool("select");
     animateIn(".added-object");
+  };
+
+  const addAssistantNode = () => {
+    const selectedNode =
+      selectedItem.type === "node" || selectedItem.type === "image"
+        ? nodes.find((node) => node.id === selectedItem.id)
+        : null;
+    const anchorNode = selectedNode ?? nodes.at(-1) ?? null;
+    const id = `assistant-${Date.now()}`;
+    const title = `Assistant #${nodes.filter((node) => isAssistantNode(node)).length + 1}`;
+    const newNode: CanvasNode = {
+      id,
+      kind: "assistant",
+      x: anchorNode ? anchorNode.x + anchorNode.width + 96 : 220 + nodes.length * 24,
+      y: anchorNode ? anchorNode.y : 180 + nodes.length * 18,
+      width: 620,
+      height: 540,
+      scale: 1,
+      imageUrl: "",
+      title,
+      prompt: null,
+      role: "assistant",
+      model: "GPT-5 Mini",
+      inputPorts: getDefaultInputPorts(),
+      assistant: {
+        mode: "prompt",
+        prompt: "",
+        response: "",
+        model: "GPT-5 Mini",
+        outputFormat: "text",
+        status: "idle",
+      },
+    };
+
+    setNodes((current) => [...current, newNode]);
+    setSelectedItem({ type: "node", id });
+    setActiveTool("select");
+    showToast("Assistant object added to canvas");
   };
 
   // Nhận ảnh upload rồi thêm chúng vào folder thư viện dưới dạng asset cục bộ.
@@ -2623,6 +2663,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Canvas entity mutations
       handleImageAction,
       addObject,
+      addAssistantNode,
       uploadAssetsToFolder,
       deleteLibraryFolder,
       removeLibraryAsset,

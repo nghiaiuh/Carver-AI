@@ -13,6 +13,7 @@ import type {
   PenStrokeObject,
   PenSettings,
   CanvasPresetChild,
+  CanvasAssistantState,
   CanvasPresetGroupNode,
   CanvasSourceImage,
   PresetGroupCategory,
@@ -35,6 +36,7 @@ const CANVAS_NODE_ROLES = new Set<CanvasNode["role"]>([
   "mask",
   "reference",
   "output",
+  "assistant",
 ]);
 
 const IMAGE_CONNECTION_ROLES = new Set<ImageConnectionRole>([
@@ -244,6 +246,28 @@ function sanitizePresetChild(child: unknown, index: number): CanvasPresetChild |
   };
 }
 
+function sanitizeAssistantState(value: unknown): CanvasAssistantState {
+  const source = objectValue(value);
+  const mode = source?.mode === "result" ? "result" : "prompt";
+  const outputFormat = source?.outputFormat === "text" ? "text" : "list";
+  const status =
+    source?.status === "generating" ||
+    source?.status === "completed" ||
+    source?.status === "error"
+      ? source.status
+      : "idle";
+
+  return {
+    mode,
+    prompt: stringValue(source?.prompt) ?? "",
+    response: stringValue(source?.response) ?? "",
+    model: stringValue(source?.model) ?? "GPT-5 Mini",
+    outputFormat,
+    status,
+    errorMessage: stringValue(source?.errorMessage) ?? undefined,
+  };
+}
+
 function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
   const source = objectValue(node);
   const id = stringValue(source?.id);
@@ -251,8 +275,11 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
     return null;
   }
 
-  const kind = source?.kind === "presetGroup" ? "presetGroup" : "image";
-  const title = stringValue(source?.title) ?? (kind === "presetGroup" ? "Preset group" : "Untitled image");
+  const kind =
+    source?.kind === "presetGroup" ? "presetGroup" : source?.kind === "assistant" ? "assistant" : "image";
+  const title =
+    stringValue(source?.title) ??
+    (kind === "presetGroup" ? "Preset group" : kind === "assistant" ? "Assistant" : "Untitled image");
   const imageUrl =
     sanitizeRuntimeSnapshotImageUrl(source?.imageUrl) ||
     sanitizeRuntimeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
@@ -294,6 +321,30 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
     });
 
     return presetNode;
+  }
+
+  if (kind === "assistant") {
+    return {
+      id,
+      kind: "assistant",
+      title,
+      role: "assistant",
+      imageUrl: "",
+      prompt: nullableStringValue(source?.prompt),
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 620)),
+      height: Math.max(1, numberValue(source?.height, 540)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage: undefined,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getDefaultInputPorts(),
+      assistant: sanitizeAssistantState(source?.assistant),
+    };
   }
 
   return {

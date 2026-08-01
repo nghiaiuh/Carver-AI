@@ -9,11 +9,12 @@ import {
   Redo2,
   Settings,
   Undo2,
-  type LucideIcon,
 } from "lucide-react";
+import Sparkles from "../../../components/icons/CarverSparklesIcon";
 import type { EditorTool } from "../../types/canvas";
 import {
   CANVAS_TOOL_SHORTCUTS,
+  type CanvasToolIcon,
   CONNECTION_TOOL_ACTIONS,
   STICKER_TOOL_ACTIONS,
   type ConnectionActionId,
@@ -24,6 +25,7 @@ type FloatingToolRailProps = {
   activeTool: EditorTool;
   onTool: (tool: EditorTool) => void;
   onAddNode: () => void;
+  onAddAssistantNode: () => void;
   onOpenLibrary?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -31,7 +33,7 @@ type FloatingToolRailProps = {
 
 type RailButtonProps = {
   label: string;
-  icon: LucideIcon;
+  icon: CanvasToolIcon;
   active?: boolean;
   disabled?: boolean;
   hasSubmenu?: boolean;
@@ -112,7 +114,7 @@ function StickerFlyoutButton({
   onClick,
 }: {
   label: string;
-  icon: LucideIcon;
+  icon: CanvasToolIcon;
   selected: boolean;
   onHoverStart: () => void;
   onClick: () => void;
@@ -241,6 +243,7 @@ export default function FloatingToolRail({
   activeTool,
   onTool,
   onAddNode,
+  onAddAssistantNode,
   onUndo,
   onRedo,
 }: FloatingToolRailProps) {
@@ -411,6 +414,12 @@ export default function FloatingToolRail({
             onAction={selectStickerAction}
           />
         </div>
+        <RailButton
+          label="Assistant"
+          icon={Sparkles}
+          active={activeTool === "assistant"}
+          onClick={onAddAssistantNode}
+        />
         <RailButton
           label="Comments"
           icon={MessageSquare}

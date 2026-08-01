@@ -28,6 +28,7 @@ export type EditorTool =
   | "select"
   | "pen"
   | "eraser"
+  | "assistant"
   | "mark-position"
   | "add-source"
   | "grid"
@@ -249,7 +250,7 @@ type CanvasNodeBase = {
   sourceImage?: CanvasSourceImage;
   title: string;
   prompt: string | null;
-  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output";
+  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output" | "assistant";
   model?: string;
   createdAt?: string;
   /** Ordered input ports for this node. */
@@ -259,17 +260,37 @@ type CanvasNodeBase = {
   maskHistory?: MaskHistory;
 };
 
+export type CanvasAssistantOutputFormat = "list" | "text";
+
+export type CanvasAssistantState = {
+  mode: "prompt" | "result";
+  prompt: string;
+  response: string;
+  model: string;
+  outputFormat: CanvasAssistantOutputFormat;
+  status: "idle" | "generating" | "completed" | "error";
+  errorMessage?: string;
+};
+
 export type CanvasImageNode = CanvasNodeBase & {
   kind?: "image";
   presetGroup?: never;
+  assistant?: never;
 };
 
 export type CanvasPresetGroupNode = CanvasNodeBase & {
   kind: "presetGroup";
   presetGroup: CanvasPresetGroup;
+  assistant?: never;
 };
 
-export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode;
+export type CanvasAssistantNode = CanvasNodeBase & {
+  kind: "assistant";
+  assistant: CanvasAssistantState;
+  presetGroup?: never;
+};
+
+export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode | CanvasAssistantNode;
 
 export type CanvasEdge = {
   id: string;

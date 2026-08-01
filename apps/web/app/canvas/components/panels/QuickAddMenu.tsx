@@ -5,7 +5,6 @@ import {
   Search,
   Image as ImageIcon,
   FileText,
-  Sparkles,
   Lock,
   Grid,
   Square,
@@ -15,6 +14,7 @@ import {
   Layers,
   X,
 } from "lucide-react";
+import Sparkles from "../../../components/icons/CarverSparklesIcon";
 
 type QuickAddMenuProps = {
   open: boolean;

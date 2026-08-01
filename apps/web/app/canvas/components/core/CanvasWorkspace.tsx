@@ -213,6 +213,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           activeTool={state.activeTool}
           onTool={actions.handleTool}
           onAddNode={() => setQuickAddOpen(true)}
+          onAddAssistantNode={actions.addAssistantNode}
           onOpenLibrary={() => setActiveRecipeModal("style")}
           onUndo={triggerUndo}
           onRedo={triggerRedo}
