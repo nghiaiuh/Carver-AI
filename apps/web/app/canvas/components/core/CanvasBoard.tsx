@@ -12,8 +12,8 @@ import {
   ChevronDown,
   Download,
   Group,
-  Link2,
   Scissors,
+  Spline,
   Ungroup,
   Zap,
 } from "lucide-react";
@@ -38,7 +38,6 @@ import type {
 } from "../../types/canvas";
 import { getDefaultInputPorts } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
-import CanvasContourOverlay from "./CanvasContourOverlay";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
 import CanvasEdges from "./CanvasEdges";
@@ -844,6 +843,15 @@ export default function CanvasBoard({
       });
     },
     [addLocalImageNode],
+  );
+
+  const updateCanvasNode = useCallback(
+    (nodeId: string, update: (node: CanvasNode) => CanvasNode) => {
+      onNodesChange((current) =>
+        current.map((node) => (node.id === nodeId ? update(node) : node)),
+      );
+    },
+    [onNodesChange],
   );
 
   useEffect(() => {
@@ -2060,7 +2068,6 @@ export default function CanvasBoard({
         handlePointerUp(event);
       }}
     >
-      <CanvasContourOverlay />
       <div
         ref={worldLayerRef}
         className="absolute inset-0 z-10"
@@ -2200,6 +2207,7 @@ export default function CanvasBoard({
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
+              onUpdateNode={updateCanvasNode}
               onDragStart={handleNodePointerDown}
               onImageAction={onImageAction}
               onQuickEdit={onQuickEdit}
@@ -2262,14 +2270,14 @@ export default function CanvasBoard({
       {activeTool === "connection" && connectionCursorPoint ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute z-[180] grid h-8 w-8 place-items-center rounded-full bg-[var(--canvas-theme-selection)] text-[var(--canvas-theme-active-text)] shadow-[0_4px_12px_rgba(0,0,0,0.18)]"
+          className="pointer-events-none absolute z-[180] text-[var(--canvas-theme-selection)] drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)]"
           style={{
             left: connectionCursorPoint.x,
             top: connectionCursorPoint.y,
             transform: "translate(-50%, -50%)",
           }}
         >
-          <Link2 className="h-4 w-4" strokeWidth={2} />
+          <Spline className="h-6 w-6" strokeWidth={2.2} />
         </div>
       ) : null}
 
