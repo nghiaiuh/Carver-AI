@@ -81,7 +81,7 @@ export function PencilIcon({ className, graphiteColor = "#0C1426", ...props }: P
 export function EraserIcon({ className, ...props }: DrawInstrumentIconProps) {
   const prefix = `eraser-${useId().replace(/:/g, "")}`;
   const barrelHeight = 310;
-  const totalHeight = 392;
+  const totalHeight = 380;
 
   return (
     <svg
