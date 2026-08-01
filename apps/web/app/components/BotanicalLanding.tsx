@@ -5,12 +5,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { ArrowRight, Clapperboard, ImagePlus, Rose, Layers, Menu, Wand2, Palette, Sparkles, Banana, X } from "lucide-react";
+import { ArrowRight, Clapperboard, ImagePlus, Rose, Layers, Menu, Wand2, Palette, Banana, X } from "lucide-react";
 import { gsap, useGSAP } from "./gsapSetup";
 import { buildAuthPageHref, getBrowserAuthClient } from "./auth/authClient";
 import { useAuthSession } from "./auth/useAuthSession";
 import { getLandingAssetUrl } from "./landingAssetUrl";
 import RecentProjectsSection from "./RecentProjectsSection";
+import Sparkles from "./icons/CarverSparklesIcon";
 
 const HERO_IMAGE = getLandingAssetUrl("/landing/hero-project-transition.png");
 const WINNER_IMAGE = getLandingAssetUrl("/landing/hero-courtyard-reference.png");

@@ -11,9 +11,9 @@ import {
   Leaf,
   Mountain,
   ScanLine,
-  Sparkles,
   Waves,
 } from "lucide-react";
+import Sparkles from "../../components/icons/CarverSparklesIcon";
 
 export type MetricName =
   | "Creativity"

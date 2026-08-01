@@ -2,7 +2,8 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Leaf, Sparkles } from "lucide-react";
+import { ArrowLeft, Leaf } from "lucide-react";
+import Sparkles from "../icons/CarverSparklesIcon";
 
 type AuthPageShellProps = {
   eyebrow: string;
