@@ -211,7 +211,6 @@ type CanvasClipboardItem = {
 const WHEEL_ZOOM_SENSITIVITY = 0.0012;
 const WHEEL_ZOOM_COMMIT_DEBOUNCE_MS = 160;
 const MINIMAP_WORLD_PADDING = 48;
-const MINIMAP_DRAG_SPEED = 0.8;
 const MARQUEE_SELECTION_THRESHOLD = 5;
 const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
 const MIN_POINT_DISTANCE = 1.5;
@@ -356,7 +355,6 @@ export default function CanvasBoard({
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
   const [miniMapDragging, setMiniMapDragging] = useState(false);
   const miniMapDragPointerId = useRef<number | null>(null);
-  const miniMapDragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const marqueePointerId = useRef<number | null>(null);
   const suppressCanvasBackgroundClickRef = useRef(false);
   const [marqueeSelectedNodeIds, setMarqueeSelectedNodeIds] = useState<string[] | null>(null);
@@ -1925,10 +1923,20 @@ export default function CanvasBoard({
     const viewportWorldX = zoom > 0 ? -pan.x / zoom : 0;
     const viewportWorldY = zoom > 0 ? -pan.y / zoom : 0;
 
-    const worldRects = nodes.map((node) => ({
-      id: node.id,
-      ...getNodeDisplayBounds(node),
-    }));
+    const worldRects = nodes.map((node) => {
+      const bounds = getNodeDisplayBounds(node);
+      // Assistant cards intentionally render at two thirds of their persisted size.
+      // The minimap must use those same visual bounds to stay proportionally accurate.
+      const visualScale = node.kind === "assistant" ? 2 / 3 : 1;
+
+      return {
+        id: node.id,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width * visualScale,
+        height: bounds.height * visualScale,
+      };
+    });
 
     const minX = Math.min(viewportWorldX, ...worldRects.map((rect) => rect.x));
     const minY = Math.min(viewportWorldY, ...worldRects.map((rect) => rect.y));
@@ -1965,8 +1973,8 @@ export default function CanvasBoard({
         ...rect,
         left: offsetX + (rect.x - paddedMinX) * scale,
         top: offsetY + (rect.y - paddedMinY) * scale,
-        widthPx: Math.max(rect.width * scale, 6),
-        heightPx: Math.max(rect.height * scale, 6),
+        widthPx: rect.width * scale,
+        heightPx: rect.height * scale,
       })),
       viewportRect: {
         left: offsetX + (viewportWorldX - paddedMinX) * scale,
@@ -1977,6 +1985,36 @@ export default function CanvasBoard({
     };
   }, [containerSize.height, containerSize.width, miniMapFrameSize.height, miniMapFrameSize.width, nodes, pan.x, pan.y, zoom]);
 
+  const panToMiniMapPoint = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const frame = miniMapFrameRef.current;
+      if (!frame || miniMapModel.scale <= 0 || containerSize.width <= 0 || containerSize.height <= 0) {
+        return;
+      }
+
+      const frameRect = frame.getBoundingClientRect();
+      const miniMapX = clamp(event.clientX - frameRect.left, 0, frameRect.width);
+      const miniMapY = clamp(event.clientY - frameRect.top, 0, frameRect.height);
+      const worldX = clamp(
+        miniMapModel.world.minX + (miniMapX - miniMapModel.offsetX) / miniMapModel.scale,
+        miniMapModel.world.minX,
+        miniMapModel.world.minX + miniMapModel.world.width,
+      );
+      const worldY = clamp(
+        miniMapModel.world.minY + (miniMapY - miniMapModel.offsetY) / miniMapModel.scale,
+        miniMapModel.world.minY,
+        miniMapModel.world.minY + miniMapModel.world.height,
+      );
+
+      // A minimap pointer always represents the center of the main camera.
+      setPan({
+        x: containerSize.width / 2 - worldX * zoom,
+        y: containerSize.height / 2 - worldY * zoom,
+      });
+    },
+    [containerSize.height, containerSize.width, miniMapModel, setPan, zoom],
+  );
+
   const handleMiniMapPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
@@ -1984,32 +2022,20 @@ export default function CanvasBoard({
       event.stopPropagation();
       miniMapDragPointerId.current = event.pointerId;
       setMiniMapDragging(true);
-      miniMapDragStart.current = {
-        x: event.clientX,
-        y: event.clientY,
-        panX: pan.x,
-        panY: pan.y,
-      };
+      panToMiniMapPoint(event);
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [pan.x, pan.y],
+    [panToMiniMapPoint],
   );
 
   const handleMiniMapPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (miniMapDragPointerId.current !== event.pointerId) return;
-      const start = miniMapDragStart.current;
-      if (!start) return;
       event.preventDefault();
       event.stopPropagation();
-      const dx = (event.clientX - start.x) * MINIMAP_DRAG_SPEED;
-      const dy = (event.clientY - start.y) * MINIMAP_DRAG_SPEED;
-      setPan({
-        x: start.panX - dx,
-        y: start.panY - dy,
-      });
+      panToMiniMapPoint(event);
     },
-    [setPan],
+    [panToMiniMapPoint],
   );
 
   const handleMiniMapPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -2018,7 +2044,6 @@ export default function CanvasBoard({
     event.stopPropagation();
     miniMapDragPointerId.current = null;
     setMiniMapDragging(false);
-    miniMapDragStart.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
   }, []);
 
@@ -2298,10 +2323,10 @@ export default function CanvasBoard({
       ) : null}
 
       {miniMapOpen ? (
-        <div className="absolute bottom-[72px] right-6 z-40 h-[166px] w-[252px] rounded-[24px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
+        <div className="absolute bottom-[72px] right-6 z-40 h-[166px] w-[252px] rounded-[12px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/92 p-3 shadow-[0_24px_60px_var(--canvas-theme-shadow)] backdrop-blur-xl" data-canvas-ui="true">
           <div
             ref={miniMapFrameRef}
-            className="relative h-full w-full overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)]"
+            className="relative h-full w-full overflow-hidden rounded-lg"
             onPointerDown={handleMiniMapPointerDown}
             onPointerMove={handleMiniMapPointerMove}
             onPointerUp={handleMiniMapPointerUp}
@@ -2324,6 +2349,16 @@ export default function CanvasBoard({
                 }}
               />
             ))}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute rounded-[3px] border border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-selection-soft)]/20"
+              style={{
+                left: miniMapModel.viewportRect.left,
+                top: miniMapModel.viewportRect.top,
+                width: miniMapModel.viewportRect.width,
+                height: miniMapModel.viewportRect.height,
+              }}
+            />
             <div className="pointer-events-none absolute inset-0" />
           </div>
         </div>
