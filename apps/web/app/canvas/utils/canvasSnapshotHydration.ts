@@ -21,6 +21,7 @@ import type {
   SketchLine,
 } from "../types/canvas";
 import { DEFAULT_PEN_SETTINGS, getDefaultInputPorts } from "../types/canvas";
+import { getAssistantInputPorts, getTextNodeInputPorts } from "./canvasNodePorts";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 
@@ -37,6 +38,7 @@ const CANVAS_NODE_ROLES = new Set<CanvasNode["role"]>([
   "reference",
   "output",
   "assistant",
+  "text",
 ]);
 
 const IMAGE_CONNECTION_ROLES = new Set<ImageConnectionRole>([
@@ -268,6 +270,11 @@ function sanitizeAssistantState(value: unknown): CanvasAssistantState {
   };
 }
 
+function sanitizeTextNodeState(value: unknown) {
+  const source = objectValue(value);
+  return { content: stringValue(source?.content) ?? "" };
+}
+
 function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
   const source = objectValue(node);
   const id = stringValue(source?.id);
@@ -276,10 +283,16 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
   }
 
   const kind =
-    source?.kind === "presetGroup" ? "presetGroup" : source?.kind === "assistant" ? "assistant" : "image";
+    source?.kind === "presetGroup"
+      ? "presetGroup"
+      : source?.kind === "assistant"
+        ? "assistant"
+        : source?.kind === "text"
+          ? "text"
+          : "image";
   const title =
     stringValue(source?.title) ??
-    (kind === "presetGroup" ? "Preset group" : kind === "assistant" ? "Assistant" : "Untitled image");
+    (kind === "presetGroup" ? "Preset group" : kind === "assistant" ? "Assistant" : kind === "text" ? "Text note" : "Untitled image");
   const imageUrl =
     sanitizeRuntimeSnapshotImageUrl(source?.imageUrl) ||
     sanitizeRuntimeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
@@ -342,8 +355,32 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       sourceImage: undefined,
       regionMask: undefined,
       maskHistory: undefined,
-      inputPorts: getDefaultInputPorts(),
+      inputPorts: getAssistantInputPorts(),
       assistant: sanitizeAssistantState(source?.assistant),
+    };
+  }
+
+  if (kind === "text") {
+    return {
+      id,
+      kind: "text",
+      title,
+      role: "text",
+      imageUrl: "",
+      prompt: nullableStringValue(source?.prompt),
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 280)),
+      height: Math.max(1, numberValue(source?.height, 180)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage: undefined,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getTextNodeInputPorts(),
+      text: sanitizeTextNodeState(source?.text),
     };
   }
 
@@ -386,6 +423,7 @@ function sanitizeGraphEdge(edge: unknown): CanvasEdge | null {
     sourceId,
     targetId,
     kind: source?.kind === "text" || source?.kind === "image" ? source.kind : undefined,
+    sourcePortId: stringValue(source?.sourcePortId) ?? undefined,
     targetPortId,
     targetPresetChildId: nullableStringValue(source?.targetPresetChildId),
     sourcePresetChildId: nullableStringValue(source?.sourcePresetChildId),

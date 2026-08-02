@@ -134,7 +134,7 @@ export type CanvasGraphPresetChild = {
 
 export type CanvasGraphNodeSnapshot = {
   id: string;
-  kind: "image" | "presetGroup" | "assistant";
+  kind: "image" | "presetGroup" | "assistant" | "text";
   title: string;
   role: string;
   imageUrl: string;
@@ -162,6 +162,9 @@ export type CanvasGraphNodeSnapshot = {
     status: "idle" | "generating" | "completed" | "error";
     errorMessage?: string;
   };
+  text?: {
+    content: string;
+  };
 };
 
 export type CanvasGraphEdgeSnapshot = {
@@ -169,6 +172,7 @@ export type CanvasGraphEdgeSnapshot = {
   sourceId: string;
   targetId: string;
   kind?: "text" | "image";
+  sourcePortId?: string;
   targetPortId: string;
   targetPresetChildId?: string | null;
   sourcePresetChildId?: string | null;

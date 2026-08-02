@@ -1,5 +1,6 @@
 import type { CanvasNode } from "../types/canvas";
 import { screenToCanvasWorldPoint } from "./canvasViewport";
+import { getCanvasNodeVisualScale } from "./canvasNodePorts";
 
 export type CanvasPoint = { x: number; y: number };
 export type CanvasSelectionRect = { x: number; y: number; width: number; height: number };
@@ -9,7 +10,7 @@ export function clampCanvasValue(value: number, min: number, max: number) {
 }
 
 export function getCanvasNodeDisplayBounds(node: CanvasNode): CanvasSelectionRect {
-  const scale = node.scale ?? 1;
+  const scale = getCanvasNodeVisualScale(node);
   return { x: node.x, y: node.y, width: node.width * scale, height: node.height * scale };
 }
 

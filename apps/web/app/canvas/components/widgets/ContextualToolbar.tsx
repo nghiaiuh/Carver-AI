@@ -13,7 +13,7 @@ import { Play, ChevronDown, Link2, Crop, Trash2, MoreHorizontal, Paintbrush } fr
 import type { EditorTool } from "../../types/canvas";
 
 type ContextualToolbarProps = {
-  itemLabel: "Image" | "Reference" | "Object" | "Assistant";
+  itemLabel: "Image" | "Reference" | "Object" | "Assistant" | "Text note";
   viewportZoom?: number;
   onMultiAngle: () => void;
   onAddObject: () => void;

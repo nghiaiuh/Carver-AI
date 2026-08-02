@@ -39,6 +39,7 @@ export const CONNECTION_TOOL_ACTIONS: readonly CanvasToolAction<ConnectionAction
 export const CANVAS_TOOL_SHORTCUTS: Readonly<Record<string, EditorTool>> = {
   v: "select",
   h: "add-source",
+  t: "text-note",
   x: "cut",
   c: "mark-position",
 };

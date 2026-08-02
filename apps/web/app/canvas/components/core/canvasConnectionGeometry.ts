@@ -1,4 +1,5 @@
 import type { CanvasConnectionKind, CanvasEdge, CanvasNode } from "../../types/canvas";
+import { getCanvasNodeVisualScale, getNodeSemanticPort } from "../../utils/canvasNodePorts";
 
 // Re-export from the canonical type module so existing callers of canvasConnectionGeometry
 // that import ImageHandlePosition / ImageConnectionRole continue to work.
@@ -92,7 +93,7 @@ export function getAggregateHandlePoint(
   kind: CanvasConnectionKind,
   edges: CanvasEdge[],
 ) {
-  const scale = node.scale ?? 1;
+  const scale = getCanvasNodeVisualScale(node);
   const width = node.width * scale;
   const height = node.height * scale;
   const countsBySide = getNodeConnectionCountsBySide(node.id, edges);
@@ -114,13 +115,28 @@ export function getAggregateHandlePoint(
 }
 
 export function getImageHandlePoint(node: CanvasNode, handle: ImageHandlePosition) {
-  const scale = node.scale ?? 1;
+  const scale = getCanvasNodeVisualScale(node);
   const width = node.width * scale;
   const height = node.height * scale;
 
   return {
     x: handle === "left" ? node.x : node.x + width,
     y: node.y + height / 2,
+  };
+}
+
+/** Resolve a persisted semantic port into its stable point on the rendered node. */
+export function getSemanticPortPoint(node: CanvasNode, portId: string | undefined) {
+  const port = getNodeSemanticPort(node, portId);
+  if (!port) return null;
+
+  const scale = getCanvasNodeVisualScale(node);
+  const width = node.width * scale;
+  const height = node.height * scale;
+
+  return {
+    x: port.side === "left" ? node.x - AGGREGATE_HANDLE_OFFSET : node.x + width + AGGREGATE_HANDLE_OFFSET,
+    y: node.y + height * port.yRatio,
   };
 }
 

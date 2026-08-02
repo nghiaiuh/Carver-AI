@@ -250,7 +250,7 @@ type CanvasNodeBase = {
   sourceImage?: CanvasSourceImage;
   title: string;
   prompt: string | null;
-  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output" | "assistant";
+  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output" | "assistant" | "text";
   model?: string;
   createdAt?: string;
   /** Ordered input ports for this node. */
@@ -272,6 +272,10 @@ export type CanvasAssistantState = {
   errorMessage?: string;
 };
 
+export type CanvasTextNodeState = {
+  content: string;
+};
+
 export type CanvasImageNode = CanvasNodeBase & {
   kind?: "image";
   presetGroup?: never;
@@ -288,15 +292,29 @@ export type CanvasAssistantNode = CanvasNodeBase & {
   kind: "assistant";
   assistant: CanvasAssistantState;
   presetGroup?: never;
+  text?: never;
 };
 
-export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode | CanvasAssistantNode;
+export type CanvasTextNode = CanvasNodeBase & {
+  kind: "text";
+  text: CanvasTextNodeState;
+  presetGroup?: never;
+  assistant?: never;
+};
+
+export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode | CanvasAssistantNode | CanvasTextNode;
+
+export function isCanvasTextNode(node: CanvasNode): node is CanvasTextNode {
+  return node.kind === "text";
+}
 
 export type CanvasEdge = {
   id: string;
   sourceId: string;
   targetId: string;
   kind?: CanvasConnectionKind;
+  /** Stable semantic output port on the source node, when the node defines one. */
+  sourcePortId?: string;
   /** Which input port on the target node this edge connects to. */
   targetPortId: string;
   targetPresetChildId?: string | null;

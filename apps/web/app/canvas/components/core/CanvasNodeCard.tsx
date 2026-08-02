@@ -14,6 +14,7 @@ import type {
   CanvasConnectionKind,
   CanvasEdge,
   CanvasNode,
+  CanvasTextNode,
   EditorTool,
   Marker,
   SelectedItem,
@@ -43,6 +44,7 @@ import {
   getNodeConnectionCountsBySide,
   type ImageHandlePosition,
 } from "./canvasConnectionGeometry";
+import { getDefaultSourcePortId, getNodeSemanticPorts } from "../../utils/canvasNodePorts";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
@@ -113,6 +115,10 @@ function getNodeKindLabel(role: CanvasNode["role"]) {
     return "Assistant";
   }
 
+  if (role === "text") {
+    return "Text note";
+  }
+
   if (role === "output") {
     return "Image";
   }
@@ -174,7 +180,7 @@ function AssistantNodeSurface({
 
   return (
     <div
-      className="flex h-full w-full flex-col bg-[#F8F8F8] text-[#222222]"
+      className="flex h-full w-full flex-col bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       data-canvas-interactive="true"
       onPointerDown={(event) => {
         const target = event.target;
@@ -185,12 +191,14 @@ function AssistantNodeSurface({
     >
       <div className="flex h-12 items-center justify-between overflow-visible px-3 pb-2 pt-2">
         <div className="flex items-center gap-1.5">
-          <div className="relative flex min-w-[66px] items-center gap-1 rounded-full border border-[#E4E4E4] bg-[#F4F4F4] p-[3px] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+          <div className="relative flex min-w-[66px] items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] p-[3px] shadow-[0_1px_2px_var(--canvas-theme-shadow)]">
             <button
               type="button"
               className={[
                 "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
-                !showingResult ? "bg-white text-[#202020] shadow-[0_2px_7px_rgba(0,0,0,0.12)]" : "text-[#B7B7B7]",
+                !showingResult
+                  ? "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-[0_2px_7px_var(--canvas-theme-shadow)]"
+                  : "text-[var(--canvas-theme-icon-muted)]",
               ].join(" ")}
               title="Prompt"
               onClick={() => updateAssistant({ mode: "prompt" })}
@@ -213,7 +221,9 @@ function AssistantNodeSurface({
               type="button"
               className={[
                 "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
-                showingResult ? "bg-white text-[#202020] shadow-[0_2px_7px_rgba(0,0,0,0.12)]" : "text-[#B7B7B7]",
+                showingResult
+                  ? "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-[0_2px_7px_var(--canvas-theme-shadow)]"
+                  : "text-[var(--canvas-theme-icon-muted)]",
               ].join(" ")}
               title="Result"
               onClick={() => updateAssistant({ mode: "result" })}
@@ -223,7 +233,7 @@ function AssistantNodeSurface({
           </div>
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-[#E8E8E8] bg-white text-[#171717] shadow-[0_3px_10px_rgba(0,0,0,0.12)] transition hover:bg-[#F6F6F6]"
+            className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_3px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
             title="Attach context"
             onClick={() => updateAssistant({ mode: "prompt" })}
           >
@@ -239,12 +249,12 @@ function AssistantNodeSurface({
               value={assistant.prompt}
               onChange={(event) => updateAssistant({ prompt: event.target.value, status: "idle" })}
               placeholder={ASSISTANT_PLACEHOLDER}
-              className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[#2D2D2D] outline-none placeholder:text-[#B4ACA2]"
+              className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
             />
           </div>
         ) : (
           <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
-            <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[#2D2D2D]">
+            <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)]">
               {assistant.response || "Run the assistant to generate a result."}
             </pre>
           </div>
@@ -255,7 +265,7 @@ function AssistantNodeSurface({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[#F3F3F3] px-3 text-xs font-medium text-[#6A6A6A] opacity-80 transition hover:bg-[#ECECEC]"
+            className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
             title="AI model"
             onClick={() => updateAssistant({ model: assistant.model })}
           >
@@ -264,7 +274,7 @@ function AssistantNodeSurface({
           </button>
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-full bg-[#F3F3F3] text-[#2F2F2F] transition hover:bg-[#ECECEC]"
+            className="grid h-6 w-6 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
             title="Assistant settings"
           >
             <Settings className="h-3 w-3" strokeWidth={1.9} />
@@ -273,7 +283,7 @@ function AssistantNodeSurface({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded-full bg-[#F3F3F3] px-4 text-xs font-medium text-[#6A6A6A] opacity-80 transition hover:bg-[#ECECEC]"
+            className="inline-flex h-6 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-4 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
             title="Output format"
             onClick={() => updateAssistant({ outputFormat: assistant.outputFormat === "list" ? "text" : "list" })}
           >
@@ -282,7 +292,7 @@ function AssistantNodeSurface({
           </button>
           <button
             type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#595959] text-white transition hover:bg-[#444444]"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
             title="Run assistant"
             onClick={runAssistant}
           >
@@ -290,6 +300,44 @@ function AssistantNodeSurface({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TextNodeSurface({
+  node,
+  onUpdateNode,
+}: {
+  node: CanvasTextNode;
+  onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
+}) {
+  return (
+    <div
+      className="flex h-full w-full flex-col bg-[var(--canvas-theme-surface-soft)] text-[var(--canvas-theme-text)]"
+      data-canvas-interactive="true"
+      onPointerDown={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest("textarea")) {
+          event.stopPropagation();
+        }
+      }}
+    >
+      <div className="flex items-center gap-2 border-b border-[var(--canvas-theme-border)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--canvas-theme-text-muted)]">
+        <Type className="h-3.5 w-3.5 text-[var(--canvas-theme-selection)]" strokeWidth={2} />
+        <span>{node.title}</span>
+      </div>
+      <textarea
+        value={node.text.content}
+        onChange={(event) =>
+          onUpdateNode(node.id, (current) =>
+            current.kind === "text"
+              ? { ...current, text: { content: event.target.value } }
+              : current,
+          )
+        }
+        placeholder="Write a site note, constraint, or prompt..."
+        className="min-h-0 flex-1 resize-none bg-transparent px-3 py-2.5 font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+      />
     </div>
   );
 }
@@ -316,6 +364,7 @@ type CanvasNodeCardProps = {
     handle: ImageHandlePosition,
     connectionKind: CanvasConnectionKind,
     event: React.PointerEvent<HTMLButtonElement>,
+    sourcePortId?: string,
   ) => void;
   onSelectOverlay: (item: SelectedItem) => void;
   onAddSketchLine: (line: SketchLine) => void;
@@ -368,29 +417,43 @@ export default function CanvasNodeCard({
   // Asset-backed nodes may restore their runtime URL into sourceImage.url first,
   // so rendering should not depend on imageUrl alone.
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
+  const isAssistant = node.kind === "assistant";
+  const isTextNode = node.kind === "text";
+  const hasSemanticPorts = isAssistant || isTextNode;
   const connectionCountsBySide = getNodeConnectionCountsBySide(node.id, edges);
   const leftHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
   const rightHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
 
-  if (connectionCountsBySide.left.text > 0) {
-    leftHandles.push({ kind: "text", count: connectionCountsBySide.left.text });
+  if (!hasSemanticPorts) {
+    if (connectionCountsBySide.left.text > 0 || selected) {
+      leftHandles.push({ kind: "text", count: connectionCountsBySide.left.text });
+    }
+    if (connectionCountsBySide.left.image > 0 || selected) {
+      leftHandles.push({ kind: "image", count: connectionCountsBySide.left.image });
+    }
+    if (connectionCountsBySide.right.text > 0 || selected) {
+      rightHandles.push({ kind: "text", count: connectionCountsBySide.right.text });
+    }
+    if (connectionCountsBySide.right.image > 0 || selected) {
+      rightHandles.push({ kind: "image", count: connectionCountsBySide.right.image });
+    }
   }
-  if (connectionCountsBySide.left.image > 0 || selected) {
-    leftHandles.push({ kind: "image", count: connectionCountsBySide.left.image });
-  }
-  if (connectionCountsBySide.right.text > 0) {
-    rightHandles.push({ kind: "text", count: connectionCountsBySide.right.text });
-  }
-  if (connectionCountsBySide.right.image > 0 || selected) {
-    rightHandles.push({ kind: "image", count: connectionCountsBySide.right.image });
-  }
+  const semanticPortHandles = hasSemanticPorts
+    ? getNodeSemanticPorts(node).flatMap((port) => {
+        const count = edges.filter((edge) =>
+          port.direction === "input"
+            ? edge.targetId === node.id && edge.targetPortId === port.id
+            : edge.sourceId === node.id && edge.sourcePortId === port.id,
+        ).length;
+        return selected || count > 0 ? [{ port, count }] : [];
+      })
+    : [];
   const nodeFrameClassName = getNodeFrameClassName({
     selected,
     isGenerationTarget,
     isConnectionTarget,
   });
   const legacyOverlayHost = isGenerationTarget || selected;
-  const isAssistant = node.kind === "assistant";
   const nodeMarkers = markers.filter(
     (marker) => marker.targetNodeId === node.id || (!marker.targetNodeId && legacyOverlayHost),
   );
@@ -398,7 +461,10 @@ export default function CanvasNodeCard({
     (object) => object.targetNodeId === node.id || (!object.targetNodeId && legacyOverlayHost),
   );
   const frameClassName = isAssistant
-    ? "relative overflow-hidden rounded-[20px] border-[3px] border-[#D9D9D9] bg-[#F8F8F8] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-colors"
+    ? [
+        "relative overflow-hidden rounded-[20px] border-[3px] bg-[var(--canvas-theme-surface)] shadow-[0_4px_16px_var(--canvas-theme-shadow)] transition-colors",
+        nodeFrameClassName,
+      ].join(" ")
     : [
         "relative overflow-hidden rounded-[18px] border bg-[var(--canvas-theme-surface-soft)] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
         nodeFrameClassName,
@@ -432,8 +498,8 @@ export default function CanvasNodeCard({
       <div>
         <div className="relative">
           {isAssistant ? (
-            <div className="pointer-events-none absolute -top-9 left-7 flex items-center gap-2 font-[var(--font-botanical-sans)] text-[18px] font-semibold text-[#2F2F2F]">
-              <Sparkles className="h-4 w-4" strokeWidth={2.1} />
+            <div className="pointer-events-none absolute -top-9 left-7 flex items-center gap-2 font-[var(--font-botanical-sans)] text-[18px] font-semibold text-[var(--canvas-theme-text-soft)]">
+              <Sparkles className="h-4 w-4 text-[var(--canvas-theme-selection)]" strokeWidth={2.1} />
               <span>{node.title}</span>
             </div>
           ) : null}
@@ -454,6 +520,11 @@ export default function CanvasNodeCard({
             {isAssistant ? (
               <AssistantNodeSurface
                 node={node as CanvasAssistantNode}
+                onUpdateNode={onUpdateNode}
+              />
+            ) : isTextNode ? (
+              <TextNodeSurface
+                node={node as CanvasTextNode}
                 onUpdateNode={onUpdateNode}
               />
             ) : runtimeImageUrl ? (
@@ -515,7 +586,27 @@ export default function CanvasNodeCard({
             ))}
           </div>
 
-          {leftHandles.map((handle, index) => (
+          {hasSemanticPorts
+            ? semanticPortHandles.map(({ port, count }) => (
+              <ConnectionHandleSlot
+                key={port.id}
+                count={count}
+                kind={port.kind}
+                side={port.side}
+                selected={selected}
+                isConnectionTarget={isConnectionTarget}
+                displayHeight={displayHeight}
+                visibleIndex={0}
+                totalVisible={1}
+                topOverride={displayHeight * port.yRatio}
+                interactive={port.direction === "output"}
+                onPointerDown={(event) =>
+                  onStartConnection(node.id, port.side, port.kind, event, port.id)
+                }
+              />
+            ))
+            : null}
+          {!hasSemanticPorts ? leftHandles.map((handle, index) => (
             <ConnectionHandleSlot
               key={`left-${handle.kind}`}
               count={handle.count}
@@ -526,10 +617,18 @@ export default function CanvasNodeCard({
               displayHeight={displayHeight}
               visibleIndex={index}
               totalVisible={leftHandles.length}
-              onPointerDown={(event) => onStartConnection(node.id, "left", handle.kind, event)}
+              onPointerDown={(event) =>
+                onStartConnection(
+                  node.id,
+                  "left",
+                  handle.kind,
+                  event,
+                  getDefaultSourcePortId({ node, kind: handle.kind, side: "left" }),
+                )
+              }
             />
-          ))}
-          {rightHandles.map((handle, index) => (
+          )) : null}
+          {!hasSemanticPorts ? rightHandles.map((handle, index) => (
             <ConnectionHandleSlot
               key={`right-${handle.kind}`}
               count={handle.count}
@@ -540,9 +639,17 @@ export default function CanvasNodeCard({
               displayHeight={displayHeight}
               visibleIndex={index}
               totalVisible={rightHandles.length}
-              onPointerDown={(event) => onStartConnection(node.id, "right", handle.kind, event)}
+              onPointerDown={(event) =>
+                onStartConnection(
+                  node.id,
+                  "right",
+                  handle.kind,
+                  event,
+                  getDefaultSourcePortId({ node, kind: handle.kind, side: "right" }),
+                )
+              }
             />
-          ))}
+          )) : null}
         </div>
 
         {!isAssistant ? (
@@ -639,6 +746,8 @@ function ConnectionHandleSlot({
   displayHeight,
   visibleIndex,
   totalVisible,
+  topOverride,
+  interactive = true,
   onPointerDown,
 }: {
   count: number;
@@ -649,17 +758,16 @@ function ConnectionHandleSlot({
   displayHeight: number;
   visibleIndex: number;
   totalVisible: number;
+  topOverride?: number;
+  interactive?: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
-  const shouldRenderVisibleHandle = count > 0 || (selected && kind === "image");
-  const shouldRenderHiddenLaunchZone = count === 0 && selected && kind === "text";
-  const top = getHandleTopOffset({
-    displayHeight,
-    visibleIndex,
-    totalVisible,
-  });
+  // A selected node exposes both semantic connection types. Text ports must be
+  // visible, not merely clickable, so users can drag a text edge deliberately.
+  const shouldRenderVisibleHandle = count > 0 || selected;
+  const top = topOverride ?? getHandleTopOffset({ displayHeight, visibleIndex, totalVisible });
 
-  if (!shouldRenderVisibleHandle && !shouldRenderHiddenLaunchZone) {
+  if (!shouldRenderVisibleHandle) {
     return null;
   }
 
@@ -681,15 +789,7 @@ function ConnectionHandleSlot({
           kind={kind}
           selected={selected}
           active={selected || isConnectionTarget}
-          onPointerDown={onPointerDown}
-        />
-      ) : null}
-      {shouldRenderHiddenLaunchZone ? (
-        <button
-          type="button"
-          data-canvas-interactive="true"
-          aria-label={`Create ${kind} connection`}
-          className="absolute inset-0 h-8 w-8 rounded-full opacity-0"
+          interactive={interactive}
           onPointerDown={onPointerDown}
         />
       ) : null}
@@ -702,34 +802,22 @@ function AggregateConnectionHandle({
   kind,
   selected,
   active,
+  interactive,
   onPointerDown,
 }: {
   count: number;
   kind: CanvasConnectionKind;
   selected: boolean;
   active: boolean;
+  interactive: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }) {
   const styles = getConnectionHandleStyles(kind);
   const showCount = selected && count >= 2;
   const Icon = kind === "text" ? Type : ImageIcon;
 
-  return (
-    <button
-      type="button"
-      data-canvas-interactive="true"
-      aria-label={`${kind} connection${count > 1 ? ` (${count})` : ""}`}
-      title={count > 1 ? `${count} ${kind} connections` : `${kind} connection`}
-      className="relative flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition duration-150 hover:scale-[1.04]"
-      style={{
-        borderColor: styles.border,
-        background: styles.background,
-        boxShadow: active
-          ? `0 0 0 3px ${styles.ring}, 0 8px 18px rgba(15,23,42,0.14)`
-          : "0 8px 18px rgba(15,23,42,0.14)",
-      }}
-      onPointerDown={onPointerDown}
-    >
+  const content = (
+    <>
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={showCount ? `count-${count}` : `icon-${kind}`}
@@ -747,8 +835,38 @@ function AggregateConnectionHandle({
           )}
         </motion.span>
       </AnimatePresence>
-    </button>
+    </>
   );
+
+  const sharedProps = {
+    "aria-label": `${kind} connection${count > 1 ? ` (${count})` : ""}`,
+    title: count > 1 ? `${count} ${kind} connections` : `${kind} connection`,
+    className: [
+      "relative flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_8px_18px_rgba(15,23,42,0.14)] transition duration-150",
+      interactive ? "hover:scale-[1.04]" : "cursor-default",
+    ].join(" "),
+    style: {
+      borderColor: styles.border,
+      background: styles.background,
+      boxShadow: active
+        ? `0 0 0 3px ${styles.ring}, 0 8px 18px rgba(15,23,42,0.14)`
+        : "0 8px 18px rgba(15,23,42,0.14)",
+    },
+  };
+
+  if (!interactive) {
+    return (
+      <div
+        data-canvas-interactive="true"
+        {...sharedProps}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return <button type="button" data-canvas-interactive="true" {...sharedProps} onPointerDown={onPointerDown}>{content}</button>;
 }
 
 function AdaptiveImageRenderer({

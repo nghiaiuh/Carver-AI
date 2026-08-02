@@ -220,6 +220,10 @@ Current direction:
 - one selected target image
 - connected references resolved from the graph
 - graph should be serializable/restorable via snapshot schema
+- semantic node ports live in `apps/web/app/canvas/utils/canvasNodePorts.ts`:
+  Assistant uses stable text/image input and output port IDs, while editable text
+  nodes use text-only input/output ports. New edges persist `sourcePortId` when
+  available while legacy edges continue through geometry fallback.
 - canvas generation is job-backed:
   - web creates an `ai_job`
   - worker executes the generation

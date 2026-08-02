@@ -25,6 +25,7 @@ import type {
   CanvasNode,
   CanvasPresetChild,
   CanvasPresetGroupNode,
+  CanvasTextNode,
   EditorTool,
   Marker,
   PenSettings,
@@ -45,10 +46,17 @@ import PenStrokeLayer from "../widgets/PenStrokeLayer";
 import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
 import { clonePenStrokes, erasePenStrokesBySquare } from "../widgets/eraserUtils";
 import {
-  getImageHandlePoint,
+  getAggregateHandlePoint,
   inferConnectionRoleFromNode,
+  getSemanticPortPoint,
   type ImageHandlePosition,
 } from "./canvasConnectionGeometry";
+import {
+  getDefaultSourcePortId,
+  getNodeSemanticPort,
+  getTargetPortIdForConnection,
+  getTextNodeInputPorts,
+} from "../../utils/canvasNodePorts";
 import {
   buildPresetSourceImage,
   getPresetChildRightAnchor,
@@ -589,6 +597,7 @@ export default function CanvasBoard({
   const [draftEdge, setDraftEdge] = useState<{
     sourceId: string;
     sourceHandle: ImageHandlePosition;
+    sourcePortId?: string;
     connectionKind: CanvasConnectionKind;
     targetX: number;
     targetY: number;
@@ -1018,6 +1027,47 @@ export default function CanvasBoard({
 
       if (event.button !== 0) return;
       if (activeTool === "cut") return;
+      if (activeTool === "text-note") {
+        event.stopPropagation();
+        if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
+        if (isCanvasInteractiveTarget(event.target)) return;
+
+        const container = containerRef.current;
+        if (!container) return;
+
+        const screenPoint = getPointerPointInContainer(event, container);
+        const point = getWorldPointFromPointer({
+          point: screenPoint,
+          pan,
+          zoom,
+        });
+        const textNode: CanvasTextNode = {
+          id: `text-${Date.now()}`,
+          kind: "text",
+          title: "Text note",
+          role: "text",
+          imageUrl: "",
+          prompt: null,
+          x: point.x,
+          y: point.y,
+          width: 280,
+          height: 180,
+          scale: 1,
+          inputPorts: getTextNodeInputPorts(),
+          text: { content: "" },
+          createdAt: new Date().toISOString(),
+        };
+
+        onNodesChange((current) => [...current, textNode]);
+        setCreatedNodeStack((current) => [...current, textNode]);
+        setCreatedNodeRedoStack([]);
+        setMarqueeSelectedNodeIds(null);
+        onSetActiveNode(textNode.id);
+        onSelect({ type: "node", id: textNode.id });
+        onTool("select");
+        onToast("Text note added");
+        return;
+      }
       if (activeTool === "pen") {
         event.stopPropagation();
         if (draggingNodeId || draftEdge || miniMapDragging || isPanning.current) return;
@@ -1090,7 +1140,7 @@ export default function CanvasBoard({
       });
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isRegionEditing, isResizingPanel, miniMapDragging, pan, penSettings.color, penSettings.drawingMode, penSettings.geometryShape, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
+    [activeTool, applyEraserAt, draftEdge, draggingNodeId, isRegionEditing, isResizingPanel, miniMapDragging, onNodesChange, onSelect, onSetActiveNode, onToast, onTool, pan, penSettings.color, penSettings.drawingMode, penSettings.geometryShape, penSettings.opacity, penSettings.strokeWidth, penStrokes, updateEraserPreview, zoom],
   );
 
   // ── Node Dragging logic ───────────────────────────────────────────────────
@@ -1100,12 +1150,21 @@ export default function CanvasBoard({
     if (!node) return;
     if (activeTool === "connection") {
       if (event.button !== 0) return;
+      if (node.kind === "assistant") {
+        event.preventDefault();
+        event.stopPropagation();
+        onToast("Assistant outputs text only. Drag from its text port.");
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
-      const startPoint = getImageHandlePoint(node, "right");
+      const sourcePortId = getDefaultSourcePortId({ node, kind: "image", side: "right" });
+      const startPoint =
+        getSemanticPortPoint(node, sourcePortId) ?? getAggregateHandlePoint(node, "right", "image", edges);
       setDraftEdge({
         sourceId: id,
         sourceHandle: "right",
+        sourcePortId,
         connectionKind: "image",
         targetX: startPoint.x,
         targetY: startPoint.y,
@@ -1184,6 +1243,7 @@ export default function CanvasBoard({
       handle: ImageHandlePosition,
       connectionKind: CanvasConnectionKind,
       event: React.PointerEvent<HTMLButtonElement>,
+      sourcePortId?: string,
     ) => {
       if (isResizingPanel) return;
       event.preventDefault();
@@ -1192,17 +1252,25 @@ export default function CanvasBoard({
       const sourceNode = nodes.find((node) => node.id === nodeId);
       if (!sourceNode) return;
 
-      const startPoint = getImageHandlePoint(sourceNode, handle);
+      const resolvedSourcePortId = sourcePortId ?? getDefaultSourcePortId({
+        node: sourceNode,
+        kind: connectionKind,
+        side: handle,
+      });
+      const startPoint =
+        getSemanticPortPoint(sourceNode, resolvedSourcePortId) ??
+        getAggregateHandlePoint(sourceNode, handle, connectionKind, edges);
       setDraftEdge({
         sourceId: nodeId,
         sourceHandle: handle,
+        sourcePortId: resolvedSourcePortId,
         connectionKind,
         targetX: startPoint.x,
         targetY: startPoint.y,
       });
       setHoveredConnectionTargetId(null);
     },
-    [isResizingPanel, nodes],
+    [edges, isResizingPanel, nodes],
   );
 
   /**
@@ -1369,13 +1437,8 @@ export default function CanvasBoard({
             (e.sourceId === node.id && e.targetId === draftEdge.sourceId),
         );
         if (alreadyConnected) return false;
-        const scale = node.scale ?? 1;
-        return (
-          target.x >= node.x &&
-          target.x <= node.x + node.width * scale &&
-          target.y >= node.y &&
-          target.y <= node.y + node.height * scale
-        );
+        const bounds = getNodeDisplayBounds(node);
+        return target.x >= bounds.x && target.x <= bounds.x + bounds.width && target.y >= bounds.y && target.y <= bounds.y + bounds.height;
       });
       setHoveredConnectionTargetId(hoveredNode?.id ?? null);
     }
@@ -1496,13 +1559,13 @@ export default function CanvasBoard({
         });
 
         const targetNode = nodes.find((node) => {
-          const scale = node.scale ?? 1;
+          const bounds = getNodeDisplayBounds(node);
           return (
             node.id !== draftEdge.sourceId &&
-            drop.x >= node.x &&
-            drop.x <= node.x + node.width * scale &&
-            drop.y >= node.y &&
-            drop.y <= node.y + node.height * scale
+            drop.x >= bounds.x &&
+            drop.x <= bounds.x + bounds.width &&
+            drop.y >= bounds.y &&
+            drop.y <= bounds.y + bounds.height
           );
         });
 
@@ -1539,21 +1602,28 @@ export default function CanvasBoard({
           if (edgeExists) {
             onToast("These two images are already connected");
           } else {
-            const targetPorts = targetNode.inputPorts || getDefaultInputPorts();
-            const connectedPortIds = new Set(
-              edges.filter((e) => e.targetId === targetNode.id).map((e) => e.targetPortId)
-            );
-            const firstEmpty = targetPorts.find((p) => !connectedPortIds.has(p.id));
-            const targetPortId = firstEmpty ? firstEmpty.id : targetPorts[0].id;
+            const targetPortId = getTargetPortIdForConnection({
+              node: targetNode,
+              kind: draftEdge.connectionKind,
+              edges,
+            });
+            if (!targetPortId) {
+              onToast(`This node does not accept ${draftEdge.connectionKind} connections`);
+              setDraftEdge(null);
+              setHoveredConnectionTargetId(null);
+              return;
+            }
+            const targetPort = getNodeSemanticPort(targetNode, targetPortId);
 
             const newEdge: CanvasEdge = {
               id: `edge-${Date.now()}`,
               sourceId: draftEdge.sourceId,
               targetId: targetNode.id,
               kind: draftEdge.connectionKind,
+              sourcePortId: draftEdge.sourcePortId,
               targetPortId,
               fromHandle: draftEdge.sourceHandle,
-              toHandle: draftEdge.sourceHandle === "right" ? "left" : "right",
+              toHandle: targetPort?.side ?? (draftEdge.sourceHandle === "right" ? "left" : "right"),
               role,
               label:
                 draftEdge.connectionKind === "text"

@@ -1,8 +1,8 @@
 /*
  * CanvasEdges
  * Renders SVG bezier edges between canvas nodes, with port-aware anchoring.
- * Source anchors use the right-side output handle.
- * Target anchors use getInputPortHandlePoint based on the edge's targetPortId.
+ * Semantic ports take precedence when an edge stores a source/target port ID.
+ * Legacy edges retain aggregate-handle geometry for snapshot compatibility.
  */
 
 "use client";
@@ -16,6 +16,7 @@ import {
   getEdgeConnectionKind,
   getImageHandlePoint,
   getInputPortHandlePoint,
+  getSemanticPortPoint,
 } from "./canvasConnectionGeometry";
 import {
   getPresetChildAnchor,
@@ -34,6 +35,7 @@ type CanvasEdgesProps = {
   draftEdge?: {
     sourceId: string;
     sourceHandle?: CanvasEdge["fromHandle"];
+    sourcePortId?: string;
     connectionKind: "text" | "image";
     targetX: number;
     targetY: number;
@@ -53,10 +55,23 @@ export default function CanvasEdges({
   onEdgeCut,
   draftEdge,
 }: CanvasEdgesProps) {
-  /** Get the output (right-side) anchor for a source node. */
-  const getSourceAnchor = (nodeId: string, handle?: CanvasEdge["fromHandle"]) => {
+  /** Get the output anchor, preferring the edge's stable semantic source port. */
+  const getSourceAnchor = (
+    nodeId: string,
+    sourcePortId?: string,
+    handle?: CanvasEdge["fromHandle"],
+    connectionKind: "text" | "image" = "image",
+  ) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
+
+    const semanticPoint = getSemanticPortPoint(node, sourcePortId);
+    if (semanticPoint) return semanticPoint;
+
+    if (!isPresetGroupNode(node)) {
+      return getAggregateHandlePoint(node, handle ?? (connectionKind === "text" ? "left" : "right"), connectionKind, edges);
+    }
+
     return getImageHandlePoint(node, handle ?? "right");
   };
 
@@ -64,6 +79,9 @@ export default function CanvasEdges({
   const getTargetPortAnchor = (nodeId: string, targetPortId: string) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
+
+    const semanticPoint = getSemanticPortPoint(node, targetPortId);
+    if (semanticPoint) return semanticPoint;
 
     const targetEdge = edges.find((edge) => edge.targetId === nodeId && edge.targetPortId === targetPortId);
     const connectionKind = targetEdge ? getEdgeConnectionKind(targetEdge) : "image";
@@ -103,18 +121,12 @@ export default function CanvasEdges({
           }
         }
         if (!sourceCenter) {
-          const sourceNode = nodes.find((n) => n.id === edge.sourceId);
-          if (sourceNode && !isPresetGroupNode(sourceNode)) {
-            const connectionKind = getEdgeConnectionKind(edge);
-            sourceCenter = getAggregateHandlePoint(
-              sourceNode,
-              edge.fromHandle ?? (connectionKind === "text" ? "left" : "right"),
-              connectionKind,
-              edges,
-            );
-          } else {
-            sourceCenter = getSourceAnchor(edge.sourceId, edge.fromHandle ?? "right");
-          }
+          sourceCenter = getSourceAnchor(
+            edge.sourceId,
+            edge.sourcePortId,
+            edge.fromHandle,
+            getEdgeConnectionKind(edge),
+          );
         }
         const targetCenter = getTargetPortAnchor(edge.targetId, edge.targetPortId);
         
@@ -198,17 +210,12 @@ export default function CanvasEdges({
         }
 
         if (!sourceCenter) {
-          const sourceNode = nodes.find((n) => n.id === draftEdge.sourceId);
-          if (sourceNode && !isPresetGroupNode(sourceNode)) {
-            sourceCenter = getAggregateHandlePoint(
-              sourceNode,
-              draftEdge.sourceHandle ?? (draftEdge.connectionKind === "text" ? "left" : "right"),
-              draftEdge.connectionKind,
-              edges,
-            );
-          } else {
-            sourceCenter = getSourceAnchor(draftEdge.sourceId, draftEdge.sourceHandle ?? "right");
-          }
+          sourceCenter = getSourceAnchor(
+            draftEdge.sourceId,
+            draftEdge.sourcePortId,
+            draftEdge.sourceHandle,
+            draftEdge.connectionKind,
+          );
         }
 
         if (!sourceCenter) return null;

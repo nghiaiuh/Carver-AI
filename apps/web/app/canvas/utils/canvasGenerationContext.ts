@@ -12,6 +12,7 @@ import type {
   SketchLine,
   ImageConnectionRole,
 } from "../types/canvas";
+import { isCanvasTextNode } from "../types/canvas";
 import type {
   CanvasGenerationContext,
   CanvasGenerationImageReference,
@@ -103,7 +104,7 @@ export function resolveConnectedImageReferences(
     if (edge.sourcePresetChildId) continue;
 
     const sourceNode = nodes.find((node) => node.id === edge.sourceId);
-    if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode)) continue;
+    if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasTextNode(sourceNode)) continue;
 
     const key = `${edge.sourceId}:${edge.sourcePresetChildId ?? "node"}:${edge.targetPresetChildId ?? "target"}`;
     if (references.has(key)) continue;
@@ -192,7 +193,7 @@ export function buildCanvasGenerationContext(
   promptText: string,
 ): CanvasGenerationContext | null {
   const target = nodes.find((node) => node.id === targetNodeId);
-  if (!target || isPresetGroupNode(target)) return null;
+  if (!target || isPresetGroupNode(target) || isAssistantNode(target) || isCanvasTextNode(target)) return null;
 
   const imageReferences = resolveConnectedImageReferences(targetNodeId, nodes, edges);
   const presetReferences = resolveConnectedPresetReferences(targetNodeId, nodes, edges);
@@ -247,7 +248,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       activeGenerationTargetId: params.activeGenerationTargetId,
       nodes: params.nodes.map((node) => ({
         id: node.id,
-        kind: isPresetGroupNode(node) ? "presetGroup" : isAssistantNode(node) ? "assistant" : "image",
+        kind: isPresetGroupNode(node) ? "presetGroup" : isAssistantNode(node) ? "assistant" : isCanvasTextNode(node) ? "text" : "image",
         title: node.title,
         role: node.role,
         imageUrl: sanitizePersistedNodeImageUrl(node),
@@ -280,12 +281,14 @@ export function buildCanvasSnapshotWithGraph(params: {
             }
           : undefined,
         assistant: isAssistantNode(node) ? node.assistant : undefined,
+        text: isCanvasTextNode(node) ? node.text : undefined,
       })),
       edges: params.edges.map((edge) => ({
         id: edge.id,
         sourceId: edge.sourceId,
         targetId: edge.targetId,
         kind: edge.kind,
+        sourcePortId: edge.sourcePortId,
         targetPortId: edge.targetPortId,
         targetPresetChildId: edge.targetPresetChildId ?? null,
         sourcePresetChildId: edge.sourcePresetChildId ?? null,

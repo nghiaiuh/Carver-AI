@@ -31,10 +31,10 @@ import {
   type CanvasPresetChild,
   type CanvasPresetGroupNode,
   DEFAULT_PEN_SETTINGS,
-  getDefaultInputPorts,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
 } from "../types/canvas";
+import { getAssistantInputPorts } from "../utils/canvasNodePorts";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import {
   buildCanvasGenerationContext,
@@ -2070,7 +2070,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       prompt: null,
       role: "assistant",
       model: "GPT-5 Mini",
-      inputPorts: getDefaultInputPorts(),
+      inputPorts: getAssistantInputPorts(),
       assistant: {
         mode: "prompt",
         prompt: "",
