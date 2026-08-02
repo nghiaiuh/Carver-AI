@@ -183,13 +183,13 @@ function AssistantNodeSurface({
         }
       }}
     >
-      <div className="flex items-center justify-between px-7 pt-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-[52px] items-center rounded-full border border-[#E1E1E1] bg-[#F3F3F3] p-1 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+      <div className="flex h-12 items-center justify-between overflow-visible px-3 pb-2 pt-2">
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex min-w-[66px] items-center gap-1 rounded-full border border-[#E4E4E4] bg-[#F4F4F4] p-[3px] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
             <button
               type="button"
               className={[
-                "grid h-10 w-10 place-items-center rounded-full transition",
+                "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
                 !showingResult ? "bg-white text-[#202020] shadow-[0_2px_7px_rgba(0,0,0,0.12)]" : "text-[#B7B7B7]",
               ].join(" ")}
               title="Prompt"
@@ -198,7 +198,7 @@ function AssistantNodeSurface({
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
-                className="h-[18px] w-[18px] fill-current"
+                className="h-4 w-4 fill-current"
                 aria-hidden="true"
               >
                 <path d="M13.116 7.875c0-.647-.525-1.172-1.172-1.172H6.516a1.172 1.172 0 0 0 0 2.344h5.428a1.17 1.17 0 0 0 1.172-1.172m-1.35 3.047a1.172 1.172 0 0 0 0 2.344h3.276a1.172 1.172 0 0 0 0-2.344zm2.953-3.047c0-.647.525-1.172 1.172-1.172h1.401a1.172 1.172 0 0 1 0 2.344h-1.401a1.17 1.17 0 0 1-1.172-1.172M6.516 15.14a1.172 1.172 0 0 0 0 2.344h2.807a1.172 1.172 0 0 0 0-2.343zm-1.172-3.046c0-.647.525-1.172 1.172-1.172h1.401a1.172 1.172 0 0 1 0 2.344H6.516a1.17 1.17 0 0 1-1.172-1.172" />
@@ -212,80 +212,83 @@ function AssistantNodeSurface({
             <button
               type="button"
               className={[
-                "grid h-10 w-10 place-items-center rounded-full transition",
+                "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
                 showingResult ? "bg-white text-[#202020] shadow-[0_2px_7px_rgba(0,0,0,0.12)]" : "text-[#B7B7B7]",
               ].join(" ")}
               title="Result"
               onClick={() => updateAssistant({ mode: "result" })}
             >
-              <Sparkles className="h-[18px] w-[18px]" strokeWidth={2} />
+              <Sparkles className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
           <button
             type="button"
-            className="grid h-[44px] w-[44px] place-items-center rounded-full bg-white text-[#171717] shadow-[0_3px_10px_rgba(0,0,0,0.16)] transition hover:bg-[#F2F2F2]"
+            className="grid h-8 w-8 place-items-center rounded-full border border-[#E8E8E8] bg-white text-[#171717] shadow-[0_3px_10px_rgba(0,0,0,0.12)] transition hover:bg-[#F6F6F6]"
             title="Attach context"
             onClick={() => updateAssistant({ mode: "prompt" })}
           >
-            <Plus className="h-5 w-5" strokeWidth={2.3} />
+            <Plus className="h-4 w-4" strokeWidth={2.3} />
           </button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 px-7 pb-4 pt-7">
+      <div className="flex min-h-0 flex-1 px-4 pb-2 pt-1">
         {!showingResult ? (
           <div className="relative min-h-0 flex-1">
             <textarea
               value={assistant.prompt}
               onChange={(event) => updateAssistant({ prompt: event.target.value, status: "idle" })}
               placeholder={ASSISTANT_PLACEHOLDER}
-              className="h-full w-full resize-none overflow-y-auto bg-transparent font-[var(--font-botanical-sans)] text-[21px] leading-[1.5] text-[#252525] outline-none placeholder:text-[#A7A7A7]"
+              className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[#2D2D2D] outline-none placeholder:text-[#B4ACA2]"
             />
           </div>
         ) : (
           <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
-            <pre className="whitespace-pre-wrap font-[var(--font-botanical-sans)] text-[21px] leading-[1.5] text-[#222222]">
+            <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[#2D2D2D]">
               {assistant.response || "Run the assistant to generate a result."}
             </pre>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-3 px-7 pb-5">
-        <button
-          type="button"
-          className="flex h-9 min-w-0 items-center gap-1.5 rounded-full bg-[#F1F1F1] px-4 text-[16px] font-medium text-[#676767] transition hover:bg-[#EAEAEA]"
-          title="AI model"
-          onClick={() => updateAssistant({ model: assistant.model })}
-        >
-          <span className="truncate">{assistant.model}</span>
-          <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.9} />
-        </button>
-        <button
-          type="button"
-          className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1F1] text-[#2F2F2F] transition hover:bg-[#EAEAEA]"
-          title="Assistant settings"
-        >
-          <Settings className="h-4 w-4" strokeWidth={1.9} />
-        </button>
-        <div className="flex-1" />
-        <button
-          type="button"
-          className="flex h-9 items-center gap-1.5 rounded-full bg-[#F1F1F1] px-5 text-[16px] font-medium text-[#676767] transition hover:bg-[#EAEAEA]"
-          title="Output format"
-          onClick={() => updateAssistant({ outputFormat: assistant.outputFormat === "list" ? "text" : "list" })}
-        >
-          <span>{assistant.outputFormat === "list" ? "Export as list" : "Export as text"}</span>
-          <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.9} />
-        </button>
-        <button
-          type="button"
-          className="grid h-10 w-10 place-items-center rounded-full bg-[#8A8A8A] text-white shadow-sm transition hover:bg-[#747474]"
-          title="Run assistant"
-          onClick={runAssistant}
-        >
-          <Play className="h-4 w-4 fill-current" strokeWidth={1.9} />
-        </button>
+      <div className="flex items-end justify-between px-3 pb-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[#F3F3F3] px-3 text-xs font-medium text-[#6A6A6A] opacity-80 transition hover:bg-[#ECECEC]"
+            title="AI model"
+            onClick={() => updateAssistant({ model: assistant.model })}
+          >
+            <span className="max-w-28 truncate text-left text-xs">{assistant.model}</span>
+            <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
+          </button>
+          <button
+            type="button"
+            className="grid h-6 w-6 place-items-center rounded-full bg-[#F3F3F3] text-[#2F2F2F] transition hover:bg-[#ECECEC]"
+            title="Assistant settings"
+          >
+            <Settings className="h-3 w-3" strokeWidth={1.9} />
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="inline-flex h-6 items-center gap-1 rounded-full bg-[#F3F3F3] px-4 text-xs font-medium text-[#6A6A6A] opacity-80 transition hover:bg-[#ECECEC]"
+            title="Output format"
+            onClick={() => updateAssistant({ outputFormat: assistant.outputFormat === "list" ? "text" : "list" })}
+          >
+            <span className="whitespace-nowrap">{assistant.outputFormat === "list" ? "Export as list" : "Export as text"}</span>
+            <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
+          </button>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#595959] text-white transition hover:bg-[#444444]"
+            title="Run assistant"
+            onClick={runAssistant}
+          >
+            <Play className="h-3 w-3 fill-current" strokeWidth={1.9} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -359,8 +362,9 @@ export default function CanvasNodeCard({
   onDelete,
 }: CanvasNodeCardProps) {
   const objectScale = node.scale ?? 1;
-  const displayWidth = node.width * objectScale;
-  const displayHeight = node.height * objectScale;
+  const assistantVisualScale = node.kind === "assistant" ? 2 / 3 : 1;
+  const displayWidth = node.width * objectScale * assistantVisualScale;
+  const displayHeight = node.height * objectScale * assistantVisualScale;
   // Asset-backed nodes may restore their runtime URL into sourceImage.url first,
   // so rendering should not depend on imageUrl alone.
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
@@ -394,7 +398,7 @@ export default function CanvasNodeCard({
     (object) => object.targetNodeId === node.id || (!object.targetNodeId && legacyOverlayHost),
   );
   const frameClassName = isAssistant
-    ? "relative overflow-hidden rounded-[30px] border-[3px] border-[#D9D9D9] bg-[#F8F8F8] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-colors"
+    ? "relative overflow-hidden rounded-[20px] border-[3px] border-[#D9D9D9] bg-[#F8F8F8] shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-colors"
     : [
         "relative overflow-hidden rounded-[18px] border bg-[var(--canvas-theme-surface-soft)] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
         nodeFrameClassName,
