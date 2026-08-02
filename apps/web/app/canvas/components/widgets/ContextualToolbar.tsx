@@ -15,7 +15,6 @@ import type { EditorTool } from "../../types/canvas";
 type ContextualToolbarProps = {
   itemLabel: "Image" | "Reference" | "Object" | "Assistant";
   viewportZoom?: number;
-  onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
   onTool: (tool: EditorTool) => void;

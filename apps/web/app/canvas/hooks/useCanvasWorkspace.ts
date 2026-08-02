@@ -464,7 +464,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<string | null>(null);
-  const [showQuickEditModal, setShowQuickEditModal] = useState(false);
   const [showMultiAngleModal, setShowMultiAngleModal] = useState(false);
   const [showAddObjectMenu, setShowAddObjectMenu] = useState(false);
   const [showFeasibilityReviewPanel, setShowFeasibilityReviewPanel] = useState(false);
@@ -2468,11 +2467,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setShowMultiAngleModal(false);
   };
 
-  // Đóng quick edit modal; phần áp dụng chỉnh sửa nhanh chưa được cài đặt.
-  const applyQuickEdit = () => {
-    setShowQuickEditModal(false);
-  };
-
   // Lưu checkpoint mask hiện tại để phục vụ undo/redo vùng chọn.
   const pushMaskHistoryCheckpoint = (nodeId: string) => {
     setNodes((items) =>
@@ -2614,7 +2608,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     // ── Modal visibility ──────────────────────────────────────────────────────
     modals: {
-      showQuickEditModal,
       showMultiAngleModal,
       showAddObjectMenu,
       showFeasibilityReviewPanel,
@@ -2683,7 +2676,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // Generation
       generateConcept,
       generateAngles,
-      applyQuickEdit,
       applyCompletedGenerationJob,
       refreshProfileCredits,
       persistCanvasNodeImageAsset,
@@ -2706,7 +2698,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       setLanguage,
 
       // Modal toggles
-      setShowQuickEditModal,
       setShowMultiAngleModal,
       setShowAddObjectMenu,
       setShowFeasibilityReviewPanel,

@@ -26,7 +26,6 @@ import FloatingZoomControls from "./FloatingZoomControls";
 import QuickAddMenu from "../panels/QuickAddMenu";
 import GroupNameTagModal from "../panels/GroupNameTagModal";
 import MultiAngleModal from "../panels/MultiAngleModal";
-import QuickEditModal from "../panels/QuickEditModal";
 import FeasibilityReviewPanel from "../panels/FeasibilityReviewPanel";
 import RegionBrushToolbar from "../widgets/RegionBrushToolbar";
 import DrawToolToolbar from "../widgets/DrawToolToolbar";
@@ -278,7 +277,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onSelectSketchLine={actions.selectSketchLine}
               onSelectSketchGroup={(id) => actions.handleSelectItem({ type: "sketchGroup", id })}
               onTool={actions.handleTool}
-              onQuickEdit={() => actions.setShowQuickEditModal(true)}
               onMultiAngle={() => actions.setShowMultiAngleModal(true)}
               onAddObject={() => actions.setShowAddObjectMenu(true)}
               onRealityCheck={() => actions.setShowFeasibilityReviewPanel(true)}
@@ -349,14 +347,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           ) : null}
 
           {/* ── Modals & overlays ────────────────────────────────────────────── */}
-          <QuickEditModal
-            open={modals.showQuickEditModal}
-            promptText={state.promptText}
-            onPromptChange={actions.setPromptText}
-            onClose={() => actions.setShowQuickEditModal(false)}
-            onApply={actions.applyQuickEdit}
-          />
-
           {state.selectedSketchLineIds.length > 0 && (
             <div className="fixed bottom-28 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-[0_16px_36px_var(--canvas-theme-shadow)]">
               <span className="text-xs font-black text-[var(--canvas-theme-text-muted)]">

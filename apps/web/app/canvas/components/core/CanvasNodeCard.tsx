@@ -322,7 +322,6 @@ type CanvasNodeCardProps = {
   onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
   onImageAction: (nodeId: string, xPercent: number, yPercent: number) => void;
-  onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
   onTool: (tool: EditorTool) => void;
@@ -352,7 +351,6 @@ export default function CanvasNodeCard({
   onUpdateNode,
   onDragStart,
   onImageAction,
-  onQuickEdit,
   onMultiAngle,
   onAddObject,
   onTool,
@@ -420,10 +418,6 @@ export default function CanvasNodeCard({
         if (activeTool !== "region") {
           onDragStart(node.id, event);
         }
-      }}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        onQuickEdit();
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -573,7 +567,6 @@ export default function CanvasNodeCard({
             <ContextualToolbar
               itemLabel={getNodeKindLabel(node.role)}
               viewportZoom={viewportZoom}
-              onQuickEdit={onQuickEdit}
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
               onTool={onTool}

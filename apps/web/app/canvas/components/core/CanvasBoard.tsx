@@ -103,7 +103,6 @@ type CanvasBoardProps = {
   onSelectSketchLine: (id: string, additive: boolean) => void;
   onSelectSketchGroup: (id: string) => void;
   onTool: (tool: EditorTool) => void;
-  onQuickEdit: () => void;
   onMultiAngle: () => void;
   onAddObject: () => void;
   onRealityCheck: () => void;
@@ -284,7 +283,6 @@ export default function CanvasBoard({
   onSelectSketchLine,
   onSelectSketchGroup,
   onTool,
-  onQuickEdit,
   onMultiAngle,
   onAddObject,
   onRealityCheck,
@@ -2210,7 +2208,6 @@ export default function CanvasBoard({
               onUpdateNode={updateCanvasNode}
               onDragStart={handleNodePointerDown}
               onImageAction={onImageAction}
-              onQuickEdit={onQuickEdit}
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
               onTool={onTool}
