@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import {
   ArrowUpRight,
   ChevronDown,
@@ -36,7 +37,7 @@ function classes(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-function GeometryIcon({ active }: { active: boolean }) {
+function GeometryIcon() {
   return (
     <svg
       viewBox="0 0 32 32"
@@ -242,7 +243,7 @@ export default function DrawToolToolbar({ activeTool, penSettings, onTool, onPen
             hoverless={!geometryActive && flyout !== "shapes"}
             onClick={() => toggle("shapes")}
           >
-            <GeometryIcon active={geometryActive || flyout === "shapes"} />
+            <GeometryIcon />
           </ToolbarActionButton>
           {flyout === "shapes" ? (
             <div className="absolute bottom-[calc(100%+12px)] left-0 flex gap-1 rounded-[22px] border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/95 p-1.5 shadow-[0_16px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl">
@@ -279,7 +280,13 @@ export default function DrawToolToolbar({ activeTool, penSettings, onTool, onPen
               className="h-4 w-4 shrink-0 rounded-full border border-white/10"
               style={{ backgroundColor: penSettings.color }}
             />
-            <ChevronDown className="h-3 w-3 shrink-0" />
+            <motion.span
+              animate={{ rotate: flyout === "colors" ? 180 : 0 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="flex shrink-0"
+            >
+              <ChevronDown className="h-3 w-3 shrink-0" />
+            </motion.span>
           </ToolbarActionButton>
           {flyout === "colors" ? (
             <div className="absolute bottom-[calc(100%+12px)] left-1/2 flex -translate-x-20 gap-1.5 rounded-full border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/95 px-2.5 py-1.5 shadow-[0_16px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl">
@@ -323,7 +330,13 @@ export default function DrawToolToolbar({ activeTool, penSettings, onTool, onPen
                 strokeLinejoin="round"
               />
             </svg>
-            <ChevronDown className="h-3 w-3 shrink-0" />
+            <motion.span
+              animate={{ rotate: flyout === "width" ? 180 : 0 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="flex shrink-0"
+            >
+              <ChevronDown className="h-3 w-3 shrink-0" />
+            </motion.span>
           </ToolbarActionButton>
           {flyout === "width" ? (
             <div className="absolute bottom-[calc(100%+12px)] right-0 flex w-[180px] translate-x-4 rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-4 py-3 shadow-[0_16px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl">
