@@ -155,6 +155,101 @@ function buildAssistantPreviewResult(prompt: string) {
 const ASSISTANT_PLACEHOLDER =
   "Assistant is your creative sidekick-powered by a large language model. You can type a prompt, or even use images for context. It understands what you mean, builds on your ideas, and helps you move faster.";
 
+const ASSISTANT_MODEL_OPTIONS = [
+  "GPT-5 Mini",
+  "GPT-5.5",
+  "Claude Sonnet 4.5",
+  "Gemini 3.5 Flash",
+] as const;
+
+const ASSISTANT_OUTPUT_OPTIONS: ReadonlyArray<{
+  value: CanvasAssistantNode["assistant"]["outputFormat"];
+  label: string;
+}> = [
+  { value: "list", label: "Export as list" },
+  { value: "text", label: "Export as text" },
+];
+
+function AssistantPopoverButton({
+  label,
+  isOpen,
+  onToggle,
+  options,
+  onSelect,
+  align = "left",
+}: {
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onSelect: (value: string) => void;
+  align?: "left" | "right";
+}) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
+        title={label}
+        onClick={onToggle}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+      >
+        <span className="max-w-32 truncate text-left text-xs">{label}</span>
+        <motion.span
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+        >
+          <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
+        </motion.span>
+      </button>
+
+      <AnimatePresence>
+        {isOpen ? (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className={[
+              "absolute bottom-[calc(100%+10px)] z-20 min-w-[170px] rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1.5 shadow-[0_18px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl",
+              align === "right" ? "right-0" : "left-0",
+            ].join(" ")}
+            role="menu"
+          >
+            {options.map((option) => {
+              const selected = option.label === label;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={[
+                    "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition",
+                    selected
+                      ? "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-text)]"
+                      : "text-[var(--canvas-theme-text-soft)] hover:bg-[var(--canvas-theme-hover)]",
+                  ].join(" ")}
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  onClick={() => onSelect(option.value)}
+                >
+                  <span>{option.label}</span>
+                  <span
+                    className={[
+                      "h-2 w-2 rounded-full transition",
+                      selected ? "bg-[var(--canvas-theme-selection)]" : "bg-transparent",
+                    ].join(" ")}
+                  />
+                </button>
+              );
+            })}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function AssistantNodeSurface({
   node,
   onUpdateNode,
@@ -164,6 +259,9 @@ function AssistantNodeSurface({
 }) {
   const assistant = node.assistant;
   const showingResult = assistant.mode === "result";
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [openMenu, setOpenMenu] = useState<"model" | "output" | null>(null);
 
   const updateAssistant = (update: Partial<CanvasAssistantNode["assistant"]>) => {
     onUpdateNode(node.id, (current) =>
@@ -179,16 +277,39 @@ function AssistantNodeSurface({
     );
   };
 
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!surfaceRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const runAssistant = () => {
     updateAssistant({
       mode: "result",
       status: "completed",
       response: buildAssistantPreviewResult(assistant.prompt),
     });
+    setOpenMenu(null);
   };
 
   return (
     <div
+      ref={surfaceRef}
       className="flex h-full w-full flex-col bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       data-canvas-interactive="true"
       onPointerDown={(event) => {
@@ -240,47 +361,77 @@ function AssistantNodeSurface({
               <Sparkles className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_3px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
-            title="Attach context"
-            onClick={() => updateAssistant({ mode: "prompt" })}
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.3} />
-          </button>
+          <AnimatePresence initial={false}>
+            {!showingResult ? (
+              <motion.button
+                key="assistant-add-reference"
+                type="button"
+                initial={{ opacity: 0, x: -8, scale: 0.96 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: -6, scale: 0.96 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_3px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
+                title="Add reference"
+                onClick={() => {
+                  updateAssistant({ mode: "prompt" });
+                  textareaRef.current?.focus();
+                }}
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.3} />
+              </motion.button>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 px-4 pb-2 pt-1">
-        {!showingResult ? (
-          <div className="relative min-h-0 flex-1">
-            <textarea
-              value={assistant.prompt}
-              onChange={(event) => updateAssistant({ prompt: event.target.value, status: "idle" })}
-              placeholder={ASSISTANT_PLACEHOLDER}
-              className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
-            />
-          </div>
-        ) : (
-          <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
-            <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)]">
-              {assistant.response || "Run the assistant to generate a result."}
-            </pre>
-          </div>
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          {!showingResult ? (
+            <motion.div
+              key="assistant-prompt"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="relative min-h-0 flex-1"
+            >
+              <textarea
+                ref={textareaRef}
+                value={assistant.prompt}
+                onChange={(event) => updateAssistant({ prompt: event.target.value, status: "idle" })}
+                placeholder={ASSISTANT_PLACEHOLDER}
+                className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="assistant-result"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="relative min-h-0 flex-1 overflow-y-auto pr-3"
+            >
+              <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)]">
+                {assistant.response || "Run the assistant to generate a result."}
+              </pre>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="flex items-end justify-between px-3 pb-2">
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
-            title="AI model"
-            onClick={() => updateAssistant({ model: assistant.model })}
-          >
-            <span className="max-w-28 truncate text-left text-xs">{assistant.model}</span>
-            <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
-          </button>
+          <AssistantPopoverButton
+            label={assistant.model}
+            isOpen={openMenu === "model"}
+            onToggle={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
+            options={ASSISTANT_MODEL_OPTIONS.map((model) => ({ value: model, label: model }))}
+            onSelect={(value) => {
+              updateAssistant({ model: value });
+              setOpenMenu(null);
+            }}
+          />
           <button
             type="button"
             className="grid h-6 w-6 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
@@ -290,15 +441,17 @@ function AssistantNodeSurface({
           </button>
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="inline-flex h-6 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-4 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
-            title="Output format"
-            onClick={() => updateAssistant({ outputFormat: assistant.outputFormat === "list" ? "text" : "list" })}
-          >
-            <span className="whitespace-nowrap">{assistant.outputFormat === "list" ? "Export as list" : "Export as text"}</span>
-            <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
-          </button>
+          <AssistantPopoverButton
+            label={ASSISTANT_OUTPUT_OPTIONS.find((option) => option.value === assistant.outputFormat)?.label ?? "Export as text"}
+            isOpen={openMenu === "output"}
+            onToggle={() => setOpenMenu((current) => (current === "output" ? null : "output"))}
+            options={ASSISTANT_OUTPUT_OPTIONS}
+            onSelect={(value) => {
+              updateAssistant({ outputFormat: value as CanvasAssistantNode["assistant"]["outputFormat"] });
+              setOpenMenu(null);
+            }}
+            align="right"
+          />
           <button
             type="button"
             className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
