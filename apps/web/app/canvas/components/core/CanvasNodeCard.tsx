@@ -43,8 +43,10 @@ import {
   type ImageHandlePosition,
 } from "./canvasConnectionGeometry";
 import {
+  getCanvasNodeVisualScale,
   getDefaultSourcePortId,
   getNodeSemanticPorts,
+  getPortsBySide,
   isImageOutputOnlyNode,
 } from "../../utils/canvasNodePorts";
 import {
@@ -417,10 +419,9 @@ export default function CanvasNodeCard({
   onSetActiveNode,
   onDelete,
 }: CanvasNodeCardProps) {
-  const objectScale = node.scale ?? 1;
-  const assistantVisualScale = node.kind === "assistant" ? 2 / 3 : 1;
-  const displayWidth = node.width * objectScale * assistantVisualScale;
-  const displayHeight = node.height * objectScale * assistantVisualScale;
+  const nodeVisualScale = getCanvasNodeVisualScale(node);
+  const displayWidth = node.width * nodeVisualScale;
+  const displayHeight = node.height * nodeVisualScale;
   // Asset-backed nodes may restore their runtime URL into sourceImage.url first,
   // so rendering should not depend on imageUrl alone.
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
@@ -460,7 +461,7 @@ export default function CanvasNodeCard({
             ? edge.targetId === node.id && edge.targetPortId === port.id
             : edge.sourceId === node.id && edge.sourcePortId === port.id,
         ).length;
-        const sameSidePorts = getNodeSemanticPorts(node).filter((candidate) => candidate.side === port.side);
+        const sameSidePorts = getPortsBySide(node, port.side);
         const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);
         return selected || count > 0
           ? [{

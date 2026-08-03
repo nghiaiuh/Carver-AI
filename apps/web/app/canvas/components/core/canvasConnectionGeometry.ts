@@ -3,7 +3,7 @@ import {
   getCanvasNodeVisualScale,
   isImageOutputOnlyNode,
   getNodeSemanticPort,
-  getNodeSemanticPorts,
+  getPortsBySide,
 } from "../../utils/canvasNodePorts";
 import {
   getCornerAnchoredPortOffsetY,
@@ -132,7 +132,7 @@ export function getSemanticPortPoint(node: CanvasNode, portId: string | undefine
   const scale = getCanvasNodeVisualScale(node);
   const width = node.width * scale;
   const height = node.height * scale;
-  const sameSidePorts = getNodeSemanticPorts(node).filter((candidate) => candidate.side === port.side);
+  const sameSidePorts = getPortsBySide(node, port.side);
   const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);
 
   return {

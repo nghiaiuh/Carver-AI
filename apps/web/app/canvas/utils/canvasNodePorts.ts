@@ -2,80 +2,274 @@ import type { CanvasConnectionKind, CanvasEdge, CanvasNode, InputPort } from "..
 import { getDefaultInputPorts } from "../types/canvas";
 
 export type CanvasPortDirection = "input" | "output";
+export type CanvasPortSide = "left" | "right";
+export type CanvasPortConnectionLimit = number | "many";
 
 /**
- * A semantic port describes what a connection means, independently from the
- * card layout that renders it. New node types can register their own ports here.
+ * Port definitions are the source of truth for node connection behavior. The
+ * persisted edge only stores stable IDs; this registry owns what those IDs mean.
  */
-export type CanvasSemanticPort = {
+export type CanvasNodePortDefinition = {
   id: string;
   direction: CanvasPortDirection;
   kind: CanvasConnectionKind;
-  side: "left" | "right";
+  side: CanvasPortSide;
+  order: number;
   label: string;
+  acceptedKinds: CanvasConnectionKind[];
+  maxConnections: CanvasPortConnectionLimit;
+  legacyInputIndex?: number;
 };
 
-export const ASSISTANT_INPUT_PORTS: InputPort[] = [
-  { id: "assistant-input-text", index: 0, label: "Prompt input" },
-  { id: "assistant-input-image", index: 1, label: "Image input" },
-];
+export type CanvasNodePortSchema = {
+  nodeKind: NonNullable<CanvasNode["kind"]>;
+  visualScale?: number;
+  ports: readonly CanvasNodePortDefinition[];
+};
 
-export const TEXT_NODE_INPUT_PORTS: InputPort[] = [
-  { id: "text-node-input", index: 0, label: "Text input" },
-];
+const MANY_CONNECTIONS: CanvasPortConnectionLimit = "many";
 
-const ASSISTANT_SEMANTIC_PORTS: CanvasSemanticPort[] = [
-  { id: "assistant-input-text", direction: "input", kind: "text", side: "left", label: "Prompt input" },
-  { id: "assistant-input-image", direction: "input", kind: "image", side: "left", label: "Image input" },
-  { id: "assistant-output-text", direction: "output", kind: "text", side: "right", label: "Text output" },
-];
+const IMAGE_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "image",
+  ports: [
+    {
+      id: "source-right-image",
+      direction: "output",
+      kind: "image",
+      side: "right",
+      order: 0,
+      label: "Image output",
+      acceptedKinds: ["image"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
 
-const TEXT_NODE_SEMANTIC_PORTS: CanvasSemanticPort[] = [
-  { id: "text-node-input", direction: "input", kind: "text", side: "left", label: "Text input" },
-  { id: "text-node-output", direction: "output", kind: "text", side: "right", label: "Text output" },
-];
+const ASSISTANT_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "assistant",
+  visualScale: 2 / 3,
+  ports: [
+    {
+      id: "assistant-input-text",
+      direction: "input",
+      kind: "text",
+      side: "left",
+      order: 0,
+      label: "Prompt input",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+      legacyInputIndex: 0,
+    },
+    {
+      id: "assistant-input-image",
+      direction: "input",
+      kind: "image",
+      side: "left",
+      order: 1,
+      label: "Image input",
+      acceptedKinds: ["image"],
+      maxConnections: MANY_CONNECTIONS,
+      legacyInputIndex: 1,
+    },
+    {
+      id: "assistant-output-text",
+      direction: "output",
+      kind: "text",
+      side: "right",
+      order: 0,
+      label: "Text output",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
+
+const TEXT_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "text",
+  ports: [
+    {
+      id: "text-node-input",
+      direction: "input",
+      kind: "text",
+      side: "left",
+      order: 0,
+      label: "Text input",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+      legacyInputIndex: 0,
+    },
+    {
+      id: "text-node-output",
+      direction: "output",
+      kind: "text",
+      side: "right",
+      order: 0,
+      label: "Text output",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
+
+const NODE_PORT_SCHEMAS: Partial<Record<NonNullable<CanvasNode["kind"]>, CanvasNodePortSchema>> = {
+  image: IMAGE_NODE_PORT_SCHEMA,
+  assistant: ASSISTANT_NODE_PORT_SCHEMA,
+  text: TEXT_NODE_PORT_SCHEMA,
+};
+
+function getSchemaNodeKind(node: CanvasNode): NonNullable<CanvasNode["kind"]> | null {
+  return node.kind ?? "image";
+}
+
+function getRegisteredNodePortSchema(node: CanvasNode): CanvasNodePortSchema | null {
+  const schemaNodeKind = getSchemaNodeKind(node);
+  return schemaNodeKind ? (NODE_PORT_SCHEMAS[schemaNodeKind] ?? null) : null;
+}
+
+function sortPorts(ports: readonly CanvasNodePortDefinition[]) {
+  return [...ports].sort((a, b) => {
+    if (a.side !== b.side) return a.side.localeCompare(b.side);
+    if (a.order !== b.order) return a.order - b.order;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function getConnectionCountForPort(
+  nodeId: string,
+  port: CanvasNodePortDefinition,
+  edges: CanvasEdge[],
+) {
+  return edges.filter((edge) =>
+    port.direction === "input"
+      ? edge.targetId === nodeId && edge.targetPortId === port.id
+      : edge.sourceId === nodeId && edge.sourcePortId === port.id,
+  ).length;
+}
+
+function isWithinConnectionLimit(
+  nodeId: string,
+  port: CanvasNodePortDefinition,
+  edges: CanvasEdge[],
+) {
+  if (port.maxConnections === "many") return true;
+  return getConnectionCountForPort(nodeId, port, edges) < port.maxConnections;
+}
+
+function getLegacyInputPortDefinitions(node: CanvasNode): CanvasNodePortDefinition[] {
+  const inputPorts = node.inputPorts?.length ? node.inputPorts : getDefaultInputPorts();
+  return inputPorts.map((port) => ({
+    id: port.id,
+    direction: "input",
+    kind: "image",
+    side: "left",
+    order: port.index,
+    label: port.label,
+    acceptedKinds: ["image"],
+    maxConnections: 1,
+    legacyInputIndex: port.index,
+  }));
+}
+
+export function getNodePortSchema(node: CanvasNode): CanvasNodePortSchema {
+  const registeredSchema = getRegisteredNodePortSchema(node);
+  if (registeredSchema) return registeredSchema;
+
+  return {
+    nodeKind: node.kind ?? "image",
+    ports: getLegacyInputPortDefinitions(node),
+  };
+}
+
+export function getNodePortDefinitions(node: CanvasNode): CanvasNodePortDefinition[] {
+  return sortPorts(getNodePortSchema(node).ports);
+}
 
 export function getAssistantInputPorts() {
-  return ASSISTANT_INPUT_PORTS.map((port) => ({ ...port }));
+  return getInputPortAdaptersForNodeKind("assistant");
 }
 
 export function getTextNodeInputPorts() {
-  return TEXT_NODE_INPUT_PORTS.map((port) => ({ ...port }));
+  return getInputPortAdaptersForNodeKind("text");
 }
 
 export function getCanvasNodeVisualScale(node: CanvasNode) {
-  // Assistant cards intentionally render smaller than their persisted layout box.
-  return (node.scale ?? 1) * (node.kind === "assistant" ? 2 / 3 : 1);
+  return (node.scale ?? 1) * (getNodePortSchema(node).visualScale ?? 1);
 }
 
 /** Image cards are source-only nodes with one image output on their right edge. */
 export function isImageOutputOnlyNode(node: CanvasNode) {
-  return node.kind === undefined || node.kind === "image";
+  const ports = getNodePortDefinitions(node);
+  return ports.some((port) => port.direction === "output" && port.kind === "image")
+    && ports.every((port) => port.direction !== "input");
 }
 
-export function getNodeSemanticPorts(node: CanvasNode): CanvasSemanticPort[] {
-  if (node.kind === "assistant") return ASSISTANT_SEMANTIC_PORTS;
-  if (node.kind === "text") return TEXT_NODE_SEMANTIC_PORTS;
-  return [];
+export function getNodeSemanticPorts(node: CanvasNode): CanvasNodePortDefinition[] {
+  return getRegisteredNodePortSchema(node) ? getNodePortDefinitions(node) : [];
 }
 
 export function getNodeSemanticPort(node: CanvasNode, portId: string | undefined) {
   if (!portId) return undefined;
-  return getNodeSemanticPorts(node).find((port) => port.id === portId);
+  return getNodePortDefinitions(node).find((port) => port.id === portId);
+}
+
+export function getInputPortDefinitions(node: CanvasNode) {
+  return getNodePortDefinitions(node).filter((port) => port.direction === "input");
+}
+
+export function getOutputPortDefinitions(node: CanvasNode) {
+  return getNodePortDefinitions(node).filter((port) => port.direction === "output");
+}
+
+export function getPortsBySide(node: CanvasNode, side: CanvasPortSide) {
+  return getNodePortDefinitions(node)
+    .filter((port) => port.side === side)
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+export function getInputPortAdapters(node: CanvasNode): InputPort[] {
+  return getInputPortDefinitions(node).map((port, index) => ({
+    id: port.id,
+    index: port.legacyInputIndex ?? index,
+    label: port.label,
+  }));
+}
+
+function getInputPortAdaptersForNodeKind(kind: NonNullable<CanvasNode["kind"]>): InputPort[] {
+  const schema = NODE_PORT_SCHEMAS[kind];
+  if (!schema) return getDefaultInputPorts();
+
+  return schema.ports
+    .filter((port) => port.direction === "input")
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    .map((port, index) => ({
+      id: port.id,
+      index: port.legacyInputIndex ?? index,
+      label: port.label,
+    }));
 }
 
 export function getDefaultSourcePortId({ node, kind, side }: {
   node: CanvasNode;
   kind: CanvasConnectionKind;
-  side: "left" | "right";
+  side: CanvasPortSide;
 }) {
-  if (isImageOutputOnlyNode(node)) return "source-right-image";
-
-  const semanticPort = getNodeSemanticPorts(node).find(
-    (port) => port.direction === "output" && port.kind === kind,
+  const outputPort = getOutputPortDefinitions(node).find(
+    (port) => port.kind === kind && port.side === side,
+  ) ?? getOutputPortDefinitions(node).find(
+    (port) => port.kind === kind,
   );
 
-  return semanticPort?.id ?? `source-${side}-${kind}`;
+  return outputPort?.id ?? `source-${side}-${kind}`;
+}
+
+export function getTargetPortDefinitionForConnection({ node, kind, edges }: {
+  node: CanvasNode;
+  kind: CanvasConnectionKind;
+  edges: CanvasEdge[];
+}): CanvasNodePortDefinition | null {
+  return getInputPortDefinitions(node).find((port) =>
+    port.acceptedKinds.includes(kind) && isWithinConnectionLimit(node.id, port, edges),
+  ) ?? null;
 }
 
 export function getTargetPortIdForConnection({ node, kind, edges }: {
@@ -83,17 +277,5 @@ export function getTargetPortIdForConnection({ node, kind, edges }: {
   kind: CanvasConnectionKind;
   edges: CanvasEdge[];
 }): string | null {
-  if (isImageOutputOnlyNode(node)) return null;
-
-  const semanticInput = getNodeSemanticPorts(node).find(
-    (port) => port.direction === "input" && port.kind === kind,
-  );
-  if (semanticInput) return semanticInput.id;
-  if (getNodeSemanticPorts(node).length > 0) return null;
-
-  const targetPorts = node.inputPorts?.length ? node.inputPorts : getDefaultInputPorts();
-  const occupiedPortIds = new Set(
-    edges.filter((edge) => edge.targetId === node.id).map((edge) => edge.targetPortId),
-  );
-  return targetPorts.find((port) => !occupiedPortIds.has(port.id))?.id ?? targetPorts[0].id;
+  return getTargetPortDefinitionForConnection({ node, kind, edges })?.id ?? null;
 }

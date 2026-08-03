@@ -6,8 +6,13 @@
  */
 
 import type { CanvasEdge, CanvasNode, InputPort } from "../../types/canvas";
-import { getDefaultInputPorts, getVisibleInputPorts } from "../../types/canvas";
-import { getInputPortHandlePoint } from "./canvasConnectionGeometry";
+import { getDefaultInputPorts } from "../../types/canvas";
+import {
+  getInputPortAdapters,
+  getInputPortDefinitions,
+  getTargetPortDefinitionForConnection,
+} from "../../utils/canvasNodePorts";
+import { getSemanticPortPoint } from "./canvasConnectionGeometry";
 
 // ── Port Resolution ──────────────────────────────────────────────────────────
 
@@ -22,20 +27,29 @@ export function resolveTargetPort(
   edges: CanvasEdge[],
   hitRadiusPx = 24,
 ): InputPort | null {
-  const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
-  if (visiblePorts.length === 0) return null;
+  const inputDefinitions = getInputPortDefinitions(node).filter((port) =>
+    getTargetPortDefinitionForConnection({ node, kind: port.kind, edges })?.id === port.id,
+  );
+  if (inputDefinitions.length === 0) return null;
 
   let bestPort: InputPort | null = null;
   let bestDist = Infinity;
 
-  for (let i = 0; i < visiblePorts.length; i++) {
-    const anchor = getInputPortHandlePoint(node, i, visiblePorts.length);
+  for (let i = 0; i < inputDefinitions.length; i++) {
+    const port = inputDefinitions[i];
+    const anchor = getSemanticPortPoint(node, port.id);
+    if (!anchor) continue;
+
     const dx = worldPoint.x - anchor.x;
     const dy = worldPoint.y - anchor.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < bestDist) {
       bestDist = dist;
-      bestPort = visiblePorts[i];
+      bestPort = {
+        id: port.id,
+        index: port.legacyInputIndex ?? i,
+        label: port.label,
+      };
     }
   }
 
@@ -57,15 +71,30 @@ export function resolveConnectionTarget(
     // Rule: only 1 connection line between any 2 images — skip if already connected
     if (hasEdgeBetween(edges, sourceNodeId, node.id)) continue;
 
-    const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
-    for (let i = 0; i < visiblePorts.length; i++) {
-      const anchor = getInputPortHandlePoint(node, i, visiblePorts.length);
+    const inputDefinitions = getInputPortDefinitions(node);
+    for (let i = 0; i < inputDefinitions.length; i++) {
+      const port = inputDefinitions[i];
+      if (getTargetPortDefinitionForConnection({ node, kind: port.kind, edges })?.id !== port.id) {
+        continue;
+      }
+
+      const anchor = getSemanticPortPoint(node, port.id);
+      if (!anchor) continue;
+
       const dx = worldPoint.x - anchor.x;
       const dy = worldPoint.y - anchor.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance <= hitRadiusPx && (!bestMatch || distance < bestMatch.distance)) {
-        bestMatch = { node, port: visiblePorts[i], distance };
+        bestMatch = {
+          node,
+          port: {
+            id: port.id,
+            index: port.legacyInputIndex ?? i,
+            label: port.label,
+          },
+          distance,
+        };
       }
     }
   }
@@ -131,11 +160,12 @@ export function collectImagesInPortOrder(
   allNodes: CanvasNode[],
 ): PortImage[] {
   const inboundEdges = edges.filter((e) => e.targetId === targetNode.id);
+  const targetPorts = getInputPortAdapters(targetNode);
 
   const portImages: PortImage[] = [];
 
   for (const edge of inboundEdges) {
-    const port = targetNode.inputPorts.find((p) => p.id === edge.targetPortId);
+    const port = targetPorts.find((p) => p.id === edge.targetPortId);
     if (!port) continue;
 
     const sourceNode = allNodes.find((n) => n.id === edge.sourceId);
@@ -296,7 +326,8 @@ export function revalidateAfterPortChange(
  */
 export function migrateNodePorts(node: CanvasNode): CanvasNode {
   if (node.inputPorts && node.inputPorts.length > 0) return node;
-  return { ...node, inputPorts: getDefaultInputPorts() };
+  const schemaPorts = getInputPortAdapters(node);
+  return { ...node, inputPorts: schemaPorts.length > 0 ? schemaPorts : getDefaultInputPorts() };
 }
 
 /**

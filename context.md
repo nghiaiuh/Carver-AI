@@ -220,10 +220,14 @@ Current direction:
 - one selected target image
 - connected references resolved from the graph
 - graph should be serializable/restorable via snapshot schema
-- semantic node ports live in `apps/web/app/canvas/utils/canvasNodePorts.ts`:
-  Assistant uses stable text/image input and output port IDs, while editable text
-  nodes use text-only input/output ports. New edges persist `sourcePortId` when
-  available while legacy edges continue through geometry fallback.
+- semantic node ports are registered in `apps/web/app/canvas/utils/canvasNodePorts.ts`:
+  this registry is the source of truth for port IDs, direction, kind, side,
+  ordering, connection capacity, and accepted connection kinds. `inputPorts`
+  remains a snapshot compatibility adapter, not the primary behavior model.
+  Assistant uses stable text/image input and text output ports, editable text
+  nodes use text-only input/output ports, and image nodes expose a single image
+  output port. New edges persist `sourcePortId` when available while legacy
+  edges continue through geometry fallback.
 - Every node uses the shared corner-anchored port layout in `canvasPortLayout.ts`.
   Left clusters begin at the left-bottom corner and right clusters begin at the
   right-top corner with the same 45 world-pixel inset; additional ports grow

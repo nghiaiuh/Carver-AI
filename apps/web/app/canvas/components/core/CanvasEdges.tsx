@@ -9,7 +9,6 @@
 
 import React from "react";
 import type { CanvasNode, CanvasEdge } from "../../types/canvas";
-import { getVisibleInputPorts } from "../../types/canvas";
 import {
   buildBezierPath,
   getAggregateHandlePoint,
@@ -82,9 +81,6 @@ export default function CanvasEdges({
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
 
-    const semanticPoint = getSemanticPortPoint(node, targetPortId);
-    if (semanticPoint) return semanticPoint;
-
     const targetEdge = edges.find((edge) => edge.targetId === nodeId && edge.targetPortId === targetPortId);
     const connectionKind = targetEdge ? getEdgeConnectionKind(targetEdge) : "image";
     if (targetEdge?.targetPresetChildId && isPresetGroupNode(node)) {
@@ -92,21 +88,15 @@ export default function CanvasEdges({
       if (childAnchor) return childAnchor;
     }
 
+    const semanticPoint = getSemanticPortPoint(node, targetPortId);
+    if (semanticPoint) return semanticPoint;
+
     if (!isPresetGroupNode(node)) {
       // A legacy target without an explicit handle enters through the left-side
       // cluster, matching the semantic input ports on assistant cards.
       return getAggregateHandlePoint(node, targetEdge?.toHandle ?? "left", connectionKind);
     }
-
-    const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
-    const portVisibleIndex = visiblePorts.findIndex((p) => p.id === targetPortId);
-
-    if (portVisibleIndex === -1) {
-      // Fallback: port not visible (shouldn't happen, but graceful degradation)
-      return getImageHandlePoint(node, "left");
-    }
-
-    return getInputPortHandlePoint(node, portVisibleIndex, visiblePorts.length);
+    return getInputPortHandlePoint(node, 0, 1);
   };
 
   return (
