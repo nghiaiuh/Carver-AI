@@ -1,5 +1,15 @@
 import type { CanvasConnectionKind, CanvasEdge, CanvasNode } from "../../types/canvas";
-import { getCanvasNodeVisualScale, getNodeSemanticPort } from "../../utils/canvasNodePorts";
+import {
+  getCanvasNodeVisualScale,
+  isImageOutputOnlyNode,
+  getNodeSemanticPort,
+  getNodeSemanticPorts,
+} from "../../utils/canvasNodePorts";
+import {
+  getCornerAnchoredPortOffsetY,
+  getGenericNodePortOffsetY,
+  getImageOutputPortOffsetY,
+} from "../../utils/canvasPortLayout";
 
 // Re-export from the canonical type module so existing callers of canvasConnectionGeometry
 // that import ImageHandlePosition / ImageConnectionRole continue to work.
@@ -7,10 +17,10 @@ export type { ImageHandlePosition, ImageConnectionRole } from "../../types/canva
 import type { ImageHandlePosition, ImageConnectionRole } from "../../types/canvas";
 
 export const INPUT_PORT_HANDLE_CENTER_OFFSET = 6;
-export const INPUT_PORT_GAP = 38;
+/** Full handle box offset from the card edge, used by the DOM layout. */
 export const AGGREGATE_HANDLE_OFFSET = 32;
-export const AGGREGATE_HANDLE_GAP = 40;
-export const AGGREGATE_HANDLE_Y_RATIO = 0.25;
+/** SVG edges must end at the center of the 32px handle, not its outer edge. */
+export const AGGREGATE_HANDLE_CENTER_OFFSET = AGGREGATE_HANDLE_OFFSET / 2;
 
 const MATERIAL_PATTERN = /(material|tile|texture|gach|da|vat lieu|limestone|stone)/i;
 const ARCHITECTURE_PATTERN = /(house|architecture|structure|nha|mai|cot|kien truc|roof|building)/i;
@@ -79,38 +89,27 @@ export function getNodeConnectionCountsBySide(nodeId: string, edges: CanvasEdge[
   );
 }
 
-export function getVisibleConnectionKinds(counts: Record<CanvasConnectionKind, number>) {
-  return (["text", "image"] as const).filter((kind) => counts[kind] > 0);
-}
-
-export function getAggregateHandleCenterY(baseY: number, height: number) {
-  return baseY + height * AGGREGATE_HANDLE_Y_RATIO;
-}
-
 export function getAggregateHandlePoint(
   node: CanvasNode,
   side: ImageHandlePosition,
   kind: CanvasConnectionKind,
-  edges: CanvasEdge[],
 ) {
   const scale = getCanvasNodeVisualScale(node);
   const width = node.width * scale;
   const height = node.height * scale;
-  const countsBySide = getNodeConnectionCountsBySide(node.id, edges);
-  const visibleKinds = getVisibleConnectionKinds(countsBySide[side]);
-  const visibleIndex = visibleKinds.indexOf(kind);
-  const centerY = getAggregateHandleCenterY(node.y, height);
-
-  let y = centerY;
-  if (visibleIndex !== -1 && visibleKinds.length > 1) {
-    const clusterHeight = (visibleKinds.length - 1) * AGGREGATE_HANDLE_GAP;
-    const startY = centerY - clusterHeight / 2;
-    y = startY + visibleIndex * AGGREGATE_HANDLE_GAP;
-  }
+  const resolvedSide = isImageOutputOnlyNode(node) ? "right" : side;
+  const resolvedKind = isImageOutputOnlyNode(node) ? "image" : kind;
 
   return {
-    x: side === "left" ? node.x - AGGREGATE_HANDLE_OFFSET : node.x + width + AGGREGATE_HANDLE_OFFSET,
-    y,
+    x:
+      resolvedSide === "left"
+        ? node.x - AGGREGATE_HANDLE_CENTER_OFFSET
+        : node.x + width + AGGREGATE_HANDLE_CENTER_OFFSET,
+    y:
+      node.y +
+      (isImageOutputOnlyNode(node)
+        ? getImageOutputPortOffsetY(height)
+        : getGenericNodePortOffsetY(height, resolvedKind, resolvedSide)),
   };
 }
 
@@ -133,10 +132,20 @@ export function getSemanticPortPoint(node: CanvasNode, portId: string | undefine
   const scale = getCanvasNodeVisualScale(node);
   const width = node.width * scale;
   const height = node.height * scale;
+  const sameSidePorts = getNodeSemanticPorts(node).filter((candidate) => candidate.side === port.side);
+  const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);
 
   return {
-    x: port.side === "left" ? node.x - AGGREGATE_HANDLE_OFFSET : node.x + width + AGGREGATE_HANDLE_OFFSET,
-    y: node.y + height * port.yRatio,
+    x:
+      port.side === "left"
+        ? node.x - AGGREGATE_HANDLE_CENTER_OFFSET
+        : node.x + width + AGGREGATE_HANDLE_CENTER_OFFSET,
+    y: node.y + getCornerAnchoredPortOffsetY({
+      height,
+      index: Math.max(portIndex, 0),
+      total: sameSidePorts.length,
+      side: port.side,
+    }),
   };
 }
 
@@ -151,8 +160,7 @@ export function buildBezierPath(start: { x: number; y: number }, end: { x: numbe
 }
 
 /**
- * Calculate the anchor point for a specific input port on the left side of a node.
- * Ports are clustered vertically in the center.
+ * Calculate the anchor point for a specific input port near a node's left-bottom corner.
  * @param node      The canvas node
  * @param portIndex Index of this port among the visible ports (0-based)
  * @param totalVisiblePorts Total number of visible ports (from getVisibleInputPorts)
@@ -164,17 +172,14 @@ export function getInputPortHandlePoint(
 ): { x: number; y: number } {
   const scale = node.scale ?? 1;
   const height = node.height * scale;
-  const centerY = node.y + height / 2;
 
-  // If only 1 port, center it vertically
-  if (totalVisiblePorts <= 1) {
-    return { x: node.x - INPUT_PORT_HANDLE_CENTER_OFFSET, y: centerY };
-  }
-
-  // Cluster ports tightly in the center, using the fixed gap
-  const clusterHeight = (totalVisiblePorts - 1) * INPUT_PORT_GAP;
-  const startY = centerY - clusterHeight / 2;
-  const y = startY + portIndex * INPUT_PORT_GAP;
-
-  return { x: node.x - INPUT_PORT_HANDLE_CENTER_OFFSET, y };
+  return {
+    x: node.x - INPUT_PORT_HANDLE_CENTER_OFFSET,
+    y: node.y + getCornerAnchoredPortOffsetY({
+      height,
+      index: portIndex,
+      total: totalVisiblePorts,
+      side: "left",
+    }),
+  };
 }

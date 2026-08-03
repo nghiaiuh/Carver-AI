@@ -224,6 +224,15 @@ Current direction:
   Assistant uses stable text/image input and output port IDs, while editable text
   nodes use text-only input/output ports. New edges persist `sourcePortId` when
   available while legacy edges continue through geometry fallback.
+- Every node uses the shared corner-anchored port layout in `canvasPortLayout.ts`.
+  Left clusters begin at the left-bottom corner and right clusters begin at the
+  right-top corner with the same 45 world-pixel inset; additional ports grow
+  inward at a stable 45 world-pixel rhythm, so selection and connection count
+  never reposition an existing edge anchor.
+- Image cards are source-only: they expose one image output port at right-top,
+  using the same corner inset as an assistant output.
+  Assistant and text cards retain their typed input/output ports; legacy edges
+  that formerly targeted an image card resolve to its single right-side port.
 - canvas generation is job-backed:
   - web creates an `ai_job`
   - worker executes the generation

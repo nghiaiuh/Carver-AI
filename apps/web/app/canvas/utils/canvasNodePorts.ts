@@ -12,7 +12,6 @@ export type CanvasSemanticPort = {
   direction: CanvasPortDirection;
   kind: CanvasConnectionKind;
   side: "left" | "right";
-  yRatio: number;
   label: string;
 };
 
@@ -26,14 +25,14 @@ export const TEXT_NODE_INPUT_PORTS: InputPort[] = [
 ];
 
 const ASSISTANT_SEMANTIC_PORTS: CanvasSemanticPort[] = [
-  { id: "assistant-input-text", direction: "input", kind: "text", side: "left", yRatio: 0.76, label: "Prompt input" },
-  { id: "assistant-input-image", direction: "input", kind: "image", side: "left", yRatio: 0.93, label: "Image input" },
-  { id: "assistant-output-text", direction: "output", kind: "text", side: "right", yRatio: 0.12, label: "Text output" },
+  { id: "assistant-input-text", direction: "input", kind: "text", side: "left", label: "Prompt input" },
+  { id: "assistant-input-image", direction: "input", kind: "image", side: "left", label: "Image input" },
+  { id: "assistant-output-text", direction: "output", kind: "text", side: "right", label: "Text output" },
 ];
 
 const TEXT_NODE_SEMANTIC_PORTS: CanvasSemanticPort[] = [
-  { id: "text-node-input", direction: "input", kind: "text", side: "left", yRatio: 0.5, label: "Text input" },
-  { id: "text-node-output", direction: "output", kind: "text", side: "right", yRatio: 0.5, label: "Text output" },
+  { id: "text-node-input", direction: "input", kind: "text", side: "left", label: "Text input" },
+  { id: "text-node-output", direction: "output", kind: "text", side: "right", label: "Text output" },
 ];
 
 export function getAssistantInputPorts() {
@@ -47,6 +46,11 @@ export function getTextNodeInputPorts() {
 export function getCanvasNodeVisualScale(node: CanvasNode) {
   // Assistant cards intentionally render smaller than their persisted layout box.
   return (node.scale ?? 1) * (node.kind === "assistant" ? 2 / 3 : 1);
+}
+
+/** Image cards are source-only nodes with one image output on their right edge. */
+export function isImageOutputOnlyNode(node: CanvasNode) {
+  return node.kind === undefined || node.kind === "image";
 }
 
 export function getNodeSemanticPorts(node: CanvasNode): CanvasSemanticPort[] {
@@ -65,6 +69,8 @@ export function getDefaultSourcePortId({ node, kind, side }: {
   kind: CanvasConnectionKind;
   side: "left" | "right";
 }) {
+  if (isImageOutputOnlyNode(node)) return "source-right-image";
+
   const semanticPort = getNodeSemanticPorts(node).find(
     (port) => port.direction === "output" && port.kind === kind,
   );
@@ -77,6 +83,8 @@ export function getTargetPortIdForConnection({ node, kind, edges }: {
   kind: CanvasConnectionKind;
   edges: CanvasEdge[];
 }): string | null {
+  if (isImageOutputOnlyNode(node)) return null;
+
   const semanticInput = getNodeSemanticPorts(node).find(
     (port) => port.direction === "input" && port.kind === kind,
   );

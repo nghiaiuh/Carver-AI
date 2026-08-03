@@ -38,13 +38,20 @@ import {
 import Sparkles from "../../../components/icons/CarverSparklesIcon";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import {
-  AGGREGATE_HANDLE_GAP,
   AGGREGATE_HANDLE_OFFSET,
-  getAggregateHandleCenterY,
   getNodeConnectionCountsBySide,
   type ImageHandlePosition,
 } from "./canvasConnectionGeometry";
-import { getDefaultSourcePortId, getNodeSemanticPorts } from "../../utils/canvasNodePorts";
+import {
+  getDefaultSourcePortId,
+  getNodeSemanticPorts,
+  isImageOutputOnlyNode,
+} from "../../utils/canvasNodePorts";
+import {
+  getCornerAnchoredPortOffsetY,
+  getGenericNodePortOffsetY,
+  getImageOutputPortOffsetY,
+} from "../../utils/canvasPortLayout";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
@@ -419,12 +426,20 @@ export default function CanvasNodeCard({
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
   const isAssistant = node.kind === "assistant";
   const isTextNode = node.kind === "text";
+  const isImageOutputOnly = isImageOutputOnlyNode(node);
   const hasSemanticPorts = isAssistant || isTextNode;
   const connectionCountsBySide = getNodeConnectionCountsBySide(node.id, edges);
   const leftHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
   const rightHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
 
-  if (!hasSemanticPorts) {
+  if (isImageOutputOnly) {
+    const imageConnectionCount =
+      connectionCountsBySide.left.text +
+      connectionCountsBySide.left.image +
+      connectionCountsBySide.right.text +
+      connectionCountsBySide.right.image;
+    rightHandles.push({ kind: "image", count: imageConnectionCount });
+  } else if (!hasSemanticPorts) {
     if (connectionCountsBySide.left.text > 0 || selected) {
       leftHandles.push({ kind: "text", count: connectionCountsBySide.left.text });
     }
@@ -445,7 +460,20 @@ export default function CanvasNodeCard({
             ? edge.targetId === node.id && edge.targetPortId === port.id
             : edge.sourceId === node.id && edge.sourcePortId === port.id,
         ).length;
-        return selected || count > 0 ? [{ port, count }] : [];
+        const sameSidePorts = getNodeSemanticPorts(node).filter((candidate) => candidate.side === port.side);
+        const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);
+        return selected || count > 0
+          ? [{
+              port,
+              count,
+              topOffset: getCornerAnchoredPortOffsetY({
+                height: displayHeight,
+                index: Math.max(portIndex, 0),
+                total: sameSidePorts.length,
+                side: port.side,
+              }),
+            }]
+          : [];
       })
     : [];
   const nodeFrameClassName = getNodeFrameClassName({
@@ -587,7 +615,7 @@ export default function CanvasNodeCard({
           </div>
 
           {hasSemanticPorts
-            ? semanticPortHandles.map(({ port, count }) => (
+            ? semanticPortHandles.map(({ port, count, topOffset }) => (
               <ConnectionHandleSlot
                 key={port.id}
                 count={count}
@@ -596,9 +624,7 @@ export default function CanvasNodeCard({
                 selected={selected}
                 isConnectionTarget={isConnectionTarget}
                 displayHeight={displayHeight}
-                visibleIndex={0}
-                totalVisible={1}
-                topOverride={displayHeight * port.yRatio}
+                topOverride={topOffset}
                 interactive={port.direction === "output"}
                 onPointerDown={(event) =>
                   onStartConnection(node.id, port.side, port.kind, event, port.id)
@@ -606,7 +632,7 @@ export default function CanvasNodeCard({
               />
             ))
             : null}
-          {!hasSemanticPorts ? leftHandles.map((handle, index) => (
+          {!hasSemanticPorts && !isImageOutputOnly ? leftHandles.map((handle) => (
             <ConnectionHandleSlot
               key={`left-${handle.kind}`}
               count={handle.count}
@@ -615,8 +641,7 @@ export default function CanvasNodeCard({
               selected={selected}
               isConnectionTarget={isConnectionTarget}
               displayHeight={displayHeight}
-              visibleIndex={index}
-              totalVisible={leftHandles.length}
+              topOverride={getGenericNodePortOffsetY(displayHeight, handle.kind, "left")}
               onPointerDown={(event) =>
                 onStartConnection(
                   node.id,
@@ -628,7 +653,7 @@ export default function CanvasNodeCard({
               }
             />
           )) : null}
-          {!hasSemanticPorts ? rightHandles.map((handle, index) => (
+          {!hasSemanticPorts ? rightHandles.map((handle) => (
             <ConnectionHandleSlot
               key={`right-${handle.kind}`}
               count={handle.count}
@@ -637,8 +662,11 @@ export default function CanvasNodeCard({
               selected={selected}
               isConnectionTarget={isConnectionTarget}
               displayHeight={displayHeight}
-              visibleIndex={index}
-              totalVisible={rightHandles.length}
+              topOverride={
+                isImageOutputOnly
+                  ? getImageOutputPortOffsetY(displayHeight)
+                  : getGenericNodePortOffsetY(displayHeight, handle.kind, "right")
+              }
               onPointerDown={(event) =>
                 onStartConnection(
                   node.id,
@@ -701,24 +729,6 @@ export default function CanvasNodeCard({
   );
 }
 
-function getHandleTopOffset({
-  displayHeight,
-  visibleIndex,
-  totalVisible,
-}: {
-  displayHeight: number;
-  visibleIndex: number;
-  totalVisible: number;
-}) {
-  if (totalVisible <= 1) {
-    return getAggregateHandleCenterY(0, displayHeight);
-  }
-
-  const clusterHeight = (totalVisible - 1) * AGGREGATE_HANDLE_GAP;
-  const startY = getAggregateHandleCenterY(0, displayHeight) - clusterHeight / 2;
-  return startY + visibleIndex * AGGREGATE_HANDLE_GAP;
-}
-
 function getConnectionHandleStyles(kind: CanvasConnectionKind) {
   if (kind === "text") {
     return {
@@ -744,8 +754,6 @@ function ConnectionHandleSlot({
   selected,
   isConnectionTarget,
   displayHeight,
-  visibleIndex,
-  totalVisible,
   topOverride,
   interactive = true,
   onPointerDown,
@@ -756,8 +764,6 @@ function ConnectionHandleSlot({
   selected: boolean;
   isConnectionTarget: boolean;
   displayHeight: number;
-  visibleIndex: number;
-  totalVisible: number;
   topOverride?: number;
   interactive?: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
@@ -765,7 +771,7 @@ function ConnectionHandleSlot({
   // A selected node exposes both semantic connection types. Text ports must be
   // visible, not merely clickable, so users can drag a text edge deliberately.
   const shouldRenderVisibleHandle = count > 0 || selected;
-  const top = topOverride ?? getHandleTopOffset({ displayHeight, visibleIndex, totalVisible });
+  const top = topOverride ?? displayHeight / 2;
 
   if (!shouldRenderVisibleHandle) {
     return null;

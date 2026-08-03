@@ -1160,7 +1160,7 @@ export default function CanvasBoard({
       event.stopPropagation();
       const sourcePortId = getDefaultSourcePortId({ node, kind: "image", side: "right" });
       const startPoint =
-        getSemanticPortPoint(node, sourcePortId) ?? getAggregateHandlePoint(node, "right", "image", edges);
+        getSemanticPortPoint(node, sourcePortId) ?? getAggregateHandlePoint(node, "right", "image");
       setDraftEdge({
         sourceId: id,
         sourceHandle: "right",
@@ -1259,7 +1259,7 @@ export default function CanvasBoard({
       });
       const startPoint =
         getSemanticPortPoint(sourceNode, resolvedSourcePortId) ??
-        getAggregateHandlePoint(sourceNode, handle, connectionKind, edges);
+        getAggregateHandlePoint(sourceNode, handle, connectionKind);
       setDraftEdge({
         sourceId: nodeId,
         sourceHandle: handle,
@@ -1270,7 +1270,7 @@ export default function CanvasBoard({
       });
       setHoveredConnectionTargetId(null);
     },
-    [edges, isResizingPanel, nodes],
+    [isResizingPanel, nodes],
   );
 
   /**

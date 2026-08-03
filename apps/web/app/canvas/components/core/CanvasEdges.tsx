@@ -69,7 +69,9 @@ export default function CanvasEdges({
     if (semanticPoint) return semanticPoint;
 
     if (!isPresetGroupNode(node)) {
-      return getAggregateHandlePoint(node, handle ?? (connectionKind === "text" ? "left" : "right"), connectionKind, edges);
+      // Image cards follow the assistant convention for legacy edges as well:
+      // sources leave from the right-side cluster unless the saved edge chose a side.
+      return getAggregateHandlePoint(node, handle ?? "right", connectionKind);
     }
 
     return getImageHandlePoint(node, handle ?? "right");
@@ -91,7 +93,9 @@ export default function CanvasEdges({
     }
 
     if (!isPresetGroupNode(node)) {
-      return getAggregateHandlePoint(node, targetEdge?.toHandle ?? (connectionKind === "text" ? "left" : "right"), connectionKind, edges);
+      // A legacy target without an explicit handle enters through the left-side
+      // cluster, matching the semantic input ports on assistant cards.
+      return getAggregateHandlePoint(node, targetEdge?.toHandle ?? "left", connectionKind);
     }
 
     const visiblePorts = getVisibleInputPorts(node.inputPorts, edges, node.id);
