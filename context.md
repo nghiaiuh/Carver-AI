@@ -22,6 +22,10 @@ Main workflow direction:
 
 ## 2. Repo ownership
 
+Architecture roadmap source:
+- `README.md` contains the target system and feature-flow diagrams used to plan scalability work.
+- Dashed paths marked `planned` are not implemented behavior. Verify the current code before using them.
+
 Use these boundaries:
 - `apps/web`
   Frontend UI, canvas, chat panel, API routes.
