@@ -8,7 +8,7 @@ Its job is to move long-running AI and storage work out of `apps/web`, so the we
 
 - auth and ownership checks
 - creating `ai_jobs`
-- enqueueing work
+- committing an outbox command with the AI job
 - polling and rendering results
 
 The worker is now the execution owner for generation-related pipelines.
@@ -22,7 +22,7 @@ The worker is now the execution owner for generation-related pipelines.
 - validate the request
 - verify project ownership
 - create the `ai_jobs` row
-- enqueue the queue job
+- commit a durable queue-outbox command
 - poll `GET /api/projects/[projectId]/ai-jobs/[jobId]`
 - render `job_result` back into chat and canvas
 
@@ -32,6 +32,7 @@ The worker is now the execution owner for generation-related pipelines.
 
 `apps/worker` should:
 
+- dispatch committed outbox commands to BullMQ
 - read queued `CarverAiJobPayload` jobs
 - mark job lifecycle transitions
 - build the canonical brief and compiled prompt
@@ -148,10 +149,16 @@ The route:
 - authenticates the user
 - verifies project ownership
 - resolves the snapshot
-- inserts `ai_jobs`
-- enqueues the queue job
+- atomically inserts `ai_jobs`, the checkpoint/credit changes, and an outbox command
 
 It should not execute the provider directly.
+
+### 1.5 Maintenance dispatches the outbox
+
+A maintenance-role worker claims one outbox row under a DB lease, then adds its
+stable `jobId` to BullMQ. If Redis is temporarily unavailable, the outbox row
+is released with exponential retry delay. This keeps the database command
+durable without making Redis part of the DB transaction.
 
 ### 2. Worker receives the queued job
 
@@ -218,6 +225,10 @@ Every failure path should still leave the job in a valid persisted state.
   close queue events and health server, then close the worker.
 - A periodic reconciliation pass compares stale `running` rows to BullMQ so a
   crash cannot leave the UI polling a job forever.
+- `WORKER_ROLE=all` is the local/default mode. Production can deploy
+  `generation` workers for queue throughput and a `maintenance` worker for
+  outbox dispatch, cleanup, and reconciliation. A DB lease protects against
+  accidental maintenance replica overlap.
 
 ## Standard result contract
 

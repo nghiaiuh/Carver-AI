@@ -8,6 +8,7 @@
 import { getSupabaseAdmin } from "@carver/db/server";
 import { createSafeLogger } from "@carver/shared";
 import { syncLibraryFromBucket } from "@carver/storage";
+import type { RunWithMaintenanceLease } from "./maintenance-lease";
 
 const logger = createSafeLogger("worker.library-sync");
 
@@ -41,7 +42,7 @@ async function listKnownOwnerIds() {
   ];
 }
 
-export function startLibrarySyncScheduler() {
+export function startLibrarySyncScheduler(params: { runWithLease?: RunWithMaintenanceLease } = {}) {
   if (process.env.LIBRARY_R2_SYNC_ENABLED === "false") {
     logger.info("library sync scheduler disabled");
     return () => undefined;
@@ -58,7 +59,7 @@ export function startLibrarySyncScheduler() {
     }
 
     inFlight = true;
-    try {
+    const execute = async () => {
       const ownerIds = await listKnownOwnerIds();
       logger.info("library sync started", {
         trigger,
@@ -83,6 +84,14 @@ export function startLibrarySyncScheduler() {
             error,
           });
         }
+      }
+    };
+
+    try {
+      if (params.runWithLease) {
+        await params.runWithLease("library-r2-sync", execute);
+      } else {
+        await execute();
       }
     } catch (error) {
       logger.error("library sync failed before owner loop", {

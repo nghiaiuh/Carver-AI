@@ -5,13 +5,16 @@
  * 3. Keep process startup separate from job logic.
  */
 
+import { randomUUID } from "node:crypto";
 import { registerAiJobWorkerEvents } from "./queue/events";
 import { createAiJobWorker } from "./queue/worker";
-import { validateWorkerEnv } from "./config/worker-env";
+import { getWorkerRole, validateWorkerEnv } from "./config/worker-env";
 import { loadWorkerEnvFiles } from "./config/load-worker-env";
 import { startLibrarySyncScheduler } from "./services/library-sync-service";
 import { startR2OrphanCleanupScheduler } from "./services/r2-orphan-cleanup-service";
 import { startStalledJobReconciliation } from "./services/stalled-job-reconciliation";
+import { startAiJobOutboxDispatcher } from "./services/ai-job-outbox-dispatcher";
+import { createMaintenanceLeaseRunner } from "./services/maintenance-lease";
 import { startWorkerHealthServer } from "./operations/health-server";
 import { createGracefulShutdownCoordinator } from "./operations/graceful-shutdown";
 import { createSafeLogger } from "@carver/shared";
@@ -24,26 +27,46 @@ if (loadedEnvFiles.length > 0) {
   logger.info("worker loaded env files", { files: loadedEnvFiles });
 }
 
-validateWorkerEnv();
+const workerRole = getWorkerRole();
+const runsGeneration = workerRole === "all" || workerRole === "generation";
+const runsMaintenance = workerRole === "all" || workerRole === "maintenance";
+
+validateWorkerEnv({ role: workerRole });
 logger.info("worker starting");
 logger.info("worker redis connection", describeRedisConnection());
-const aiJobWorker = createAiJobWorker();
-const stopLibrarySyncScheduler = startLibrarySyncScheduler();
-const stopR2OrphanCleanupScheduler = startR2OrphanCleanupScheduler();
-const stopStalledJobReconciliation = startStalledJobReconciliation();
+const workerInstanceId = `${process.env.HOSTNAME ?? "worker"}:${process.pid}:${randomUUID()}`;
+const runWithMaintenanceLease = runsMaintenance
+  ? createMaintenanceLeaseRunner(workerInstanceId)
+  : undefined;
+const aiJobWorker = runsGeneration ? createAiJobWorker() : null;
+const stopAiJobOutboxDispatcher = runsMaintenance
+  ? startAiJobOutboxDispatcher({ dispatcherId: workerInstanceId, runWithLease: runWithMaintenanceLease })
+  : () => undefined;
+const stopLibrarySyncScheduler = runsMaintenance
+  ? startLibrarySyncScheduler({ runWithLease: runWithMaintenanceLease })
+  : () => undefined;
+const stopR2OrphanCleanupScheduler = runsMaintenance
+  ? startR2OrphanCleanupScheduler({ runWithLease: runWithMaintenanceLease })
+  : () => undefined;
+const stopStalledJobReconciliation = runsMaintenance
+  ? startStalledJobReconciliation({ runWithLease: runWithMaintenanceLease })
+  : () => undefined;
 const healthServer = startWorkerHealthServer();
 
-const stopWorkerEvents = registerAiJobWorkerEvents(aiJobWorker);
+const stopWorkerEvents = aiJobWorker ? registerAiJobWorkerEvents(aiJobWorker) : undefined;
 
-logger.info("worker listening for jobs", {
-  concurrency: process.env.AI_WORKER_CONCURRENCY ?? 2,
+logger.info("worker role started", {
+  role: workerRole,
+  instanceId: workerInstanceId,
+  runsGeneration,
+  runsMaintenance,
+  concurrency: runsGeneration ? process.env.AI_WORKER_CONCURRENCY ?? 2 : null,
 });
-
-void aiJobWorker;
 
 const shutdown = createGracefulShutdownCoordinator({
   worker: aiJobWorker,
   healthServer,
+  stopAiJobOutboxDispatcher,
   stopLibrarySyncScheduler,
   stopR2OrphanCleanupScheduler,
   stopStalledJobReconciliation,

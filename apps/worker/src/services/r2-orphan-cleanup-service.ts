@@ -7,6 +7,7 @@
 import { getSupabaseAdmin } from "@carver/db/server";
 import { createSafeLogger } from "@carver/shared";
 import { deleteR2Objects, listR2Objects, type R2ObjectSummary } from "@carver/storage/r2";
+import type { RunWithMaintenanceLease } from "./maintenance-lease";
 
 const logger = createSafeLogger("worker.r2-orphan-cleanup");
 const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -111,7 +112,7 @@ export async function runR2OrphanCleanup(params: {
   };
 }
 
-export function startR2OrphanCleanupScheduler() {
+export function startR2OrphanCleanupScheduler(params: { runWithLease?: RunWithMaintenanceLease } = {}) {
   if (process.env.R2_ORPHAN_CLEANUP_ENABLED === "false") {
     logger.info("R2 orphan cleanup scheduler disabled");
     return () => undefined;
@@ -124,9 +125,17 @@ export function startR2OrphanCleanupScheduler() {
   const run = async (trigger: "startup" | "interval") => {
     if (stopped || inFlight) return;
     inFlight = true;
-    try {
+    const execute = async () => {
       const result = await runR2OrphanCleanup();
       logger.info("R2 orphan cleanup completed", { trigger, ...result });
+    };
+
+    try {
+      if (params.runWithLease) {
+        await params.runWithLease("r2-orphan-cleanup", execute);
+      } else {
+        await execute();
+      }
     } catch (error) {
       logger.error("R2 orphan cleanup failed", { trigger, error });
     } finally {

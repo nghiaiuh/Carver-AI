@@ -8,6 +8,7 @@
 import { createAiJobQueue } from "@carver/queue";
 import { createSafeLogger, notifyOperationalAlert } from "@carver/shared";
 import { aiJobRepository } from "../repositories/ai-job-repository";
+import type { RunWithMaintenanceLease } from "./maintenance-lease";
 
 const logger = createSafeLogger("worker.stalled-reconciliation");
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
@@ -102,7 +103,7 @@ async function reconcileOneJob(job: { id: string; bullJobId: string | null; last
   }
 }
 
-export function startStalledJobReconciliation() {
+export function startStalledJobReconciliation(params: { runWithLease?: RunWithMaintenanceLease } = {}) {
   const settings = getSettings();
   let stopped = false;
   let inFlight = false;
@@ -113,7 +114,7 @@ export function startStalledJobReconciliation() {
     }
 
     inFlight = true;
-    try {
+    const execute = async () => {
       const staleJobs = await aiJobRepository.listStaleRunningJobs(
         new Date(Date.now() - settings.staleAfterMs),
         settings.batchSize,
@@ -129,6 +130,14 @@ export function startStalledJobReconciliation() {
           reconciledCandidates: staleJobs.length,
           staleAfterMs: settings.staleAfterMs,
         });
+      }
+    };
+
+    try {
+      if (params.runWithLease) {
+        await params.runWithLease("ai-job-stalled-reconciliation", execute);
+      } else {
+        await execute();
       }
     } catch (error) {
       logger.error("stalled job reconciliation failed", { trigger, error });

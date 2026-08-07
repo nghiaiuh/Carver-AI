@@ -24,6 +24,9 @@ test("graceful shutdown drains active work once and closes resources in order", 
         calls.push("health.close");
       },
     },
+    stopAiJobOutboxDispatcher: () => {
+      calls.push("outbox.stop");
+    },
     stopLibrarySyncScheduler: () => {
       calls.push("library.stop");
     },
@@ -49,6 +52,7 @@ test("graceful shutdown drains active work once and closes resources in order", 
 
   assert.deepEqual(calls, [
     "health.markShuttingDown",
+    "outbox.stop",
     "library.stop",
     "orphan-cleanup.stop",
     "reconciliation.stop",
@@ -56,6 +60,32 @@ test("graceful shutdown drains active work once and closes resources in order", 
     "events.close",
     "health.close",
     "worker.close",
+  ]);
+});
+
+test("maintenance-only shutdown closes health resources without a generation worker", async () => {
+  const calls: string[] = [];
+  const shutdown = createGracefulShutdownCoordinator({
+    healthServer: {
+      markShuttingDown: () => calls.push("health.markShuttingDown"),
+      close: async () => {
+        calls.push("health.close");
+      },
+    },
+    stopAiJobOutboxDispatcher: () => calls.push("outbox.stop"),
+    stopLibrarySyncScheduler: () => calls.push("library.stop"),
+    stopStalledJobReconciliation: () => calls.push("reconciliation.stop"),
+    timeoutMs: 1_000,
+    onTimeout: () => undefined,
+  });
+
+  await shutdown();
+  assert.deepEqual(calls, [
+    "health.markShuttingDown",
+    "outbox.stop",
+    "library.stop",
+    "reconciliation.stop",
+    "health.close",
   ]);
 });
 

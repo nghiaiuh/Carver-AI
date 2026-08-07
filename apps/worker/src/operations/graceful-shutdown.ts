@@ -14,8 +14,9 @@ export class WorkerShutdownTimeoutError extends Error {
 }
 
 export function createGracefulShutdownCoordinator(params: {
-  worker: PausableClosable;
+  worker?: PausableClosable | null;
   healthServer: Closable & { markShuttingDown: () => void };
+  stopAiJobOutboxDispatcher?: () => void;
   stopLibrarySyncScheduler: () => void;
   stopR2OrphanCleanupScheduler?: () => void;
   stopStalledJobReconciliation: () => void;
@@ -32,6 +33,7 @@ export function createGracefulShutdownCoordinator(params: {
 
     shutdownPromise = (async () => {
       params.healthServer.markShuttingDown();
+      params.stopAiJobOutboxDispatcher?.();
       params.stopLibrarySyncScheduler();
       params.stopR2OrphanCleanupScheduler?.();
       params.stopStalledJobReconciliation();
@@ -47,12 +49,12 @@ export function createGracefulShutdownCoordinator(params: {
       const closeResources = async () => {
         // pause() waits for active work before close(), so a deploy does not
         // abandon a generation while the worker is still healthy.
-        await params.worker.pause();
+        await params.worker?.pause();
         await Promise.all([
           params.stopWorkerEvents?.().catch(() => undefined),
           params.healthServer.close().catch(() => undefined),
         ]);
-        await params.worker.close();
+        await params.worker?.close();
       };
 
       try {
