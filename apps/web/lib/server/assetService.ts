@@ -22,6 +22,20 @@ type MaybeAssetRef = {
 const DEFAULT_TTL_SECONDS = 15 * 60;
 const VARIANTS = new Set<AssetDeliveryVariant>(["thumb", "preview", "original"]);
 
+const getAssetDeliveryEdgeOrigin = () => {
+  const configuredOrigin = process.env.ASSET_DELIVERY_EDGE_BASE_URL?.trim();
+  if (!configuredOrigin) {
+    return null;
+  }
+
+  const parsed = new URL(configuredOrigin);
+  if (parsed.protocol !== "https:" && process.env.NODE_ENV === "production") {
+    throw new Error("ASSET_DELIVERY_EDGE_BASE_URL must use https in production.");
+  }
+
+  return parsed.origin;
+};
+
 const getSigningSecret = () => {
   const secret = process.env.ASSET_GATEWAY_SIGNING_SECRET;
   if (!secret) {
@@ -94,7 +108,10 @@ export function buildAssetContentUrl(
   },
 ) {
   const signed = createAssetDeliveryToken(params);
-  const url = new URL(`/api/assets/${params.assetId}/content`, requestUrl);
+  const edgeOrigin = getAssetDeliveryEdgeOrigin();
+  const url = edgeOrigin
+    ? new URL(`/assets/${params.assetId}/content`, edgeOrigin)
+    : new URL(`/api/assets/${params.assetId}/content`, requestUrl);
   url.searchParams.set("variant", signed.variant);
   url.searchParams.set("exp", String(signed.expiresAt));
   url.searchParams.set("token", signed.token);

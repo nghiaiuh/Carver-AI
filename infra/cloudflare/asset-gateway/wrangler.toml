@@ -1,0 +1,7 @@
+name = "carver-private-asset-gateway"
+main = "src/index.js"
+compatibility_date = "2026-08-07"
+
+[[r2_buckets]]
+binding = "ASSETS_BUCKET"
+bucket_name = "REPLACE_WITH_PRIVATE_CARVER_BUCKET"

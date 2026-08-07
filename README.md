@@ -72,8 +72,8 @@ flowchart LR
   RuntimeAssets -. direct private delivery / planned .-> AssetEdge
   AssetEdge --> R2
 
-  Supabase -. committed outbox rows / planned .-> Outbox
-  Outbox -. enqueue after DB commit / planned .-> Redis
+  Supabase -->|committed outbox rows| Outbox
+  Outbox -->|enqueue after DB commit| Redis
   Redis --> Generation
   Generation --> TrustedLoad
   TrustedLoad --> Supabase
@@ -212,7 +212,7 @@ sequenceDiagram
   BFF->>BFF: Auth, ownership, limits, stable asset validation
   BFF->>DB: Atomically reserve credit + checkpoint + ai_job + outbox row
   DB-->>BFF: Commit jobId
-  BFF-->>UI: queued_pending / jobId
+  BFF-->>UI: queued / jobId
   Outbox->>DB: Claim undispatched outbox row
   Outbox->>Queue: Enqueue jobId
   Queue->>Worker: Deliver jobId with bounded retries
@@ -265,9 +265,9 @@ Generation workers may scale horizontally. Periodic maintenance must either run 
 | Priority | Workstream | Current state | Target outcome |
 | --- | --- | --- | --- |
 | P0 | Architecture truth | Local draft, cloud draft, versions, and queued jobs exist | Keep diagrams and `context.md` aligned with code |
-| P1 | Asset delivery edge | Next.js proxies R2 bytes | Ownership-resolved short-lived token with direct private CDN/Worker delivery |
-| P1 | Transactional outbox | DB job creation then direct BullMQ enqueue with compensation | Atomic DB command plus retryable outbox dispatch |
-| P1 | Maintenance isolation | Schedulers start with each worker process | Dedicated maintenance worker or distributed lease |
+| P1 | Asset delivery edge | Cloudflare Worker gateway scaffold plus optional `ASSET_DELIVERY_EDGE_BASE_URL`; Next.js proxy remains fallback | Deploy/verify Worker secrets, private R2 binding, and edge error/latency alerts |
+| P1 | Transactional outbox | Atomic `ai_jobs` + checkpoint/credit + DB outbox command; maintenance worker retries Redis dispatch | Observe dispatch latency/failures and add alert thresholds |
+| P1 | Maintenance isolation | `WORKER_ROLE` supports generation/maintenance split; scheduled work uses a DB lease | Deploy separate production worker roles and tune replica counts |
 | P2 | Application boundaries | Several routes and storage helpers still access DB directly | Route-only HTTP boundaries and repository-backed services |
 | P2 | Job status delivery | Browser polling with retry budget | Adaptive polling, then realtime terminal notifications if measured load requires it |
 | P3 | Cloud draft compaction | Revisioned full-document sync | Operation/delta cloud sync only after payload and contention benchmarks justify it |
@@ -275,7 +275,7 @@ Generation workers may scale horizontally. Periodic maintenance must either run 
 Key system boundaries:
 
 - Browser state is disposable; recovery comes from IndexedDB first and the revisioned cloud draft second.
-- Supabase stores identity, ownership, mutable drafts, immutable versions, asset metadata, jobs, chat, credits, and future outbox rows.
+- Supabase stores identity, ownership, mutable drafts, immutable versions, asset metadata, jobs, chat, credits, and durable outbox rows.
 - R2 stores private binaries. Redis/BullMQ transports background work and is not a business-data source of truth.
 - Image generation always goes through the durable job path. Synchronous BFF calls are limited to bounded operations such as text chat and prompt enhancement.
 - Workers receive `jobId`, reload trusted state, and never trust canvas payloads or URLs carried in queue messages.
