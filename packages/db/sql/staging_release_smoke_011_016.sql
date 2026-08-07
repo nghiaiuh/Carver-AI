@@ -1,4 +1,4 @@
--- Read-only release smoke check for the release-hardening migrations 011 through 021.
+-- Read-only release smoke check for the release-hardening migrations 011 through 023.
 --
 -- Run this in the Supabase SQL Editor for STAGING only, after applying the
 -- migration order documented in README.md. It queries PostgreSQL catalogs and
@@ -26,7 +26,9 @@ begin
     'library_assets',
     'project_canvas_drafts',
     'credit_ledger',
-    'api_rate_limits'
+    'api_rate_limits',
+    'ai_job_outbox',
+    'worker_maintenance_leases'
   ] loop
     if to_regclass('public.' || table_name) is null then
       missing := array_append(missing, 'missing table public.' || table_name);
@@ -71,7 +73,8 @@ begin
   foreach trigger_name in array array[
     'assets_enforce_integrity',
     'library_assets_enforce_integrity',
-    'project_canvas_drafts_enforce_integrity'
+    'project_canvas_drafts_enforce_integrity',
+    'ai_jobs_enqueue_outbox'
   ] loop
     if not exists (
       select 1
@@ -80,7 +83,8 @@ begin
         and triggers.tgrelid = case trigger_name
           when 'assets_enforce_integrity' then 'public.assets'::regclass
           when 'library_assets_enforce_integrity' then 'public.library_assets'::regclass
-          else 'public.project_canvas_drafts'::regclass
+          when 'project_canvas_drafts_enforce_integrity' then 'public.project_canvas_drafts'::regclass
+          else 'public.ai_jobs'::regclass
         end
         and not triggers.tgisinternal
         and triggers.tgenabled <> 'D'
@@ -133,7 +137,12 @@ begin
     'public.create_project_workspace(text,text,text,jsonb,text)',
     'public.enforce_project_canvas_draft_integrity()',
     'public.is_project_owner(uuid)',
-    'public.is_library_folder_owner(uuid)'
+    'public.is_library_folder_owner(uuid)',
+    'public.claim_ai_job_outbox(text,integer,integer)',
+    'public.mark_ai_job_outbox_dispatched(uuid,text,text)',
+    'public.release_ai_job_outbox_for_retry(uuid,text,text,text,integer)',
+    'public.claim_worker_maintenance_lease(text,text,integer)',
+    'public.release_worker_maintenance_lease(text,text)'
   ] loop
     if to_regprocedure(function_signature) is null then
       missing := array_append(missing, 'missing function ' || function_signature);
@@ -180,6 +189,20 @@ begin
     missing := array_append(missing, 'authenticated still has direct api_rate_limits table privilege');
   end if;
 
+  if has_table_privilege('authenticated', 'public.ai_job_outbox', 'select')
+    or has_table_privilege('authenticated', 'public.ai_job_outbox', 'insert')
+    or has_table_privilege('authenticated', 'public.ai_job_outbox', 'update')
+    or has_table_privilege('authenticated', 'public.ai_job_outbox', 'delete') then
+    missing := array_append(missing, 'authenticated has direct ai_job_outbox table privilege');
+  end if;
+
+  if has_table_privilege('authenticated', 'public.worker_maintenance_leases', 'select')
+    or has_table_privilege('authenticated', 'public.worker_maintenance_leases', 'insert')
+    or has_table_privilege('authenticated', 'public.worker_maintenance_leases', 'update')
+    or has_table_privilege('authenticated', 'public.worker_maintenance_leases', 'delete') then
+    missing := array_append(missing, 'authenticated has direct worker_maintenance_leases table privilege');
+  end if;
+
   select pg_get_functiondef('public.consume_api_rate_limit(text,integer,integer)'::regprocedure)
   into rate_limit_function_definition;
 
@@ -202,7 +225,7 @@ begin
   end loop;
 
   if array_length(missing, 1) is not null then
-    raise exception 'Release smoke check for migrations 011-022 failed: %', array_to_string(missing, '; ');
+    raise exception 'Release smoke check for migrations 011-023 failed: %', array_to_string(missing, '; ');
   end if;
 end;
 $$;
@@ -210,4 +233,4 @@ $$;
 select
   true as passed,
   now() as checked_at,
-  'Migrations 011-022 schema, RLS, grants, triggers, constraints, RPCs, and rate-limit scopes are present.' as summary;
+  'Migrations 011-023 schema, RLS, grants, triggers, RPCs, outbox, leases, constraints, and rate-limit scopes are present.' as summary;

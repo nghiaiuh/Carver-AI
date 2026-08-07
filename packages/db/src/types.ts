@@ -555,6 +555,76 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      ai_job_outbox: Table<
+        {
+          id: string;
+          ai_job_id: string;
+          payload: Json;
+          status: "pending" | "dispatching" | "dispatched";
+          attempts: number;
+          available_at: string;
+          locked_by: string | null;
+          locked_at: string | null;
+          dispatched_at: string | null;
+          bull_job_id: string | null;
+          last_error_code: string | null;
+          last_error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          ai_job_id: string;
+          payload: Json;
+          status?: "pending" | "dispatching" | "dispatched";
+          attempts?: number;
+          available_at?: string;
+          locked_by?: string | null;
+          locked_at?: string | null;
+          dispatched_at?: string | null;
+          bull_job_id?: string | null;
+          last_error_code?: string | null;
+          last_error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          ai_job_id?: string;
+          payload?: Json;
+          status?: "pending" | "dispatching" | "dispatched";
+          attempts?: number;
+          available_at?: string;
+          locked_by?: string | null;
+          locked_at?: string | null;
+          dispatched_at?: string | null;
+          bull_job_id?: string | null;
+          last_error_code?: string | null;
+          last_error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      worker_maintenance_leases: Table<
+        {
+          task_name: string;
+          holder_id: string;
+          expires_at: string;
+          updated_at: string;
+        },
+        {
+          task_name: string;
+          holder_id: string;
+          expires_at: string;
+          updated_at?: string;
+        },
+        {
+          task_name?: string;
+          holder_id?: string;
+          expires_at?: string;
+          updated_at?: string;
+        }
+      >;
       design_versions: Table<
         {
           id: string;
@@ -686,6 +756,9 @@ export interface Database {
         Args: {
           checkpoint_document_hash?: string | null;
           checkpoint_snapshot_json?: Json | null;
+          target_created_by: string;
+          target_credit_amount?: number;
+          target_credit_idempotency_key?: string | null;
           target_idempotency_key: string;
           target_input_asset_ids: string[] | null;
           target_job_payload: Json;
@@ -697,6 +770,9 @@ export interface Database {
         };
         Returns: {
           created_at: string;
+          created: boolean;
+          credit_applied: boolean;
+          credits_remaining: number | null;
           error_code: string | null;
           error_message: string | null;
           id: string;
@@ -711,6 +787,52 @@ export interface Database {
           thread_id: string | null;
           updated_at: string;
         }[];
+      };
+      claim_ai_job_outbox: {
+        Args: {
+          target_batch_size?: number;
+          target_dispatcher_id: string;
+          target_lease_seconds?: number;
+        };
+        Returns: {
+          ai_job_id: string;
+          attempts: number;
+          id: string;
+          payload: Json;
+        }[];
+      };
+      mark_ai_job_outbox_dispatched: {
+        Args: {
+          target_bull_job_id: string;
+          target_dispatcher_id: string;
+          target_outbox_id: string;
+        };
+        Returns: boolean;
+      };
+      release_ai_job_outbox_for_retry: {
+        Args: {
+          target_dispatcher_id: string;
+          target_error_code: string;
+          target_error_message: string;
+          target_outbox_id: string;
+          target_retry_after_seconds: number;
+        };
+        Returns: boolean;
+      };
+      claim_worker_maintenance_lease: {
+        Args: {
+          target_holder_id: string;
+          target_lease_seconds?: number;
+          target_task_name: string;
+        };
+        Returns: boolean;
+      };
+      release_worker_maintenance_lease: {
+        Args: {
+          target_holder_id: string;
+          target_task_name: string;
+        };
+        Returns: boolean;
       };
       consume_api_rate_limit: {
         Args: {

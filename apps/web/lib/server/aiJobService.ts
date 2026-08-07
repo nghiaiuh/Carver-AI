@@ -3,11 +3,9 @@ import { createHash } from "node:crypto";
 import {
   createAiJobBodySchema,
   createSafeLogger,
-  notifyOperationalAlert,
   coerceCanvasSnapshotDocument,
   formatZodError,
 } from "@carver/shared";
-import { AI_JOB_QUEUE_EVENT_NAME, createAiJobQueue } from "@carver/queue";
 import type {
   CarverAiJobRecord,
   CarverAiJobResult,
@@ -16,11 +14,10 @@ import type {
   CarverImageExecutionMode,
   CreateAiJobBody,
   CreateAiJobRequest,
-  QueuedCarverAiJobPayload,
 } from "@carver/shared";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { isUuidLike, requireProjectOwner } from "../../app/api/_lib/authz";
-import { AI_CREDIT_COSTS, restoreUserCredits } from "../../app/api/_lib/credits";
+import { AI_CREDIT_COSTS } from "../../app/api/_lib/credits";
 import { getSupabaseAdmin } from "@carver/db/server";
 import { apiFailure, badRequest } from "../../app/api/_lib/http";
 import { enforceRateLimit } from "../../app/api/_lib/rateLimit";
@@ -784,58 +781,6 @@ export async function createProjectAiJob(params: {
         creditsRemaining: aiJob.credits_remaining ?? undefined,
       },
     };
-  }
-
-  const payload: QueuedCarverAiJobPayload = {
-    jobId: aiJob.id,
-    requestId: context.requestId,
-    idempotencyKey,
-  };
-
-  const queue = createAiJobQueue();
-
-  try {
-    await queue.add(AI_JOB_QUEUE_EVENT_NAME, payload, {
-      jobId: aiJob.id,
-      removeOnComplete: 100,
-      removeOnFail: 100,
-    });
-  } catch {
-    logger.error("ai job enqueue failed", {
-      requestId: context.requestId,
-      userId: user.id,
-      projectId,
-      jobId: aiJob.id,
-    });
-    void notifyOperationalAlert({
-      event: "ai_job_enqueue_failed",
-      severity: "error",
-      cooldownKey: "ai_job_enqueue_failed",
-      metadata: {
-        requestId: context.requestId,
-        userId: user.id,
-        projectId,
-        jobId: aiJob.id,
-      },
-    });
-    if (!simulation && aiJob.credit_applied) {
-      await restoreUserCredits(context, generationCreditCost, `generation:${idempotencyKey}`).catch(() => undefined);
-    }
-    await adminSupabase
-      .from("ai_jobs")
-      .update({
-        status: "enqueue_failed",
-        error_code: "queue_enqueue_failed",
-        error_message: "Unable to enqueue the AI job",
-      })
-      .eq("id", aiJob.id);
-
-    return {
-      ok: false,
-      response: apiFailure("QUEUE_UNAVAILABLE", "Unable to enqueue AI job", 500, context.requestId),
-    };
-  } finally {
-    await queue.close();
   }
 
   return {
