@@ -12,6 +12,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import {
+  type AssistantCardContext,
+  type AssistantCardRequestBody,
   coerceCanvasSnapshotDocument,
   type CanvasGenerationAssistantMessage,
   type CanvasSnapshotDocument,
@@ -30,6 +32,8 @@ import type { LibraryAsset as CanvasLibraryAsset } from "../types/library";
 import {
   type CanvasPresetChild,
   type CanvasPresetGroupNode,
+  DEFAULT_ASSISTANT_NODE_HEIGHT,
+  DEFAULT_ASSISTANT_NODE_WIDTH,
   DEFAULT_PEN_SETTINGS,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
@@ -52,6 +56,10 @@ import {
   createGeneratedOutputNode,
   resolveGenerationContextAssets,
 } from "../utils/canvasGenerationHelpers";
+import {
+  buildAssistantCardContext,
+  resolveAssistantContextAssets,
+} from "../utils/assistantGraphContext";
 import type {
   AddedObject,
   CanvasEdge,
@@ -128,6 +136,21 @@ type CreateAiJobResponse = {
 };
 
 type GetAiJobResponse = CreateAiJobResponse;
+
+type AssistantRunRouteResponse = {
+  success?: boolean;
+  data?: {
+    response?: string;
+    model?: string;
+    nodeId?: string;
+    lastRunAt?: string;
+    contextSummary?: string;
+    usedImageCount?: number;
+    usedTextCount?: number;
+    creditsRemaining?: number | null;
+  };
+  error?: string;
+};
 
 type SnapshotMeta = {
   snapshotId: string;
@@ -2062,8 +2085,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       kind: "assistant",
       x: anchorNode ? anchorNode.x + anchorNode.width + 96 : 220 + nodes.length * 24,
       y: anchorNode ? anchorNode.y : 180 + nodes.length * 18,
-      width: 414,
-      height: 360,
+      width: DEFAULT_ASSISTANT_NODE_WIDTH,
+      height: DEFAULT_ASSISTANT_NODE_HEIGHT,
       scale: 1,
       imageUrl: "",
       title,
@@ -2086,6 +2109,126 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setActiveTool("select");
     showToast("Assistant object added to canvas");
   };
+
+  const updateAssistantNode = useCallback((
+    nodeId: string,
+    update: Partial<Extract<CanvasNode, { kind: "assistant" }>["assistant"]>,
+  ) => {
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId && node.kind === "assistant"
+          ? {
+              ...node,
+              assistant: {
+                ...node.assistant,
+                ...update,
+              },
+            }
+          : node,
+      ),
+    );
+  }, []);
+
+  const runAssistantNode = useCallback(async (nodeId: string) => {
+    const assistantNode = nodes.find(
+      (node): node is Extract<CanvasNode, { kind: "assistant" }> =>
+        node.id === nodeId && node.kind === "assistant",
+    );
+    if (!assistantNode) {
+      return;
+    }
+
+    const prompt = assistantNode.assistant.prompt.trim();
+    if (!prompt) {
+      updateAssistantNode(nodeId, {
+        mode: "result",
+        status: "error",
+        errorMessage: "Enter a prompt before running the assistant.",
+      });
+      return;
+    }
+
+    if (!params.projectId) {
+      updateAssistantNode(nodeId, {
+        mode: "result",
+        status: "error",
+        errorMessage: "Open this canvas with a projectId before running the assistant.",
+      });
+      return;
+    }
+
+    const context = buildAssistantCardContext(nodeId, nodes, edges);
+    if (!context) {
+      updateAssistantNode(nodeId, {
+        mode: "result",
+        status: "error",
+        errorMessage: "Unable to resolve connected Assistant context.",
+      });
+      return;
+    }
+
+    let resolvedContext: AssistantCardContext;
+    try {
+      resolvedContext = await resolveAssistantContextAssets(context);
+    } catch {
+      resolvedContext = context;
+    }
+
+    updateAssistantNode(nodeId, {
+      mode: "result",
+      status: "generating",
+      errorMessage: undefined,
+      lastUsedContextSummary: resolvedContext.connectionSummary,
+    });
+
+    try {
+      const client = requireCanvasSupabaseClient(supabase);
+      const requestBody: AssistantCardRequestBody = {
+        projectId: params.projectId,
+        canvasId: "canvas-main",
+        nodeId,
+        prompt,
+        model: assistantNode.assistant.model,
+        outputFormat: assistantNode.assistant.outputFormat,
+        context: resolvedContext,
+      };
+
+      const response = await authedFetch(client, "/api/assistant-card", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const result = (await response.json().catch(() => ({}))) as AssistantRunRouteResponse;
+      if (!response.ok || !result.success || !result.data?.response) {
+        throw new Error(result.error || "Carver AI could not answer in this assistant card right now.");
+      }
+
+      updateAssistantNode(nodeId, {
+        mode: "result",
+        status: "completed",
+        response: result.data.response,
+        model: result.data.model ?? assistantNode.assistant.model,
+        errorMessage: undefined,
+        lastRunAt: result.data.lastRunAt,
+        lastUsedContextSummary: result.data.contextSummary ?? resolvedContext.connectionSummary,
+      });
+
+      if (typeof result.data.creditsRemaining === "number") {
+        setCreditsAmount(result.data.creditsRemaining);
+      }
+    } catch (error) {
+      updateAssistantNode(nodeId, {
+        mode: "result",
+        status: "error",
+        errorMessage:
+          error instanceof Error
+            ? error.message
+            : "Carver AI could not answer in this assistant card right now.",
+      });
+    }
+  }, [edges, nodes, params.projectId, supabase, updateAssistantNode]);
 
   // Nhận ảnh upload rồi thêm chúng vào folder thư viện dưới dạng asset cục bộ.
   const uploadAssetsToFolder = async (folderId: string, files: FileList | File[]) => {
@@ -2657,6 +2800,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       handleImageAction,
       addObject,
       addAssistantNode,
+      runAssistantNode,
       uploadAssetsToFolder,
       deleteLibraryFolder,
       removeLibraryAsset,

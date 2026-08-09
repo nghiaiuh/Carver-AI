@@ -177,6 +177,7 @@ type CanvasBoardProps = {
     role?: CanvasNode["role"];
     preserveTitle?: boolean;
   }>;
+  onRunAssistantNode: (nodeId: string) => void | Promise<void>;
   onHistoryActionsChange?: (actions: {
     undo: () => void;
     redo: () => void;
@@ -190,6 +191,18 @@ type DeletedNodeSnapshot = {
 
 type CreatedEdgeSnapshot = {
   edge: CanvasEdge;
+};
+
+type NodeResizeSnapshot = {
+  nodeId: string;
+  before: {
+    width: number;
+    height: number;
+  };
+  after: {
+    width: number;
+    height: number;
+  };
 };
 
 type MarqueeSelectionState = {
@@ -331,6 +344,7 @@ export default function CanvasBoard({
   onBrushSoftnessChange,
   onCloseRegionEditor,
   onPersistCanvasNodeImageAsset,
+  onRunAssistantNode,
   onHistoryActionsChange,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
@@ -358,6 +372,8 @@ export default function CanvasBoard({
   const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<DeletedNodeSnapshot[]>([]);
   const [createdEdgeStack, setCreatedEdgeStack] = useState<CreatedEdgeSnapshot[]>([]);
   const [createdEdgeRedoStack, setCreatedEdgeRedoStack] = useState<CreatedEdgeSnapshot[]>([]);
+  const [nodeResizeUndoStack, setNodeResizeUndoStack] = useState<NodeResizeSnapshot[]>([]);
+  const [nodeResizeRedoStack, setNodeResizeRedoStack] = useState<NodeResizeSnapshot[]>([]);
   const canvasClipboardRef = useRef<CanvasClipboardItem | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [miniMapFrameSize, setMiniMapFrameSize] = useState({ width: 0, height: 0 });
@@ -592,6 +608,18 @@ export default function CanvasBoard({
   const [penEraseRedoStack, setPenEraseRedoStack] = useState<Array<{ before: PenStrokeObject[]; after: PenStrokeObject[] }>>([]);
   const [createdPenStrokeStack, setCreatedPenStrokeStack] = useState<PenStrokeObject[]>([]);
   const [createdPenStrokeRedoStack, setCreatedPenStrokeRedoStack] = useState<PenStrokeObject[]>([]);
+
+  const commitNodeResize = useCallback((snapshot: NodeResizeSnapshot) => {
+    if (
+      snapshot.before.width === snapshot.after.width &&
+      snapshot.before.height === snapshot.after.height
+    ) {
+      return;
+    }
+
+    setNodeResizeUndoStack((current) => [...current, snapshot]);
+    setNodeResizeRedoStack([]);
+  }, []);
 
   // -- Edge Creation State
   const [draftEdge, setDraftEdge] = useState<{
@@ -1842,7 +1870,54 @@ export default function CanvasBoard({
     return true;
   }, [createdNodeRedoStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
 
+  const undoNodeResize = useCallback(() => {
+    const snapshot = nodeResizeUndoStack.at(-1);
+    if (!snapshot) return false;
+
+    setNodeResizeUndoStack((current) => current.slice(0, -1));
+    setNodeResizeRedoStack((current) => [...current, snapshot]);
+    onNodesChange((currentNodes) =>
+      currentNodes.map((currentNode) =>
+        currentNode.id === snapshot.nodeId
+          ? {
+              ...currentNode,
+              width: snapshot.before.width,
+              height: snapshot.before.height,
+            }
+          : currentNode,
+      ),
+    );
+    onSetActiveNode(snapshot.nodeId);
+    onSelect({ type: "node", id: snapshot.nodeId });
+    onToast("Assistant resize undone");
+    return true;
+  }, [nodeResizeUndoStack, onNodesChange, onSelect, onSetActiveNode, onToast]);
+
+  const redoNodeResize = useCallback(() => {
+    const snapshot = nodeResizeRedoStack.at(-1);
+    if (!snapshot) return false;
+
+    setNodeResizeRedoStack((current) => current.slice(0, -1));
+    setNodeResizeUndoStack((current) => [...current, snapshot]);
+    onNodesChange((currentNodes) =>
+      currentNodes.map((currentNode) =>
+        currentNode.id === snapshot.nodeId
+          ? {
+              ...currentNode,
+              width: snapshot.after.width,
+              height: snapshot.after.height,
+            }
+          : currentNode,
+      ),
+    );
+    onSetActiveNode(snapshot.nodeId);
+    onSelect({ type: "node", id: snapshot.nodeId });
+    onToast("Assistant resize restored");
+    return true;
+  }, [nodeResizeRedoStack, onNodesChange, onSelect, onSetActiveNode, onToast]);
+
   const handleUndoAction = useCallback(() => {
+    if (undoNodeResize()) return;
     if (undoCreateEdge()) return;
     if (undoCreatePenStroke()) return;
     if (undoPenErase()) {
@@ -1852,9 +1927,10 @@ export default function CanvasBoard({
     if (undoDeleteNode()) return;
     if (undoCreateNode()) return;
     onToast("Nothing to undo");
-  }, [onToast, undoCreateEdge, undoCreateNode, undoCreatePenStroke, undoDeleteNode, undoPenErase]);
+  }, [onToast, undoCreateEdge, undoCreateNode, undoCreatePenStroke, undoDeleteNode, undoNodeResize, undoPenErase]);
 
   const handleRedoAction = useCallback(() => {
+    if (redoNodeResize()) return;
     if (redoCreateEdge()) return;
     if (redoCreatePenStroke()) return;
     if (redoPenErase()) {
@@ -1863,7 +1939,7 @@ export default function CanvasBoard({
     }
     if (redoCreateNode()) return;
     onToast("Nothing to redo");
-  }, [onToast, redoCreateEdge, redoCreateNode, redoCreatePenStroke, redoPenErase]);
+  }, [onToast, redoCreateEdge, redoCreateNode, redoCreatePenStroke, redoNodeResize, redoPenErase]);
 
   useEffect(() => {
     onHistoryActionsChange?.({
@@ -2301,6 +2377,7 @@ export default function CanvasBoard({
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
               onUpdateNode={updateCanvasNode}
+              onCommitResize={commitNodeResize}
               onDragStart={handleNodePointerDown}
               onImageAction={onImageAction}
               onMultiAngle={onMultiAngle}
@@ -2310,6 +2387,7 @@ export default function CanvasBoard({
               onToast={onToast}
               onSetActiveNode={onSetActiveNode}
               onDelete={deleteNode}
+              onRunAssistant={onRunAssistantNode}
             />
           )
         )}

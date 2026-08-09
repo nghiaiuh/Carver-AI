@@ -318,6 +318,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onBrushSoftnessChange={actions.setBrushSoftness}
               onCloseRegionEditor={actions.exitRegionMode}
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
+              onRunAssistantNode={actions.runAssistantNode}
               onHistoryActionsChange={handleHistoryActionsChange}
             />
 

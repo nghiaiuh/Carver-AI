@@ -6,8 +6,14 @@
 
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import {
+  MIN_ASSISTANT_NODE_HEIGHT,
+  MIN_ASSISTANT_NODE_WIDTH,
+  MAX_ASSISTANT_NODE_HEIGHT,
+  MAX_ASSISTANT_NODE_WIDTH,
+} from "../../types/canvas";
 import type {
   AddedObject,
   CanvasAssistantNode,
@@ -139,19 +145,6 @@ function getNodeKindLabel(role: CanvasNode["role"]) {
   return "Object";
 }
 
-function buildAssistantPreviewResult(prompt: string) {
-  const cleanPrompt = prompt.trim();
-  if (!cleanPrompt) {
-    return "Add a prompt, connect canvas context, then run this assistant object.";
-  }
-
-  return [
-    `1. Interpret the task: ${cleanPrompt}`,
-    "2. Use connected canvas objects as context before generating final output.",
-    "3. Export the result as text or a structured list when the response is ready.",
-  ].join("\n\n");
-}
-
 const ASSISTANT_PLACEHOLDER =
   "Assistant is your creative sidekick-powered by a large language model. You can type a prompt, or even use images for context. It understands what you mean, builds on your ideas, and helps you move faster.";
 
@@ -177,6 +170,7 @@ function AssistantPopoverButton({
   options,
   onSelect,
   align = "left",
+  disabled = false,
 }: {
   label: string;
   isOpen: boolean;
@@ -184,12 +178,17 @@ function AssistantPopoverButton({
   options: ReadonlyArray<{ value: string; label: string }>;
   onSelect: (value: string) => void;
   align?: "left" | "right";
+  disabled?: boolean;
 }) {
   return (
     <div className="relative">
       <button
         type="button"
-        className="inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition hover:bg-[var(--canvas-theme-hover)]"
+        disabled={disabled}
+        className={[
+          "inline-flex h-6 min-w-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80 transition",
+          disabled ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--canvas-theme-hover)]",
+        ].join(" ")}
         title={label}
         onClick={onToggle}
         aria-haspopup="menu"
@@ -253,12 +252,15 @@ function AssistantPopoverButton({
 function AssistantNodeSurface({
   node,
   onUpdateNode,
+  onRunAssistant,
 }: {
   node: CanvasAssistantNode;
   onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
+  onRunAssistant: (nodeId: string) => void | Promise<void>;
 }) {
   const assistant = node.assistant;
   const showingResult = assistant.mode === "result";
+  const isRunning = assistant.status === "generating";
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [openMenu, setOpenMenu] = useState<"model" | "output" | null>(null);
@@ -299,11 +301,7 @@ function AssistantNodeSurface({
   }, []);
 
   const runAssistant = () => {
-    updateAssistant({
-      mode: "result",
-      status: "completed",
-      response: buildAssistantPreviewResult(assistant.prompt),
-    });
+    void onRunAssistant(node.id);
     setOpenMenu(null);
   };
 
@@ -366,11 +364,15 @@ function AssistantNodeSurface({
               <motion.button
                 key="assistant-add-reference"
                 type="button"
+                disabled={isRunning}
                 initial={{ opacity: 0, x: -8, scale: 0.96 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: -6, scale: 0.96 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
-                className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_3px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
+                className={[
+                  "grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_3px_10px_var(--canvas-theme-shadow)] transition",
+                  isRunning ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--canvas-theme-hover)]",
+                ].join(" ")}
                 title="Add reference"
                 onClick={() => {
                   updateAssistant({ mode: "prompt" });
@@ -398,7 +400,13 @@ function AssistantNodeSurface({
               <textarea
                 ref={textareaRef}
                 value={assistant.prompt}
-                onChange={(event) => updateAssistant({ prompt: event.target.value, status: "idle" })}
+                onChange={(event) =>
+                  updateAssistant({
+                    prompt: event.target.value,
+                    status: assistant.status === "error" ? "idle" : assistant.status,
+                    errorMessage: undefined,
+                  })
+                }
                 placeholder={ASSISTANT_PLACEHOLDER}
                 className="h-full min-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
               />
@@ -412,9 +420,25 @@ function AssistantNodeSurface({
               transition={{ duration: 0.18, ease: "easeOut" }}
               className="relative min-h-0 flex-1 overflow-y-auto pr-3"
             >
-              <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)]">
-                {assistant.response || "Run the assistant to generate a result."}
-              </pre>
+              {isRunning ? (
+                <div className="flex items-start gap-3 px-1 py-1 text-[var(--canvas-theme-text-soft)]">
+                  <RefreshCw className="mt-0.5 h-4 w-4 animate-spin text-[var(--canvas-theme-selection)]" strokeWidth={2} />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Carver AI is thinking...</p>
+                    <p className="text-xs text-[var(--canvas-theme-text-muted)]">
+                      Using this Assistant card&apos;s connected graph context only.
+                    </p>
+                  </div>
+                </div>
+              ) : assistant.status === "error" ? (
+                <div className="px-1 py-1 text-sm leading-[1.55] text-[#B42318]">
+                  {assistant.errorMessage || "Carver AI could not answer in this assistant card right now."}
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap px-1 font-[var(--font-botanical-sans)] text-[14px] leading-[1.55] text-[var(--canvas-theme-text-soft)]">
+                  {assistant.response || "Run the assistant to generate a result."}
+                </pre>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -431,10 +455,15 @@ function AssistantNodeSurface({
               updateAssistant({ model: value });
               setOpenMenu(null);
             }}
+            disabled={isRunning}
           />
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
+            disabled={isRunning}
+            className={[
+              "grid h-6 w-6 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon)] transition",
+              isRunning ? "cursor-not-allowed opacity-45" : "hover:bg-[var(--canvas-theme-hover)]",
+            ].join(" ")}
             title="Assistant settings"
           >
             <Settings className="h-3 w-3" strokeWidth={1.9} />
@@ -451,14 +480,25 @@ function AssistantNodeSurface({
               setOpenMenu(null);
             }}
             align="right"
+            disabled={isRunning}
           />
           <button
             type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
+            disabled={isRunning || assistant.prompt.trim().length === 0}
+            className={[
+              "flex h-7 w-7 items-center justify-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] transition",
+              isRunning || assistant.prompt.trim().length === 0
+                ? "cursor-not-allowed opacity-45"
+                : "hover:bg-[var(--canvas-theme-selection-hover)]",
+            ].join(" ")}
             title="Run assistant"
             onClick={runAssistant}
           >
-            <Play className="h-3 w-3 fill-current" strokeWidth={1.9} />
+            {isRunning ? (
+              <RefreshCw className="h-3 w-3 animate-spin" strokeWidth={1.9} />
+            ) : (
+              <Play className="h-3 w-3 fill-current" strokeWidth={1.9} />
+            )}
           </button>
         </div>
       </div>
@@ -534,6 +574,11 @@ type CanvasNodeCardProps = {
   onSelectSketchGroup: (id: string) => void;
   onSelectContextMenu: (id: string, x: number, y: number) => void;
   onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
+  onCommitResize: (entry: {
+    nodeId: string;
+    before: { width: number; height: number };
+    after: { width: number; height: number };
+  }) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
   onImageAction: (nodeId: string, xPercent: number, yPercent: number) => void;
   onMultiAngle: () => void;
@@ -543,6 +588,7 @@ type CanvasNodeCardProps = {
   onToast: (message: string) => void;
   onSetActiveNode: (id: string) => void;
   onDelete: (id: string) => void;
+  onRunAssistant: (nodeId: string) => void | Promise<void>;
 };
 
 export default function CanvasNodeCard({
@@ -563,6 +609,7 @@ export default function CanvasNodeCard({
   onSelectOverlay,
   onSelectContextMenu,
   onUpdateNode,
+  onCommitResize,
   onDragStart,
   onImageAction,
   onMultiAngle,
@@ -571,6 +618,7 @@ export default function CanvasNodeCard({
   onToast,
   onSetActiveNode,
   onDelete,
+  onRunAssistant,
 }: CanvasNodeCardProps) {
   const nodeVisualScale = getCanvasNodeVisualScale(node);
   const displayWidth = node.width * nodeVisualScale;
@@ -651,6 +699,100 @@ export default function CanvasNodeCard({
         "relative overflow-hidden rounded-[18px] border bg-[var(--canvas-theme-surface-soft)] shadow-[0_18px_42px_rgba(23,50,37,0.08)] transition-colors",
         nodeFrameClassName,
       ].join(" ");
+  const isActiveSelectedNode = selectedItem.type === "node" && selectedItem.id === node.id;
+  const assistantResizeSessionRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startWidth: number;
+    startHeight: number;
+    visualScale: number;
+  } | null>(null);
+  const latestAssistantSizeRef = useRef({ width: node.width, height: node.height });
+  const [isAssistantResizing, setIsAssistantResizing] = useState(false);
+
+  useEffect(() => {
+    latestAssistantSizeRef.current = { width: node.width, height: node.height };
+  }, [node.height, node.width]);
+
+  const finishAssistantResize = useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const session = assistantResizeSessionRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    assistantResizeSessionRef.current = null;
+    setIsAssistantResizing(false);
+
+    const finalSize = latestAssistantSizeRef.current;
+    if (
+      finalSize.width !== session.startWidth ||
+      finalSize.height !== session.startHeight
+    ) {
+      onCommitResize({
+        nodeId: node.id,
+        before: {
+          width: session.startWidth,
+          height: session.startHeight,
+        },
+        after: finalSize,
+      });
+    }
+  }, [node.id, onCommitResize]);
+
+  const handleAssistantResizePointerDown = useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!isAssistant || !isActiveSelectedNode) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    assistantResizeSessionRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWidth: node.width,
+      startHeight: node.height,
+      visualScale: Math.max(nodeVisualScale, 0.0001),
+    };
+    setIsAssistantResizing(true);
+  }, [isActiveSelectedNode, isAssistant, node.height, node.width, nodeVisualScale]);
+
+  const handleAssistantResizePointerMove = useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const session = assistantResizeSessionRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const dx = (event.clientX - session.startClientX) / (Math.max(viewportZoom, 0.0001) * session.visualScale);
+    const dy = (event.clientY - session.startClientY) / (Math.max(viewportZoom, 0.0001) * session.visualScale);
+    const nextWidth = Math.min(
+      MAX_ASSISTANT_NODE_WIDTH,
+      Math.max(MIN_ASSISTANT_NODE_WIDTH, Math.round(session.startWidth + dx)),
+    );
+    const nextHeight = Math.min(
+      MAX_ASSISTANT_NODE_HEIGHT,
+      Math.max(MIN_ASSISTANT_NODE_HEIGHT, Math.round(session.startHeight + dy)),
+    );
+
+    onUpdateNode(node.id, (current) => (
+      current.kind === "assistant" &&
+      (current.width !== nextWidth || current.height !== nextHeight)
+        ? { ...current, width: nextWidth, height: nextHeight }
+        : current
+    ));
+  }, [node.id, onUpdateNode, viewportZoom]);
 
   return (
     <div
@@ -703,6 +845,7 @@ export default function CanvasNodeCard({
               <AssistantNodeSurface
                 node={node as CanvasAssistantNode}
                 onUpdateNode={onUpdateNode}
+                onRunAssistant={onRunAssistant}
               />
             ) : isTextNode ? (
               <TextNodeSurface
@@ -832,6 +975,41 @@ export default function CanvasNodeCard({
               }
             />
           )) : null}
+          {isAssistant && isActiveSelectedNode ? (
+            <button
+              type="button"
+              aria-label="Resize assistant"
+              title="Resize assistant"
+              className={[
+                "absolute -bottom-3 -right-3 z-[155] grid h-7 w-7 place-items-center rounded-full border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-selection)] shadow-[0_8px_20px_var(--canvas-theme-shadow)] transition duration-150",
+                isAssistantResizing
+                  ? "scale-[0.97] border-[var(--canvas-theme-selection)] text-[var(--canvas-theme-selection-hover)]"
+                  : "hover:scale-[1.05] hover:border-[var(--canvas-theme-selection)] hover:text-[var(--canvas-theme-selection-hover)]",
+              ].join(" ")}
+              style={{ cursor: "nwse-resize" }}
+              data-canvas-interactive="true"
+              onPointerDown={handleAssistantResizePointerDown}
+              onPointerMove={handleAssistantResizePointerMove}
+              onPointerUp={finishAssistantResize}
+              onPointerCancel={finishAssistantResize}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+                <path
+                  d="M6 18C12.5 18 18 12.5 18 6"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M14.5 6H18V9.5"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
         </div>
 
         {!isAssistant ? (
