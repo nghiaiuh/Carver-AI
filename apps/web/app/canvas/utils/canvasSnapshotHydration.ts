@@ -5,6 +5,8 @@ import type {
 import type {
   AddedObject,
   CanvasEdge,
+  CanvasImageGeneratorOutput,
+  CanvasImageGeneratorState,
   ImageConnectionRole,
   Marker,
   CanvasNode,
@@ -21,7 +23,11 @@ import type {
   SketchLine,
 } from "../types/canvas";
 import { DEFAULT_PEN_SETTINGS, getDefaultInputPorts } from "../types/canvas";
-import { getAssistantInputPorts, getTextNodeInputPorts } from "./canvasNodePorts";
+import {
+  getAssistantInputPorts,
+  getImageGeneratorInputPorts,
+  getTextNodeInputPorts,
+} from "./canvasNodePorts";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 
@@ -39,6 +45,7 @@ const CANVAS_NODE_ROLES = new Set<CanvasNode["role"]>([
   "output",
   "assistant",
   "text",
+  "generator",
 ]);
 
 const IMAGE_CONNECTION_ROLES = new Set<ImageConnectionRole>([
@@ -272,6 +279,70 @@ function sanitizeAssistantState(value: unknown): CanvasAssistantState {
   };
 }
 
+function sanitizeImageGeneratorOutput(value: unknown): CanvasImageGeneratorOutput | null {
+  const source = objectValue(value);
+  const title = stringValue(source?.title);
+  const prompt = stringValue(source?.prompt);
+  if (!title || !prompt) {
+    return null;
+  }
+
+  return {
+    assetId: stringValue(source?.assetId) ?? undefined,
+    title,
+    prompt,
+    imageUrl: sanitizeRuntimeSnapshotImageUrl(source?.imageUrl),
+    width: typeof source?.width === "number" ? source.width : null,
+    height: typeof source?.height === "number" ? source.height : null,
+    mimeType: stringValue(source?.mimeType) ?? undefined,
+    provider: stringValue(source?.provider) ?? undefined,
+  };
+}
+
+function sanitizeImageGeneratorState(value: unknown): CanvasImageGeneratorState {
+  const source = objectValue(value);
+  const outputs = Array.isArray(source?.outputs)
+    ? source.outputs
+        .map((output) => sanitizeImageGeneratorOutput(output))
+        .filter((output): output is CanvasImageGeneratorOutput => output !== null)
+    : [];
+  const outputAssetIds = Array.isArray(source?.outputAssetIds)
+    ? source.outputAssetIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : outputs
+        .map((output) => output.assetId)
+        .filter((assetId): assetId is string => typeof assetId === "string" && assetId.trim().length > 0);
+  const persistedStatus =
+    source?.status === "queued" ||
+    source?.status === "generating" ||
+    source?.status === "completed" ||
+    source?.status === "error"
+      ? source.status
+      : "idle";
+  const normalizedStatus =
+    persistedStatus === "queued" || persistedStatus === "generating"
+      ? outputAssetIds.length > 0
+        ? "completed"
+        : "idle"
+      : persistedStatus;
+
+  return {
+    prompt: stringValue(source?.prompt) ?? "",
+    model: stringValue(source?.model) ?? "auto",
+    aspectRatio:
+      source?.aspectRatio === "2:3" || source?.aspectRatio === "3:2" ? source.aspectRatio : "1:1",
+    outputCount:
+      typeof source?.outputCount === "number" && Number.isFinite(source.outputCount)
+        ? Math.min(4, Math.max(1, Math.round(source.outputCount)))
+        : 1,
+    status: normalizedStatus,
+    outputAssetIds,
+    outputs,
+    selectedOutputAssetId: stringValue(source?.selectedOutputAssetId) ?? outputAssetIds[0] ?? undefined,
+    errorMessage: stringValue(source?.errorMessage) ?? undefined,
+    lastRunAt: stringValue(source?.lastRunAt) ?? undefined,
+  };
+}
+
 function sanitizeTextNodeState(value: unknown) {
   const source = objectValue(value);
   return { content: stringValue(source?.content) ?? "" };
@@ -289,12 +360,22 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       ? "presetGroup"
       : source?.kind === "assistant"
         ? "assistant"
+        : source?.kind === "image-generator"
+          ? "image-generator"
         : source?.kind === "text"
           ? "text"
           : "image";
   const title =
     stringValue(source?.title) ??
-    (kind === "presetGroup" ? "Preset group" : kind === "assistant" ? "Assistant" : kind === "text" ? "Text note" : "Untitled image");
+    (kind === "presetGroup"
+      ? "Preset group"
+      : kind === "assistant"
+        ? "Assistant"
+        : kind === "image-generator"
+          ? "Image Generator"
+          : kind === "text"
+            ? "Text note"
+            : "Untitled image");
   const imageUrl =
     sanitizeRuntimeSnapshotImageUrl(source?.imageUrl) ||
     sanitizeRuntimeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
@@ -359,6 +440,46 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       maskHistory: undefined,
       inputPorts: getAssistantInputPorts(),
       assistant: sanitizeAssistantState(source?.assistant),
+    };
+  }
+
+  if (kind === "image-generator") {
+    const imageGenerator = sanitizeImageGeneratorState(source?.imageGenerator);
+    const selectedOutput =
+      imageGenerator.outputs.find((output) => output.assetId === imageGenerator.selectedOutputAssetId) ??
+      imageGenerator.outputs[0] ??
+      null;
+
+    return {
+      id,
+      kind: "image-generator",
+      title,
+      role: "generator",
+      imageUrl: selectedOutput?.imageUrl ?? "",
+      prompt: nullableStringValue(source?.prompt),
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 540)),
+      height: Math.max(1, numberValue(source?.height, 500)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage: selectedOutput
+        ? {
+            assetId: selectedOutput.assetId,
+            url: selectedOutput.imageUrl,
+            width: selectedOutput.width,
+            height: selectedOutput.height,
+            mimeType: selectedOutput.mimeType,
+            name: selectedOutput.title,
+            quality: "original",
+          }
+        : undefined,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getImageGeneratorInputPorts(),
+      imageGenerator,
     };
   }
 

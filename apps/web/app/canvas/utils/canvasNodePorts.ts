@@ -111,10 +111,49 @@ const TEXT_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
   ],
 };
 
+const IMAGE_GENERATOR_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "image-generator",
+  ports: [
+    {
+      id: "image-generator-input-text",
+      direction: "input",
+      kind: "text",
+      side: "left",
+      order: 0,
+      label: "Text input",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+      legacyInputIndex: 0,
+    },
+    {
+      id: "image-generator-input-image",
+      direction: "input",
+      kind: "image",
+      side: "left",
+      order: 1,
+      label: "Image input",
+      acceptedKinds: ["image"],
+      maxConnections: MANY_CONNECTIONS,
+      legacyInputIndex: 1,
+    },
+    {
+      id: "image-generator-output-image",
+      direction: "output",
+      kind: "image",
+      side: "right",
+      order: 0,
+      label: "Generated image output",
+      acceptedKinds: ["image"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
+
 const NODE_PORT_SCHEMAS: Partial<Record<NonNullable<CanvasNode["kind"]>, CanvasNodePortSchema>> = {
   image: IMAGE_NODE_PORT_SCHEMA,
   assistant: ASSISTANT_NODE_PORT_SCHEMA,
   text: TEXT_NODE_PORT_SCHEMA,
+  "image-generator": IMAGE_GENERATOR_NODE_PORT_SCHEMA,
 };
 
 function getSchemaNodeKind(node: CanvasNode): NonNullable<CanvasNode["kind"]> | null {
@@ -190,6 +229,10 @@ export function getAssistantInputPorts() {
 
 export function getTextNodeInputPorts() {
   return getInputPortAdaptersForNodeKind("text");
+}
+
+export function getImageGeneratorInputPorts() {
+  return getInputPortAdaptersForNodeKind("image-generator");
 }
 
 export function getCanvasNodeVisualScale(node: CanvasNode) {

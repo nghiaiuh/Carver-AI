@@ -3,6 +3,7 @@
 import type {
   AddedObject,
   CanvasEdge,
+  CanvasImageGeneratorOutput,
   CanvasNode,
   Marker,
   PenSettings,
@@ -12,7 +13,7 @@ import type {
   SketchLine,
   ImageConnectionRole,
 } from "../types/canvas";
-import { isCanvasTextNode } from "../types/canvas";
+import { isCanvasImageGeneratorNode, isCanvasTextNode } from "../types/canvas";
 import type {
   CanvasGenerationContext,
   CanvasGenerationImageReference,
@@ -51,6 +52,13 @@ function sanitizePersistedPresetImageUrl(child: CanvasPresetGroupNode["presetGro
     sanitizePersistedSnapshotImageUrl(child.imageSrc) ||
     sanitizePersistedSnapshotImageUrl(child.sourceImage?.url)
   );
+}
+
+function sanitizePersistedGeneratorOutput(output: CanvasImageGeneratorOutput) {
+  return {
+    ...output,
+    imageUrl: output.assetId ? "" : sanitizePersistedSnapshotImageUrl(output.imageUrl),
+  };
 }
 
 function sanitizeMaskDataForSnapshot(mask: CanvasNode["regionMask"]) {
@@ -193,7 +201,15 @@ export function buildCanvasGenerationContext(
   promptText: string,
 ): CanvasGenerationContext | null {
   const target = nodes.find((node) => node.id === targetNodeId);
-  if (!target || isPresetGroupNode(target) || isAssistantNode(target) || isCanvasTextNode(target)) return null;
+  if (
+    !target ||
+    isPresetGroupNode(target) ||
+    isAssistantNode(target) ||
+    isCanvasTextNode(target) ||
+    isCanvasImageGeneratorNode(target)
+  ) {
+    return null;
+  }
 
   const imageReferences = resolveConnectedImageReferences(targetNodeId, nodes, edges);
   const presetReferences = resolveConnectedPresetReferences(targetNodeId, nodes, edges);
@@ -248,7 +264,15 @@ export function buildCanvasSnapshotWithGraph(params: {
       activeGenerationTargetId: params.activeGenerationTargetId,
       nodes: params.nodes.map((node) => ({
         id: node.id,
-        kind: isPresetGroupNode(node) ? "presetGroup" : isAssistantNode(node) ? "assistant" : isCanvasTextNode(node) ? "text" : "image",
+        kind: isPresetGroupNode(node)
+          ? "presetGroup"
+          : isAssistantNode(node)
+            ? "assistant"
+            : isCanvasTextNode(node)
+              ? "text"
+              : isCanvasImageGeneratorNode(node)
+                ? "image-generator"
+                : "image",
         title: node.title,
         role: node.role,
         imageUrl: sanitizePersistedNodeImageUrl(node),
@@ -281,6 +305,12 @@ export function buildCanvasSnapshotWithGraph(params: {
             }
           : undefined,
         assistant: isAssistantNode(node) ? node.assistant : undefined,
+        imageGenerator: isCanvasImageGeneratorNode(node)
+          ? {
+              ...node.imageGenerator,
+              outputs: node.imageGenerator.outputs.map(sanitizePersistedGeneratorOutput),
+            }
+          : undefined,
         text: isCanvasTextNode(node) ? node.text : undefined,
       })),
       edges: params.edges.map((edge) => ({

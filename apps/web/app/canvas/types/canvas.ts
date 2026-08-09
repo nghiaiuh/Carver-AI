@@ -250,7 +250,17 @@ type CanvasNodeBase = {
   sourceImage?: CanvasSourceImage;
   title: string;
   prompt: string | null;
-  role: "layout" | "style" | "material" | "object" | "mask" | "reference" | "output" | "assistant" | "text";
+  role:
+    | "layout"
+    | "style"
+    | "material"
+    | "object"
+    | "mask"
+    | "reference"
+    | "output"
+    | "assistant"
+    | "text"
+    | "generator";
   model?: string;
   createdAt?: string;
   /** Ordered input ports for this node. */
@@ -261,6 +271,24 @@ type CanvasNodeBase = {
 };
 
 export type CanvasAssistantOutputFormat = "list" | "text";
+export type CanvasImageGeneratorAspectRatio = "1:1" | "2:3" | "3:2";
+export type CanvasImageGeneratorStatus =
+  | "idle"
+  | "queued"
+  | "generating"
+  | "completed"
+  | "error";
+
+export type CanvasImageGeneratorOutput = {
+  assetId?: string;
+  title: string;
+  prompt: string;
+  imageUrl: string;
+  width: number | null;
+  height: number | null;
+  mimeType?: string;
+  provider?: string;
+};
 
 export type CanvasAssistantState = {
   mode: "prompt" | "result";
@@ -276,6 +304,19 @@ export type CanvasAssistantState = {
 
 export type CanvasTextNodeState = {
   content: string;
+};
+
+export type CanvasImageGeneratorState = {
+  prompt: string;
+  model: "auto" | string;
+  aspectRatio: CanvasImageGeneratorAspectRatio;
+  outputCount: number;
+  status: CanvasImageGeneratorStatus;
+  outputAssetIds: string[];
+  outputs: CanvasImageGeneratorOutput[];
+  selectedOutputAssetId?: string;
+  errorMessage?: string;
+  lastRunAt?: string;
 };
 
 export type CanvasImageNode = CanvasNodeBase & {
@@ -295,6 +336,7 @@ export type CanvasAssistantNode = CanvasNodeBase & {
   assistant: CanvasAssistantState;
   presetGroup?: never;
   text?: never;
+  imageGenerator?: never;
 };
 
 export type CanvasTextNode = CanvasNodeBase & {
@@ -302,12 +344,30 @@ export type CanvasTextNode = CanvasNodeBase & {
   text: CanvasTextNodeState;
   presetGroup?: never;
   assistant?: never;
+  imageGenerator?: never;
 };
 
-export type CanvasNode = CanvasImageNode | CanvasPresetGroupNode | CanvasAssistantNode | CanvasTextNode;
+export type CanvasImageGeneratorNode = CanvasNodeBase & {
+  kind: "image-generator";
+  imageGenerator: CanvasImageGeneratorState;
+  presetGroup?: never;
+  assistant?: never;
+  text?: never;
+};
+
+export type CanvasNode =
+  | CanvasImageNode
+  | CanvasPresetGroupNode
+  | CanvasAssistantNode
+  | CanvasTextNode
+  | CanvasImageGeneratorNode;
 
 export function isCanvasTextNode(node: CanvasNode): node is CanvasTextNode {
   return node.kind === "text";
+}
+
+export function isCanvasImageGeneratorNode(node: CanvasNode): node is CanvasImageGeneratorNode {
+  return node.kind === "image-generator";
 }
 
 export type CanvasEdge = {
@@ -379,6 +439,14 @@ export const MIN_ASSISTANT_NODE_WIDTH = 540;
 export const MIN_ASSISTANT_NODE_HEIGHT = 520;
 export const MAX_ASSISTANT_NODE_WIDTH = 850;
 export const MAX_ASSISTANT_NODE_HEIGHT = 800;
+export const DEFAULT_IMAGE_GENERATOR_NODE_WIDTH = 540;
+export const DEFAULT_IMAGE_GENERATOR_NODE_HEIGHT = 500;
+export const MIN_IMAGE_GENERATOR_NODE_WIDTH = 380;
+export const MIN_IMAGE_GENERATOR_NODE_HEIGHT = 360;
+export const MAX_IMAGE_GENERATOR_NODE_WIDTH = 720;
+export const MAX_IMAGE_GENERATOR_NODE_HEIGHT = 720;
+export const IMAGE_GENERATOR_MIN_OUTPUT_COUNT = 1;
+export const IMAGE_GENERATOR_MAX_OUTPUT_COUNT = 4;
 
 export const DEFAULT_PEN_SETTINGS: PenSettings = {
   color: "#000000",

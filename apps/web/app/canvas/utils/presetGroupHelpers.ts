@@ -4,6 +4,7 @@ import type {
   CanvasEdge,
   CanvasNode,
   CanvasAssistantNode,
+  CanvasImageGeneratorNode,
   CanvasPresetChild,
   CanvasPresetGroupNode,
   CanvasSourceImage,
@@ -21,6 +22,10 @@ export function isPresetGroupNode(node: CanvasNode): node is CanvasPresetGroupNo
 
 export function isAssistantNode(node: CanvasNode): node is CanvasAssistantNode {
   return node.kind === "assistant";
+}
+
+export function isImageGeneratorNode(node: CanvasNode): node is CanvasImageGeneratorNode {
+  return node.kind === "image-generator";
 }
 
 export function buildPresetSourceImage(imageUrl: string, name: string): CanvasSourceImage {
