@@ -96,6 +96,38 @@ const generationPresetReferenceSchema = z
   })
   .strict();
 
+const assistantTextReferenceSchema = z
+  .object({
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    title: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    content: trimmedString.min(1).max(MAX_PROMPT_LENGTH),
+    sourceKind: z.enum(["text", "assistant"]),
+  })
+  .strict();
+
+const assistantImageReferenceSchema = z
+  .object({
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    title: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    imageUrl: trimmedString.max(MAX_INLINE_IMAGE_URL_LENGTH),
+    assetId: uuidLikeString.optional(),
+    role: trimmedString.min(1).max(64),
+    sourceKind: z.enum(["image", "preset"]),
+    childId: trimmedString.min(1).max(MAX_LABEL_LENGTH).nullable().optional(),
+    childLabel: trimmedString.min(1).max(MAX_LABEL_LENGTH).nullable().optional(),
+  })
+  .strict();
+
+const assistantCardContextSchema = z
+  .object({
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    nodeTitle: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    textReferences: z.array(assistantTextReferenceSchema).max(16).default([]),
+    imageReferences: z.array(assistantImageReferenceSchema).max(16).default([]),
+    connectionSummary: trimmedString.max(4_000).default(""),
+  })
+  .strict();
+
 const canvasGenerationContextSchema = z
   .object({
     target: generationTargetSchema,
@@ -183,8 +215,22 @@ export const chatRequestBodySchema = z
     }
   });
 
+export const assistantCardRequestBodySchema = z
+  .object({
+    projectId: uuidLikeString.optional(),
+    canvasId: trimmedString.min(1).max(MAX_LABEL_LENGTH).optional(),
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    prompt: trimmedString.min(1).max(MAX_PROMPT_LENGTH),
+    model: trimmedString.min(1).max(120).optional(),
+    outputFormat: z.enum(["list", "text"]).optional(),
+    context: assistantCardContextSchema,
+  })
+  .strict();
+
 export type ChatRequestBody = z.infer<typeof chatRequestBodySchema>;
 export type CreateAiJobBody = z.infer<typeof createAiJobBodySchema>;
+export type AssistantCardRequestBody = z.infer<typeof assistantCardRequestBodySchema>;
+export type AssistantCardContext = z.infer<typeof assistantCardContextSchema>;
 
 export function formatZodError(error: z.ZodError) {
   return error.issues

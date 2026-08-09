@@ -270,6 +270,8 @@ export type CanvasAssistantState = {
   outputFormat: CanvasAssistantOutputFormat;
   status: "idle" | "generating" | "completed" | "error";
   errorMessage?: string;
+  lastRunAt?: string;
+  lastUsedContextSummary?: string;
 };
 
 export type CanvasTextNodeState = {
@@ -371,6 +373,12 @@ export function getVisibleInputPorts(
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const DEFAULT_CANVAS_THEME = "#F5F5F5";
+export const DEFAULT_ASSISTANT_NODE_WIDTH = 540;
+export const DEFAULT_ASSISTANT_NODE_HEIGHT = 520;
+export const MIN_ASSISTANT_NODE_WIDTH = 540;
+export const MIN_ASSISTANT_NODE_HEIGHT = 520;
+export const MAX_ASSISTANT_NODE_WIDTH = 850;
+export const MAX_ASSISTANT_NODE_HEIGHT = 800;
 
 export const DEFAULT_PEN_SETTINGS: PenSettings = {
   color: "#000000",

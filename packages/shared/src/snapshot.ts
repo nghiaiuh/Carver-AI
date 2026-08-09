@@ -161,6 +161,8 @@ export type CanvasGraphNodeSnapshot = {
     outputFormat: "list" | "text";
     status: "idle" | "generating" | "completed" | "error";
     errorMessage?: string;
+    lastRunAt?: string;
+    lastUsedContextSummary?: string;
   };
   text?: {
     content: string;

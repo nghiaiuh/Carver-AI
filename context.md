@@ -175,6 +175,11 @@ Chat application service:
 - `apps/web/lib/server/chatService.ts`
   Resolves the default project thread, stores chat exchanges in Supabase, sends normal chat messages, and routes image-generation prompts into project `ai_jobs`.
 
+Assistant card service:
+- `apps/web/lib/server/assistantService.ts`
+  Runs single-turn assistant-card prompts with graph-local text/image context only.
+  It does not write `chat_threads` / `chat_messages` and does not enqueue `ai_jobs`.
+
 OpenAI server helper:
 - `apps/web/lib/server/openaiChat.ts`
   Uses Responses API and currently defaults to `gpt-5-mini`.

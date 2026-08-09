@@ -267,6 +267,8 @@ function sanitizeAssistantState(value: unknown): CanvasAssistantState {
     outputFormat,
     status,
     errorMessage: stringValue(source?.errorMessage) ?? undefined,
+    lastRunAt: stringValue(source?.lastRunAt) ?? undefined,
+    lastUsedContextSummary: stringValue(source?.lastUsedContextSummary) ?? undefined,
   };
 }
 
