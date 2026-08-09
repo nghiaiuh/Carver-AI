@@ -106,6 +106,33 @@
     background-color: rgba(0, 0, 0, 0.15);
   }
 
+  .assistant-result-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--canvas-theme-border-strong) transparent;
+  }
+
+  .assistant-result-scroll::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .assistant-result-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .assistant-result-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: var(--canvas-theme-border-strong);
+    background-clip: padding-box;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .assistant-result-scroll:hover::-webkit-scrollbar-thumb {
+    background: var(--canvas-theme-selection);
+  }
+
   .sidebar-section {
     @apply p-4;
   }

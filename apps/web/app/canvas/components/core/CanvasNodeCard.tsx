@@ -418,7 +418,7 @@ function AssistantNodeSurface({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="relative min-h-0 flex-1 overflow-y-auto pr-3"
+              className="assistant-result-scroll relative min-h-0 flex-1 overflow-y-auto pr-2"
             >
               {isRunning ? (
                 <div className="flex items-start gap-3 px-1 py-1 text-[var(--canvas-theme-text-soft)]">
