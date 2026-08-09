@@ -8,17 +8,25 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { OPENAI_IMAGE_MODEL } from "@carver/shared";
 import {
+  IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
+  IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
+  MAX_IMAGE_GENERATOR_NODE_HEIGHT,
+  MAX_IMAGE_GENERATOR_NODE_WIDTH,
   MIN_ASSISTANT_NODE_HEIGHT,
   MIN_ASSISTANT_NODE_WIDTH,
   MAX_ASSISTANT_NODE_HEIGHT,
   MAX_ASSISTANT_NODE_WIDTH,
+  MIN_IMAGE_GENERATOR_NODE_HEIGHT,
+  MIN_IMAGE_GENERATOR_NODE_WIDTH,
 } from "../../types/canvas";
 import type {
   AddedObject,
   CanvasAssistantNode,
   CanvasConnectionKind,
   CanvasEdge,
+  CanvasImageGeneratorNode,
   CanvasNode,
   CanvasTextNode,
   EditorTool,
@@ -34,6 +42,7 @@ import {
   Image as ImageIcon,
   ImagePlus,
   MapPin,
+  Minus,
   Play,
   Plus,
   RefreshCw,
@@ -60,6 +69,7 @@ import {
   getGenericNodePortOffsetY,
   getImageOutputPortOffsetY,
 } from "../../utils/canvasPortLayout";
+import { isPresetGroupNode } from "../../utils/presetGroupHelpers";
 
 const DEFAULT_DEVICE_PIXEL_RATIO = 1;
 
@@ -130,6 +140,10 @@ function getNodeKindLabel(role: CanvasNode["role"]) {
     return "Assistant";
   }
 
+  if (role === "generator") {
+    return "Image Generator";
+  }
+
   if (role === "text") {
     return "Text note";
   }
@@ -162,6 +176,49 @@ const ASSISTANT_OUTPUT_OPTIONS: ReadonlyArray<{
   { value: "list", label: "Export as list" },
   { value: "text", label: "Export as text" },
 ];
+
+const IMAGE_GENERATOR_MODEL_OPTIONS = [
+  { value: "auto", label: "Auto" },
+  { value: OPENAI_IMAGE_MODEL, label: OPENAI_IMAGE_MODEL },
+] as const;
+
+const IMAGE_GENERATOR_ASPECT_RATIO_OPTIONS: ReadonlyArray<{
+  value: CanvasImageGeneratorNode["imageGenerator"]["aspectRatio"];
+  label: string;
+}> = [
+  { value: "1:1", label: "1:1" },
+  { value: "2:3", label: "2:3" },
+  { value: "3:2", label: "3:2" },
+];
+
+type ResolvedGeneratorAssetUrls = Record<string, {
+  thumbUrl: string;
+  previewUrl: string;
+  originalUrl: string;
+  expiresAt: string;
+}>;
+
+type ConnectedGeneratorImageReference = {
+  edgeId: string;
+  sourceNodeId: string;
+  title: string;
+  previewUrl: string;
+  assetId?: string;
+};
+
+type ConnectedGeneratorTextReference = {
+  edgeId: string;
+  sourceNodeId: string;
+  text: string;
+};
+
+function sortInboundCanvasEdges(a: CanvasEdge, b: CanvasEdge) {
+  if (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) {
+    return a.createdAt.localeCompare(b.createdAt);
+  }
+
+  return a.id.localeCompare(b.id);
+}
 
 function AssistantPopoverButton({
   label,
@@ -506,6 +563,476 @@ function AssistantNodeSurface({
   );
 }
 
+function ImageGeneratorNodeSurface({
+  node,
+  allNodes,
+  edges,
+  generatorAssetUrls,
+  onUpdateNode,
+  onRunImageGenerator,
+  onToast,
+}: {
+  node: CanvasImageGeneratorNode;
+  allNodes: CanvasNode[];
+  edges: CanvasEdge[];
+  generatorAssetUrls: ResolvedGeneratorAssetUrls;
+  onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
+  onRunImageGenerator: (nodeId: string) => void | Promise<void>;
+  onToast: (message: string) => void;
+}) {
+  const generator = node.imageGenerator;
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [openMenu, setOpenMenu] = useState<"model" | "aspect" | "settings" | null>(null);
+
+  const connectedReferences = React.useMemo(() => {
+    const inboundEdges = edges
+      .filter((edge) => edge.targetId === node.id)
+      .sort(sortInboundCanvasEdges);
+
+    const imageReferences: ConnectedGeneratorImageReference[] = [];
+    const textReferences: ConnectedGeneratorTextReference[] = [];
+
+    inboundEdges.forEach((edge) => {
+      const sourceNode = allNodes.find((candidate) => candidate.id === edge.sourceId);
+      if (!sourceNode) {
+        return;
+      }
+
+      if (edge.targetPortId === "image-generator-input-image") {
+        let previewUrl = sourceNode.sourceImage?.url ?? sourceNode.imageUrl ?? "";
+        let assetId = sourceNode.sourceImage?.assetId;
+        let title = sourceNode.title;
+
+        if (isPresetGroupNode(sourceNode)) {
+          const activeChild =
+            sourceNode.presetGroup.children.find(
+              (child) => child.id === sourceNode.presetGroup.activeChildId,
+            ) ?? sourceNode.presetGroup.children[0];
+          previewUrl = activeChild?.sourceImage?.url ?? activeChild?.imageSrc ?? "";
+          assetId = activeChild?.sourceImage?.assetId ?? activeChild?.assetId;
+          title = activeChild?.label ?? sourceNode.title;
+        }
+
+        if (!previewUrl && assetId) {
+          previewUrl =
+            generatorAssetUrls[assetId]?.thumbUrl ??
+            generatorAssetUrls[assetId]?.previewUrl ??
+            generatorAssetUrls[assetId]?.originalUrl ??
+            "";
+        }
+
+        if (previewUrl) {
+          imageReferences.push({
+            edgeId: edge.id,
+            sourceNodeId: sourceNode.id,
+            title,
+            previewUrl,
+            assetId,
+          });
+        }
+        return;
+      }
+
+      if (edge.targetPortId === "image-generator-input-text") {
+        const text =
+          sourceNode.kind === "text"
+            ? sourceNode.text.content
+            : sourceNode.kind === "assistant"
+              ? sourceNode.assistant.response || sourceNode.assistant.prompt
+              : sourceNode.prompt ?? "";
+
+        if (!text.trim()) {
+          return;
+        }
+
+        textReferences.push({
+          edgeId: edge.id,
+          sourceNodeId: sourceNode.id,
+          text: text.trim(),
+        });
+      }
+    });
+
+    return { imageReferences, textReferences };
+  }, [allNodes, edges, generatorAssetUrls, node.id]);
+
+  const outputCards = React.useMemo(() => {
+    return generator.outputs
+      .map((output, index) => {
+        const resolvedUrls = output.assetId ? generatorAssetUrls[output.assetId] : undefined;
+        const previewUrl =
+          resolvedUrls?.previewUrl ??
+          resolvedUrls?.originalUrl ??
+          resolvedUrls?.thumbUrl ??
+          output.imageUrl ??
+          "";
+
+        if (!previewUrl) {
+          return null;
+        }
+
+        return {
+          id: output.assetId ?? `${node.id}-output-${index}`,
+          assetId: output.assetId,
+          previewUrl,
+          alt: output.title || `${node.title} output ${index + 1}`,
+        };
+      })
+      .filter((output): output is NonNullable<typeof output> => output !== null);
+  }, [generator.outputs, generatorAssetUrls, node.id, node.title]);
+
+  const activeOutputAssetId =
+    generator.selectedOutputAssetId ??
+    generator.outputAssetIds[0] ??
+    outputCards[0]?.assetId ??
+    null;
+
+  const isRunning = generator.status === "queued" || generator.status === "generating";
+  const hasPromptInput = generator.prompt.trim().length > 0 || connectedReferences.textReferences.length > 0;
+  const selectedOutput =
+    outputCards.find((output) => output.assetId && output.assetId === activeOutputAssetId) ??
+    outputCards[0] ??
+    null;
+
+  const updateGenerator = (update: Partial<CanvasImageGeneratorNode["imageGenerator"]>) => {
+    onUpdateNode(node.id, (current) =>
+      current.kind === "image-generator"
+        ? {
+            ...current,
+            imageGenerator: {
+              ...current.imageGenerator,
+              ...update,
+            },
+          }
+        : current,
+    );
+  };
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!surfaceRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  const runGenerator = () => {
+    void onRunImageGenerator(node.id);
+    setOpenMenu(null);
+  };
+
+  const selectOutput = (assetId?: string) => {
+    if (!assetId) {
+      return;
+    }
+
+    const selectedAssetUrls = generatorAssetUrls[assetId];
+    updateGenerator({ selectedOutputAssetId: assetId });
+    onUpdateNode(node.id, (current) =>
+      current.kind === "image-generator"
+        ? {
+            ...current,
+            imageUrl:
+              selectedAssetUrls?.originalUrl ??
+              selectedAssetUrls?.previewUrl ??
+              current.imageUrl,
+            sourceImage: selectedAssetUrls
+              ? {
+                  assetId,
+                  url: selectedAssetUrls.originalUrl || selectedAssetUrls.previewUrl,
+                  width: null,
+                  height: null,
+                  quality: "original",
+                }
+              : current.sourceImage,
+          }
+        : current,
+    );
+  };
+
+  const gridColumnsClassName =
+    outputCards.length <= 1 ? "grid-cols-1" : outputCards.length === 2 ? "grid-cols-2" : "grid-cols-2";
+
+  return (
+    <div
+      ref={surfaceRef}
+      className="flex h-full w-full flex-col bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
+      data-canvas-interactive="true"
+      onPointerDown={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest("button, textarea, input, select")) {
+          event.stopPropagation();
+        }
+      }}
+    >
+      <div className="flex min-h-0 flex-1 flex-col px-4 pb-3 pt-4">
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]">
+          {outputCards.length > 0 ? (
+            <div className={`grid h-full w-full ${gridColumnsClassName} gap-2 p-2`}>
+              {outputCards.map((output) => {
+                const isSelected = output.assetId ? output.assetId === activeOutputAssetId : output === selectedOutput;
+                return (
+                  <button
+                    key={output.id}
+                    type="button"
+                    className={[
+                      "group relative overflow-hidden rounded-[14px] border transition",
+                      isSelected
+                        ? "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]"
+                        : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)]",
+                    ].join(" ")}
+                    onClick={() => selectOutput(output.assetId)}
+                    title="Use this output as the latest generator result"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={output.previewUrl}
+                      alt={output.alt}
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                      decoding="async"
+                    />
+                    {isSelected ? (
+                      <div className="pointer-events-none absolute inset-x-2 top-2 rounded-full bg-[var(--canvas-theme-surface-panel)]/88 px-2 py-1 text-[10px] font-semibold text-[var(--canvas-theme-text)] shadow-[0_6px_14px_var(--canvas-theme-shadow)]">
+                        Latest output
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center">
+              <div className="space-y-3">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]">
+                  <Sparkles className="h-5 w-5" strokeWidth={2.1} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">Ready to generate</p>
+                  <p className="mx-auto max-w-[260px] text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
+                    Connect image or text references, describe the garden concept you want, then run this node.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isRunning ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas-theme-surface-panel)]/72 backdrop-blur-[2px]">
+              <div className="flex items-center gap-3 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-medium text-[var(--canvas-theme-text)] shadow-[0_12px_24px_var(--canvas-theme-shadow)]">
+                <RefreshCw className="h-4 w-4 animate-spin text-[var(--canvas-theme-selection)]" strokeWidth={2} />
+                <span>{generator.status === "queued" ? "Queued..." : "Generating..."}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {generator.status === "error" && generator.errorMessage ? (
+            <div className="pointer-events-none absolute left-3 right-3 top-3 rounded-2xl border border-[#F0C4B5] bg-[#FFF5F1]/92 px-3 py-2 text-xs text-[#B42318] shadow-[0_8px_18px_rgba(180,35,24,0.08)]">
+              {generator.errorMessage}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_4px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
+            title="Add a reference image node"
+            onClick={() => {
+              textareaRef.current?.focus();
+              onToast("Add or connect an image node to use it as a generator reference.");
+            }}
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.2} />
+          </button>
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+            {connectedReferences.imageReferences.map((reference) => (
+              <div
+                key={reference.edgeId}
+                className="flex shrink-0 items-center gap-2 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1.5"
+                title={reference.title}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={reference.previewUrl}
+                  alt={reference.title}
+                  className="h-9 w-9 rounded-xl object-cover"
+                  draggable={false}
+                  decoding="async"
+                />
+                <span className="max-w-[88px] truncate text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">
+                  {reference.title}
+                </span>
+              </div>
+            ))}
+            {connectedReferences.textReferences.length > 0 ? (
+              <div className="flex shrink-0 items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-1.5 text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">
+                {connectedReferences.textReferences.length} text reference
+                {connectedReferences.textReferences.length === 1 ? "" : "s"}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/72 px-3 py-2">
+          <textarea
+            ref={textareaRef}
+            value={generator.prompt}
+            onChange={(event) =>
+              updateGenerator({
+                prompt: event.target.value,
+                status: generator.status === "error" ? "idle" : generator.status,
+                errorMessage: undefined,
+              })
+            }
+            placeholder="Describe the image you want to generate..."
+            className="h-[104px] w-full resize-none bg-transparent font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex h-9 items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1">
+            <button
+              type="button"
+              className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isRunning || generator.outputCount <= IMAGE_GENERATOR_MIN_OUTPUT_COUNT}
+              onClick={() =>
+                updateGenerator({
+                  outputCount: Math.max(
+                    IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
+                    generator.outputCount - 1,
+                  ),
+                })
+              }
+              aria-label="Decrease output count"
+            >
+              <Minus className="h-4 w-4" strokeWidth={2.1} />
+            </button>
+            <span className="min-w-[42px] text-center text-xs font-semibold text-[var(--canvas-theme-text)]">
+              x{generator.outputCount}
+            </span>
+            <button
+              type="button"
+              className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isRunning || generator.outputCount >= IMAGE_GENERATOR_MAX_OUTPUT_COUNT}
+              onClick={() =>
+                updateGenerator({
+                  outputCount: Math.min(
+                    IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
+                    generator.outputCount + 1,
+                  ),
+                })
+              }
+              aria-label="Increase output count"
+            >
+              <Plus className="h-4 w-4" strokeWidth={2.1} />
+            </button>
+          </div>
+
+          <AssistantPopoverButton
+            label={
+              IMAGE_GENERATOR_MODEL_OPTIONS.find((option) => option.value === generator.model)?.label ??
+              generator.model
+            }
+            isOpen={openMenu === "model"}
+            onToggle={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
+            options={IMAGE_GENERATOR_MODEL_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            onSelect={(value) => {
+              updateGenerator({ model: value });
+              setOpenMenu(null);
+            }}
+            disabled={isRunning}
+          />
+
+          <AssistantPopoverButton
+            label={generator.aspectRatio}
+            isOpen={openMenu === "aspect"}
+            onToggle={() => setOpenMenu((current) => (current === "aspect" ? null : "aspect"))}
+            options={IMAGE_GENERATOR_ASPECT_RATIO_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            onSelect={(value) => {
+              updateGenerator({
+                aspectRatio: value as CanvasImageGeneratorNode["imageGenerator"]["aspectRatio"],
+              });
+              setOpenMenu(null);
+            }}
+            disabled={isRunning}
+          />
+
+          <div className="relative">
+            <button
+              type="button"
+              className="grid h-9 w-9 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isRunning}
+              title="Advanced settings"
+              onClick={() => setOpenMenu((current) => (current === "settings" ? null : "settings"))}
+            >
+              <Settings className="h-4 w-4" strokeWidth={1.9} />
+            </button>
+            <AnimatePresence>
+              {openMenu === "settings" ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  className="absolute bottom-[calc(100%+10px)] left-0 z-20 w-[220px] rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-3 text-xs text-[var(--canvas-theme-text-soft)] shadow-[0_18px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl"
+                >
+                  <div className="space-y-1">
+                    <p className="font-semibold text-[var(--canvas-theme-text)]">Generation settings</p>
+                    <p>Model routing and aspect ratio are supported in phase 1.</p>
+                    <p>Connected references: {connectedReferences.imageReferences.length} image / {connectedReferences.textReferences.length} text.</p>
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+
+          <div className="ml-auto" />
+
+          <button
+            type="button"
+            disabled={isRunning || !hasPromptInput}
+            className={[
+              "grid h-10 w-10 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-[0_10px_24px_var(--canvas-theme-shadow)] transition",
+              isRunning || !hasPromptInput
+                ? "cursor-not-allowed opacity-45"
+                : "hover:bg-[var(--canvas-theme-selection-hover)]",
+            ].join(" ")}
+            title="Run image generator"
+            onClick={runGenerator}
+          >
+            {isRunning ? (
+              <RefreshCw className="h-4 w-4 animate-spin" strokeWidth={1.9} />
+            ) : (
+              <Play className="h-4 w-4 fill-current" strokeWidth={1.9} />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TextNodeSurface({
   node,
   onUpdateNode,
@@ -546,6 +1073,7 @@ function TextNodeSurface({
 
 type CanvasNodeCardProps = {
   node: CanvasNode;
+  allNodes: CanvasNode[];
   edges: CanvasEdge[];
   selected: boolean;
   isGenerationTarget?: boolean;
@@ -589,10 +1117,13 @@ type CanvasNodeCardProps = {
   onSetActiveNode: (id: string) => void;
   onDelete: (id: string) => void;
   onRunAssistant: (nodeId: string) => void | Promise<void>;
+  onRunImageGenerator: (nodeId: string) => void | Promise<void>;
+  generatorAssetUrls: ResolvedGeneratorAssetUrls;
 };
 
 export default function CanvasNodeCard({
   node,
+  allNodes,
   edges,
   selected,
   isGenerationTarget = false,
@@ -619,6 +1150,8 @@ export default function CanvasNodeCard({
   onSetActiveNode,
   onDelete,
   onRunAssistant,
+  onRunImageGenerator,
+  generatorAssetUrls,
 }: CanvasNodeCardProps) {
   const nodeVisualScale = getCanvasNodeVisualScale(node);
   const displayWidth = node.width * nodeVisualScale;
@@ -627,9 +1160,10 @@ export default function CanvasNodeCard({
   // so rendering should not depend on imageUrl alone.
   const runtimeImageUrl = node.sourceImage?.url ?? node.imageUrl;
   const isAssistant = node.kind === "assistant";
+  const isImageGenerator = node.kind === "image-generator";
   const isTextNode = node.kind === "text";
   const isImageOutputOnly = isImageOutputOnlyNode(node);
-  const hasSemanticPorts = isAssistant || isTextNode;
+  const hasSemanticPorts = isAssistant || isTextNode || isImageGenerator;
   const connectionCountsBySide = getNodeConnectionCountsBySide(node.id, edges);
   const leftHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
   const rightHandles: Array<{ kind: CanvasConnectionKind; count: number }> = [];
@@ -690,7 +1224,7 @@ export default function CanvasNodeCard({
   const nodeObjects = addedObjects.filter(
     (object) => object.targetNodeId === node.id || (!object.targetNodeId && legacyOverlayHost),
   );
-  const frameClassName = isAssistant
+  const frameClassName = isAssistant || isImageGenerator
     ? [
         "relative overflow-hidden rounded-[20px] border-[3px] bg-[var(--canvas-theme-surface)] shadow-[0_4px_16px_var(--canvas-theme-shadow)] transition-colors",
         nodeFrameClassName,
@@ -700,7 +1234,7 @@ export default function CanvasNodeCard({
         nodeFrameClassName,
       ].join(" ");
   const isActiveSelectedNode = selectedItem.type === "node" && selectedItem.id === node.id;
-  const assistantResizeSessionRef = useRef<{
+  const resizeSessionRef = useRef<{
     pointerId: number;
     startClientX: number;
     startClientY: number;
@@ -708,17 +1242,34 @@ export default function CanvasNodeCard({
     startHeight: number;
     visualScale: number;
   } | null>(null);
-  const latestAssistantSizeRef = useRef({ width: node.width, height: node.height });
-  const [isAssistantResizing, setIsAssistantResizing] = useState(false);
+  const latestResizableSizeRef = useRef({ width: node.width, height: node.height });
+  const [isNodeResizing, setIsNodeResizing] = useState(false);
+  const resizableNodeConstraints = isAssistant
+    ? {
+        minWidth: MIN_ASSISTANT_NODE_WIDTH,
+        minHeight: MIN_ASSISTANT_NODE_HEIGHT,
+        maxWidth: MAX_ASSISTANT_NODE_WIDTH,
+        maxHeight: MAX_ASSISTANT_NODE_HEIGHT,
+        label: "assistant",
+      }
+    : isImageGenerator
+      ? {
+          minWidth: MIN_IMAGE_GENERATOR_NODE_WIDTH,
+          minHeight: MIN_IMAGE_GENERATOR_NODE_HEIGHT,
+          maxWidth: MAX_IMAGE_GENERATOR_NODE_WIDTH,
+          maxHeight: MAX_IMAGE_GENERATOR_NODE_HEIGHT,
+          label: "image generator",
+        }
+      : null;
 
   useEffect(() => {
-    latestAssistantSizeRef.current = { width: node.width, height: node.height };
+    latestResizableSizeRef.current = { width: node.width, height: node.height };
   }, [node.height, node.width]);
 
-  const finishAssistantResize = useCallback((
+  const finishNodeResize = useCallback((
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    const session = assistantResizeSessionRef.current;
+    const session = resizeSessionRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
 
     event.preventDefault();
@@ -728,10 +1279,10 @@ export default function CanvasNodeCard({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    assistantResizeSessionRef.current = null;
-    setIsAssistantResizing(false);
+    resizeSessionRef.current = null;
+    setIsNodeResizing(false);
 
-    const finalSize = latestAssistantSizeRef.current;
+    const finalSize = latestResizableSizeRef.current;
     if (
       finalSize.width !== session.startWidth ||
       finalSize.height !== session.startHeight
@@ -747,15 +1298,15 @@ export default function CanvasNodeCard({
     }
   }, [node.id, onCommitResize]);
 
-  const handleAssistantResizePointerDown = useCallback((
+  const handleNodeResizePointerDown = useCallback((
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    if (!isAssistant || !isActiveSelectedNode) return;
+    if (!resizableNodeConstraints || !isActiveSelectedNode) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    assistantResizeSessionRef.current = {
+    resizeSessionRef.current = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -763,14 +1314,14 @@ export default function CanvasNodeCard({
       startHeight: node.height,
       visualScale: Math.max(nodeVisualScale, 0.0001),
     };
-    setIsAssistantResizing(true);
-  }, [isActiveSelectedNode, isAssistant, node.height, node.width, nodeVisualScale]);
+    setIsNodeResizing(true);
+  }, [isActiveSelectedNode, node.height, node.width, nodeVisualScale, resizableNodeConstraints]);
 
-  const handleAssistantResizePointerMove = useCallback((
+  const handleNodeResizePointerMove = useCallback((
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    const session = assistantResizeSessionRef.current;
-    if (!session || session.pointerId !== event.pointerId) return;
+    const session = resizeSessionRef.current;
+    if (!session || session.pointerId !== event.pointerId || !resizableNodeConstraints) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -778,21 +1329,22 @@ export default function CanvasNodeCard({
     const dx = (event.clientX - session.startClientX) / (Math.max(viewportZoom, 0.0001) * session.visualScale);
     const dy = (event.clientY - session.startClientY) / (Math.max(viewportZoom, 0.0001) * session.visualScale);
     const nextWidth = Math.min(
-      MAX_ASSISTANT_NODE_WIDTH,
-      Math.max(MIN_ASSISTANT_NODE_WIDTH, Math.round(session.startWidth + dx)),
+      resizableNodeConstraints.maxWidth,
+      Math.max(resizableNodeConstraints.minWidth, Math.round(session.startWidth + dx)),
     );
     const nextHeight = Math.min(
-      MAX_ASSISTANT_NODE_HEIGHT,
-      Math.max(MIN_ASSISTANT_NODE_HEIGHT, Math.round(session.startHeight + dy)),
+      resizableNodeConstraints.maxHeight,
+      Math.max(resizableNodeConstraints.minHeight, Math.round(session.startHeight + dy)),
     );
 
+    latestResizableSizeRef.current = { width: nextWidth, height: nextHeight };
     onUpdateNode(node.id, (current) => (
-      current.kind === "assistant" &&
+      current.kind === node.kind &&
       (current.width !== nextWidth || current.height !== nextHeight)
         ? { ...current, width: nextWidth, height: nextHeight }
         : current
     ));
-  }, [node.id, onUpdateNode, viewportZoom]);
+  }, [node.id, node.kind, onUpdateNode, resizableNodeConstraints, viewportZoom]);
 
   return (
     <div
@@ -821,9 +1373,13 @@ export default function CanvasNodeCard({
     >
       <div>
         <div className="relative">
-          {isAssistant ? (
+          {isAssistant || isImageGenerator ? (
             <div className="pointer-events-none absolute -top-9 left-7 flex items-center gap-2 font-[var(--font-botanical-sans)] text-[18px] font-semibold text-[var(--canvas-theme-text-soft)]">
-              <Sparkles className="h-4 w-4 text-[var(--canvas-theme-selection)]" strokeWidth={2.1} />
+              {isImageGenerator ? (
+                <ImageIcon className="h-4 w-4 text-[var(--canvas-theme-selection)]" strokeWidth={2.1} />
+              ) : (
+                <Sparkles className="h-4 w-4 text-[var(--canvas-theme-selection)]" strokeWidth={2.1} />
+              )}
               <span>{node.title}</span>
             </div>
           ) : null}
@@ -846,6 +1402,16 @@ export default function CanvasNodeCard({
                 node={node as CanvasAssistantNode}
                 onUpdateNode={onUpdateNode}
                 onRunAssistant={onRunAssistant}
+              />
+            ) : isImageGenerator ? (
+              <ImageGeneratorNodeSurface
+                node={node as CanvasImageGeneratorNode}
+                allNodes={allNodes}
+                edges={edges}
+                generatorAssetUrls={generatorAssetUrls}
+                onUpdateNode={onUpdateNode}
+                onRunImageGenerator={onRunImageGenerator}
+                onToast={onToast}
               />
             ) : isTextNode ? (
               <TextNodeSurface
@@ -975,23 +1541,23 @@ export default function CanvasNodeCard({
               }
             />
           )) : null}
-          {isAssistant && isActiveSelectedNode ? (
+          {resizableNodeConstraints && isActiveSelectedNode ? (
             <button
               type="button"
-              aria-label="Resize assistant"
-              title="Resize assistant"
+              aria-label={`Resize ${resizableNodeConstraints.label}`}
+              title={`Resize ${resizableNodeConstraints.label}`}
               className={[
                 "absolute -bottom-3 -right-3 z-[155] grid h-7 w-7 place-items-center rounded-full border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-selection)] shadow-[0_8px_20px_var(--canvas-theme-shadow)] transition duration-150",
-                isAssistantResizing
+                isNodeResizing
                   ? "scale-[0.97] border-[var(--canvas-theme-selection)] text-[var(--canvas-theme-selection-hover)]"
                   : "hover:scale-[1.05] hover:border-[var(--canvas-theme-selection)] hover:text-[var(--canvas-theme-selection-hover)]",
               ].join(" ")}
               style={{ cursor: "nwse-resize" }}
               data-canvas-interactive="true"
-              onPointerDown={handleAssistantResizePointerDown}
-              onPointerMove={handleAssistantResizePointerMove}
-              onPointerUp={finishAssistantResize}
-              onPointerCancel={finishAssistantResize}
+              onPointerDown={handleNodeResizePointerDown}
+              onPointerMove={handleNodeResizePointerMove}
+              onPointerUp={finishNodeResize}
+              onPointerCancel={finishNodeResize}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
                 <path
@@ -1012,7 +1578,7 @@ export default function CanvasNodeCard({
           ) : null}
         </div>
 
-        {!isAssistant ? (
+        {!isAssistant && !isImageGenerator ? (
         <div className="px-1 pb-1 text-left" style={{ marginTop: "10px" }}>
           <h3 className="truncate font-[var(--font-botanical-display)] text-[17px] leading-tight text-[var(--canvas-theme-text)]">
             {node.title}

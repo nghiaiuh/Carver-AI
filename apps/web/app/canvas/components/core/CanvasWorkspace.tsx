@@ -247,8 +247,21 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           open={quickAddOpen}
           onClose={() => setQuickAddOpen(false)}
           onSelectType={(nodeType) => {
-            actions.showToast(`Added ${nodeType} node to canvas`);
-            if (nodeType === "upload-image") setActiveRecipeModal("site");
+            switch (nodeType) {
+              case "carver-generate":
+                actions.addImageGeneratorNode();
+                return;
+              case "ai-brief":
+                actions.addAssistantNode();
+                return;
+              case "upload-image":
+                setActiveRecipeModal("site");
+                actions.showToast("Choose a site image to add to the canvas");
+                return;
+              default:
+                actions.showToast(`Added ${nodeType} node to canvas`);
+                return;
+            }
           }}
         />
 
@@ -319,6 +332,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onCloseRegionEditor={actions.exitRegionMode}
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
               onRunAssistantNode={actions.runAssistantNode}
+              onRunImageGeneratorNode={actions.runImageGeneratorNode}
+              generatorAssetUrls={state.resolvedGeneratorAssetUrls}
               onHistoryActionsChange={handleHistoryActionsChange}
             />
 

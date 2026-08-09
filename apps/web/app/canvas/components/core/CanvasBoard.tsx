@@ -178,6 +178,13 @@ type CanvasBoardProps = {
     preserveTitle?: boolean;
   }>;
   onRunAssistantNode: (nodeId: string) => void | Promise<void>;
+  onRunImageGeneratorNode: (nodeId: string) => void | Promise<void>;
+  generatorAssetUrls: Record<string, {
+    thumbUrl: string;
+    previewUrl: string;
+    originalUrl: string;
+    expiresAt: string;
+  }>;
   onHistoryActionsChange?: (actions: {
     undo: () => void;
     redo: () => void;
@@ -345,6 +352,8 @@ export default function CanvasBoard({
   onCloseRegionEditor,
   onPersistCanvasNodeImageAsset,
   onRunAssistantNode,
+  onRunImageGeneratorNode,
+  generatorAssetUrls,
   onHistoryActionsChange,
 }: CanvasBoardProps) {
   const containerRef = useRef<HTMLElement>(null);
@@ -2334,6 +2343,7 @@ export default function CanvasBoard({
               sketchLines={sketchLines}
               sketchGroups={sketchGroups}
               selectedSketchLineIds={selectedSketchLineIds}
+              allNodes={nodes}
               viewportZoom={zoom}
               imageRasterZoom={isWheelZooming ? imageRasterZoom : zoom}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
@@ -2388,6 +2398,8 @@ export default function CanvasBoard({
               onSetActiveNode={onSetActiveNode}
               onDelete={deleteNode}
               onRunAssistant={onRunAssistantNode}
+              onRunImageGenerator={onRunImageGeneratorNode}
+              generatorAssetUrls={generatorAssetUrls}
             />
           )
         )}
