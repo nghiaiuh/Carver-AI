@@ -18,7 +18,7 @@ import type { ImageHandlePosition, ImageConnectionRole } from "../../types/canva
 
 export const INPUT_PORT_HANDLE_CENTER_OFFSET = 6;
 /** Full handle box offset from the card edge, used by the DOM layout. */
-export const AGGREGATE_HANDLE_OFFSET = 32;
+export const AGGREGATE_HANDLE_OFFSET = 38;
 /** SVG edges must end at the center of the 32px handle, not its outer edge. */
 export const AGGREGATE_HANDLE_CENTER_OFFSET = AGGREGATE_HANDLE_OFFSET / 2;
 
