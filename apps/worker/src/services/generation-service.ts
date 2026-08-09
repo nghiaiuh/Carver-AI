@@ -33,6 +33,11 @@ import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
 
 const logger = createSafeLogger("worker.generation-service");
+const IMAGE_GENERATOR_ASPECT_RATIO_TO_SIZE: Record<string, string> = {
+  "1:1": "1024x1024",
+  "2:3": "1024x1536",
+  "3:2": "1536x1024",
+};
 
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
@@ -164,9 +169,28 @@ const buildRequiredAssetIds = (job: CarverAiJobPayload) => {
   return [...ids];
 };
 
+const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: string) => {
+  const textReferences = job.imageGeneratorContext?.textReferences ?? [];
+  if (textReferences.length === 0) {
+    return basePrompt;
+  }
+
+  return [
+    "IMAGE GENERATOR TASK",
+    basePrompt,
+    "",
+    "CONNECTED TEXT REFERENCES",
+    ...textReferences.map((reference, index) => `${index + 1}. ${reference.title}: ${reference.content}`),
+  ].join("\n");
+};
+
 export const prepareGenerationState = async (
   job: CarverAiJobPayload,
 ): Promise<PreparedGenerationState> => {
+  const promptWithTextReferences =
+    job.targetType === "image-generator"
+      ? buildImageGeneratorPrompt(job, job.prompt)
+      : job.prompt;
   const snapshotBrief = buildSnapshotAwareEditBrief(job);
   const editBrief = job.canvasGraphContext
     ? buildConnectedGenerationBrief(snapshotBrief, job.canvasGraphContext)
@@ -175,7 +199,7 @@ export const prepareGenerationState = async (
 
   const compiledPromptV2 = shouldCompilePrompt
     ? await compileGenerationPromptV2({
-        rawPrompt: job.prompt,
+        rawPrompt: promptWithTextReferences,
         trustedContext: buildTrustedContextForJob(job),
         requiredAssetIds: buildRequiredAssetIds(job),
         parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
@@ -217,14 +241,16 @@ export const executeGeneratedImageJob = async (
     projectId: job.projectId,
     ownerId: job.userId,
   });
-  let persisted: PersistedGeneratedOutput;
+  let persistedOutputs: PersistedGeneratedOutput[] = [];
+  const requestedOutputCount = Math.min(Math.max(job.outputCount ?? 1, 1), 4);
+  const shouldPersistChatMessage = job.targetType !== "image-generator";
 
-  if (reusableOutput) {
-    persisted = reusableOutput;
+  if (reusableOutput && requestedOutputCount === 1) {
+    persistedOutputs = [reusableOutput];
     logger.info("reusing generated asset from an earlier attempt", {
       jobId: job.jobId,
       projectId: job.projectId,
-      assetId: persisted.assetId,
+      assetId: reusableOutput.assetId,
     });
   } else {
     const [targetImage, referenceImages, maskImage] = await Promise.all([
@@ -250,42 +276,50 @@ export const executeGeneratedImageJob = async (
       throw new Error("Region edit jobs require a resolved mask image.");
     }
 
-    const providerImage = job.simulation
-      ? await generateSimulatedImage({
-          job,
-          prompt: state.finalPrompt,
-          currentAttempt: options?.currentAttempt ?? 1,
-        })
-      : await generateImageFromPrompt({
-          prompt: state.finalPrompt,
-          mode: job.executionMode,
-          targetImage,
-          referenceImages,
-          maskImage,
-        });
+    for (let outputIndex = 0; outputIndex < requestedOutputCount; outputIndex += 1) {
+      const providerImage = job.simulation
+        ? await generateSimulatedImage({
+            job,
+            prompt: state.finalPrompt,
+            currentAttempt: options?.currentAttempt ?? 1,
+          })
+        : await generateImageFromPrompt({
+            prompt: state.finalPrompt,
+            mode: job.executionMode,
+            model: job.model && job.model !== "auto" ? job.model : undefined,
+            size: job.aspectRatio ? IMAGE_GENERATOR_ASPECT_RATIO_TO_SIZE[job.aspectRatio] : undefined,
+            targetImage,
+            referenceImages,
+            maskImage,
+          });
 
-    logger.info("generation provider image received", {
-      jobId: job.jobId,
-      projectId: job.projectId,
-      executionMode: job.executionMode,
-      mimeType: providerImage.mimeType,
-      width: providerImage.width,
-      height: providerImage.height,
-      provider: providerImage.provider,
-    });
+      logger.info("generation provider image received", {
+        jobId: job.jobId,
+        projectId: job.projectId,
+        executionMode: job.executionMode,
+        outputIndex,
+        mimeType: providerImage.mimeType,
+        width: providerImage.width,
+        height: providerImage.height,
+        provider: providerImage.provider,
+      });
 
-    persisted = await persistGeneratedImageAsset({
-      jobId: job.jobId,
-      projectId: job.projectId,
-      ownerId: job.userId,
-      prompt: providerImage.revisedPrompt ?? state.finalPrompt,
-      title: "Generated concept",
-      buffer: providerImage.buffer,
-      mimeType: providerImage.mimeType,
-      width: providerImage.width,
-      height: providerImage.height,
-      provider: providerImage.provider,
-    });
+      const persisted = await persistGeneratedImageAsset({
+        jobId: job.jobId,
+        projectId: job.projectId,
+        ownerId: job.userId,
+        prompt: providerImage.revisedPrompt ?? state.finalPrompt,
+        title: requestedOutputCount > 1 ? `Generated concept ${outputIndex + 1}` : "Generated concept",
+        outputIndex,
+        buffer: providerImage.buffer,
+        mimeType: providerImage.mimeType,
+        width: providerImage.width,
+        height: providerImage.height,
+        provider: providerImage.provider,
+      });
+
+      persistedOutputs.push(persisted);
+    }
 
     // Exercise the dangerous retry boundary without paying a provider: the
     // output exists, but a later step fails. The next attempt must reuse it.
@@ -297,10 +331,10 @@ export const executeGeneratedImageJob = async (
   logger.info("generated asset persisted", {
     jobId: job.jobId,
     projectId: job.projectId,
-    assetId: persisted.assetId,
+    assetIds: persistedOutputs.map((output) => output.assetId),
   });
 
-  if (!persisted.assetId) {
+  if (persistedOutputs.length === 0 || persistedOutputs.some((output) => !output.assetId)) {
     throw new Error("Generated image persistence did not return an asset id.");
   }
 
@@ -311,22 +345,26 @@ export const executeGeneratedImageJob = async (
         ? "Generated a region edit from the selected canvas target and mask."
         : "Generated a concept image from the selected canvas target and connected references.";
 
-  const assistantMessage = await persistGeneratedAssistantMessage({
-    jobId: job.jobId,
-    projectId: job.projectId,
-    threadId: job.threadId,
-    content: assistantContent,
-    generatedImages: [persisted.generatedImage],
-  });
+  const assistantMessage = shouldPersistChatMessage
+    ? await persistGeneratedAssistantMessage({
+        jobId: job.jobId,
+        projectId: job.projectId,
+        threadId: job.threadId,
+        content: assistantContent,
+        generatedImages: persistedOutputs.map((output) => output.generatedImage),
+      })
+    : null;
 
-  logger.info("generated assistant message persisted", {
-    jobId: job.jobId,
-    projectId: job.projectId,
-    threadId: job.threadId ?? null,
-    assistantMessageId: assistantMessage.id,
-  });
+  if (assistantMessage) {
+    logger.info("generated assistant message persisted", {
+      jobId: job.jobId,
+      projectId: job.projectId,
+      threadId: job.threadId ?? null,
+      assistantMessageId: assistantMessage.id,
+    });
+  }
 
-  const provider = persisted.generatedImage.provider ?? "carver-worker";
+  const provider = persistedOutputs[0]?.generatedImage.provider ?? "carver-worker";
 
   return {
     provider,
@@ -335,9 +373,9 @@ export const executeGeneratedImageJob = async (
       editBrief: state.editBrief,
       compiledPromptMeta: state.compiledPromptMeta,
       compiledPromptV2: state.compiledPromptV2,
-      generatedImages: [persisted.generatedImage],
+      generatedImages: persistedOutputs.map((output) => output.generatedImage),
       assistantMessage,
-      outputAssetIds: [persisted.assetId],
+      outputAssetIds: persistedOutputs.map((output) => output.assetId),
     }),
   };
 };

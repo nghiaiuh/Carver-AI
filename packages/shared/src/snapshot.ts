@@ -134,7 +134,7 @@ export type CanvasGraphPresetChild = {
 
 export type CanvasGraphNodeSnapshot = {
   id: string;
-  kind: "image" | "presetGroup" | "assistant" | "text";
+  kind: "image" | "presetGroup" | "assistant" | "text" | "image-generator";
   title: string;
   role: string;
   imageUrl: string;
@@ -163,6 +163,27 @@ export type CanvasGraphNodeSnapshot = {
     errorMessage?: string;
     lastRunAt?: string;
     lastUsedContextSummary?: string;
+  };
+  imageGenerator?: {
+    prompt: string;
+    model: string;
+    aspectRatio: "1:1" | "2:3" | "3:2";
+    outputCount: number;
+    status: "idle" | "queued" | "generating" | "completed" | "error";
+    outputAssetIds: string[];
+    selectedOutputAssetId?: string;
+    outputs: Array<{
+      assetId?: string;
+      title: string;
+      prompt: string;
+      imageUrl: string;
+      width: number | null;
+      height: number | null;
+      mimeType?: string;
+      provider?: string;
+    }>;
+    errorMessage?: string;
+    lastRunAt?: string;
   };
   text?: {
     content: string;

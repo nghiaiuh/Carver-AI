@@ -5,6 +5,7 @@
  * 3. Return a web-friendly generated image payload.
  */
 
+import { randomUUID } from "node:crypto";
 import type { PersistedGeneratedImage } from "@carver/shared";
 import { createGeneratedAsset } from "../repositories/asset-repository";
 import { getSupabaseAdmin } from "@carver/db/server";
@@ -120,14 +121,20 @@ export const persistGeneratedImageAsset = async (params: {
   ownerId: string;
   prompt: string;
   title: string;
+  assetId?: string;
+  outputIndex?: number;
   buffer: Buffer;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
   height: number;
   provider: string;
 }): Promise<PersistedGeneratedOutput> => {
-  const assetId = params.jobId;
+  const assetId = params.assetId ?? (params.outputIndex && params.outputIndex > 0 ? randomUUID() : params.jobId);
   const fileExtension = extensionForMimeType(params.mimeType);
+  const fileBase =
+    params.outputIndex && params.outputIndex > 0
+      ? `${params.title}-${params.outputIndex + 1}`
+      : params.title;
   const storagePath = [
     "users",
     params.ownerId,
@@ -135,7 +142,7 @@ export const persistGeneratedImageAsset = async (params: {
     params.projectId,
     "jobs",
     params.jobId,
-    `${slugifyFileBase(params.title)}.${fileExtension}`,
+    `${slugifyFileBase(fileBase)}.${fileExtension}`,
   ].join("/");
 
   await uploadR2Object({

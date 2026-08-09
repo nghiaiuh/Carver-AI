@@ -5,6 +5,7 @@ import {
   createSafeLogger,
   coerceCanvasSnapshotDocument,
   formatZodError,
+  OPENAI_IMAGE_MODEL,
 } from "@carver/shared";
 import type {
   CarverAiJobRecord,
@@ -124,6 +125,10 @@ const buildIdempotencyKey = (params: {
   snapshotIdentity: string | null;
   targetNodeId: string | undefined;
   executionMode: CarverImageExecutionMode;
+  targetType?: "canvas-node" | "image-generator";
+  model?: string | null;
+  aspectRatio?: string | null;
+  outputCount?: number | null;
   simulationScenario?: string | null;
 }) =>
   createHash("sha256")
@@ -136,6 +141,10 @@ const buildIdempotencyKey = (params: {
         snapshotIdentity: params.snapshotIdentity,
         targetNodeId: params.targetNodeId ?? null,
         executionMode: params.executionMode,
+        targetType: params.targetType ?? "canvas-node",
+        model: params.model ?? null,
+        aspectRatio: params.aspectRatio ?? null,
+        outputCount: params.outputCount ?? 1,
         simulationScenario: params.simulationScenario ?? null,
       }),
     )
@@ -276,8 +285,13 @@ export async function createProjectAiJob(params: {
   const promptMode = normalizePromptMode(body.promptMode);
   const jobType = normalizeJobType(body.jobType);
   const requestedExecutionMode = normalizeExecutionMode(body.executionMode);
+  const targetType = body.targetType ?? "canvas-node";
   const targetNodeId = body.targetNodeId;
+  const requestedModel = body.model?.trim() || "auto";
+  const aspectRatio = body.aspectRatio ?? "1:1";
+  const outputCount = body.outputCount ?? 1;
   const canvasGraphContext = objectValue(body.canvasGraphContext);
+  const imageGeneratorContext = objectValue(body.imageGeneratorContext);
   const maskInput = maskValue(body.mask);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
   const simulation = normalizeSimulation(body.simulation);
@@ -288,6 +302,14 @@ export async function createProjectAiJob(params: {
 
   if (simulation && !AI_JOB_SIMULATION_ENABLED) {
     return { ok: false, response: badRequest("AI job simulation mode is disabled.") };
+  }
+
+  if (targetType === "image-generator" && !targetNodeId) {
+    return { ok: false, response: badRequest("Image generator jobs require a targetNodeId.") };
+  }
+
+  if (requestedModel !== "auto" && requestedModel !== OPENAI_IMAGE_MODEL) {
+    return { ok: false, response: badRequest("Unsupported image generation model.") };
   }
 
   const projectResult = await requireProjectOwner(context, projectId);
@@ -584,6 +606,10 @@ export async function createProjectAiJob(params: {
       snapshotIdentity: loadedSnapshot?.id ?? resolvedSnapshotId ?? mergedSnapshotHash,
       targetNodeId,
       executionMode,
+      targetType,
+      model: requestedModel,
+      aspectRatio,
+      outputCount,
       simulationScenario: simulation?.scenario ?? null,
     });
 
@@ -591,6 +617,13 @@ export async function createProjectAiJob(params: {
     ? {
         ...canvasGraphContext,
         ...(sanitizedTarget ? { target: sanitizedTarget } : {}),
+        imageReferences: sanitizedImageReferences,
+        presetReferences: sanitizedPresetReferences,
+      }
+    : null;
+  const sanitizedImageGeneratorContext = imageGeneratorContext
+    ? {
+        ...imageGeneratorContext,
         imageReferences: sanitizedImageReferences,
         presetReferences: sanitizedPresetReferences,
       }
@@ -660,11 +693,16 @@ export async function createProjectAiJob(params: {
   }
 
   const generationCreditCost =
-    jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept;
+    (jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept) *
+    Math.max(1, outputCount);
 
   const jobPayload = {
     executionMode,
+    targetType,
     promptMode,
+    model: requestedModel,
+    aspectRatio,
+    outputCount,
     promptEngine: {
       contextRevision: loadedSnapshot?.version ?? 0,
       snapshotId: resolvedSnapshotId ?? null,
@@ -684,6 +722,7 @@ export async function createProjectAiJob(params: {
     targetNodeId,
     maskAssetId: resolvedMaskAssetId ?? null,
     canvasGraphContext: sanitizedCanvasGraphContext,
+    imageGeneratorContext: sanitizedImageGeneratorContext,
   } as const;
 
   const adminSupabase = getSupabaseAdmin();

@@ -38,7 +38,7 @@ export const buildGeneratedJobResult = (params: {
   compiledPromptMeta: CarverCompiledPromptMeta | null;
   compiledPromptV2?: GenerationPromptResultV2 | null;
   generatedImages: GeneratedCanvasImage[];
-  assistantMessage: CanvasGenerationAssistantMessage;
+  assistantMessage: CanvasGenerationAssistantMessage | null;
   outputAssetIds: string[];
   outputSnapshotId?: string | null;
 }): CarverAiJobResult => ({

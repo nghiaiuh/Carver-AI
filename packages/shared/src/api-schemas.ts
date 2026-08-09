@@ -128,6 +128,26 @@ const assistantCardContextSchema = z
   })
   .strict();
 
+const imageGeneratorTextReferenceSchema = z
+  .object({
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    title: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    content: trimmedString.min(1).max(MAX_PROMPT_LENGTH),
+    sourceKind: z.enum(["text", "assistant"]),
+  })
+  .strict();
+
+const imageGeneratorContextSchema = z
+  .object({
+    nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    nodeTitle: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    imageReferences: z.array(generationImageReferenceSchema).max(16).default([]),
+    presetReferences: z.array(generationPresetReferenceSchema).max(32).default([]),
+    textReferences: z.array(imageGeneratorTextReferenceSchema).max(16).default([]),
+    connectionSummary: trimmedString.max(4_000).default(""),
+  })
+  .strict();
+
 const canvasGenerationContextSchema = z
   .object({
     target: generationTargetSchema,
@@ -153,10 +173,14 @@ export const createAiJobBodySchema = z
     prompt: trimmedString.min(1).max(MAX_PROMPT_LENGTH).optional(),
     rawPrompt: trimmedString.min(1).max(MAX_PROMPT_LENGTH).optional(),
     executionMode: z.enum(CARVER_EXECUTION_MODE_VALUES).optional(),
+    targetType: z.enum(["canvas-node", "image-generator"]).optional(),
     idempotencyKey: trimmedString.min(8).max(128).optional(),
     inputSnapshotId: uuidLikeString.optional(),
     threadId: uuidLikeString.optional(),
     promptMode: z.enum(CARVER_PROMPT_MODE_VALUES).optional(),
+    model: trimmedString.min(1).max(120).optional(),
+    aspectRatio: z.enum(["1:1", "2:3", "3:2"]).optional(),
+    outputCount: z.number().int().min(1).max(4).optional(),
     referenceAssetIds: z.array(uuidLikeString).max(32).optional(),
     selection: selectionSchema.optional(),
     snapshot: z.unknown().optional(),
@@ -164,6 +188,7 @@ export const createAiJobBodySchema = z
     targetNodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH).optional(),
     mask: maskInputSchema.optional(),
     canvasGraphContext: canvasGenerationContextSchema.optional(),
+    imageGeneratorContext: imageGeneratorContextSchema.optional(),
     simulation: simulationSchema.optional(),
     jobType: z.enum(CARVER_JOB_KIND_VALUES).optional(),
     canvasId: trimmedString.min(1).max(MAX_LABEL_LENGTH).optional(),

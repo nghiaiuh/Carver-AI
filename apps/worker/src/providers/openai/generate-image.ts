@@ -204,6 +204,8 @@ async function createImagesEditRequest(params: {
 export async function generateImageFromPrompt(params: {
   prompt: string;
   mode: CarverImageExecutionMode;
+  model?: string;
+  size?: string;
   targetImage?: ImageInput | null;
   referenceImages?: ImageInput[];
   maskImage?: ImageInput | null;
@@ -223,14 +225,16 @@ export async function generateImageFromPrompt(params: {
     throw new Error("Image edit requires a target image.");
   }
 
+  const resolvedModel = params.model?.trim() || OPENAI_IMAGE_MODEL;
+  const resolvedSize = params.size?.trim() || OPENAI_IMAGE_SIZE;
   const resolvedTargetImage = params.targetImage ?? null;
 
   const requestBody =
     params.mode === "text_to_image"
       ? JSON.stringify({
-          model: OPENAI_IMAGE_MODEL,
+          model: resolvedModel,
           prompt: params.prompt,
-          size: OPENAI_IMAGE_SIZE,
+          size: resolvedSize,
           quality: OPENAI_IMAGE_QUALITY,
           output_format: OPENAI_IMAGE_OUTPUT_FORMAT,
           partial_images: OPENAI_IMAGE_PARTIAL_IMAGES,
@@ -244,9 +248,10 @@ export async function generateImageFromPrompt(params: {
         });
 
   logger.info("calling openai images api", {
-    model: OPENAI_IMAGE_MODEL,
+    model: resolvedModel,
     endpoint,
     mode: params.mode,
+    size: resolvedSize,
     referenceImageCount: params.referenceImages?.length ?? 0,
     hasTargetImage: Boolean(params.targetImage),
     hasMaskImage: Boolean(params.maskImage),
@@ -275,8 +280,9 @@ export async function generateImageFromPrompt(params: {
   const { buffer, revisedPrompt } = await parseGeneratedImage(payload);
   const mimeType = inferOutputMimeType(buffer);
   logger.info("openai images api succeeded", {
-    model: OPENAI_IMAGE_MODEL,
+    model: resolvedModel,
     mode: params.mode,
+    size: resolvedSize,
     mimeType,
   });
 
@@ -287,6 +293,6 @@ export async function generateImageFromPrompt(params: {
     width,
     height,
     revisedPrompt,
-    provider: OPENAI_IMAGE_MODEL,
+    provider: resolvedModel,
   };
 }

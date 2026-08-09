@@ -76,6 +76,24 @@ export type CanvasGenerationPresetReference = {
   role: CanvasReferenceRole | string;
 };
 
+export type ImageGeneratorTextReference = {
+  nodeId: string;
+  title: string;
+  content: string;
+  sourceKind: "text" | "assistant";
+};
+
+export type ImageGeneratorAspectRatio = "1:1" | "2:3" | "3:2";
+
+export type ImageGeneratorGraphContext = {
+  nodeId: string;
+  nodeTitle: string;
+  imageReferences: CanvasGenerationImageReference[];
+  presetReferences: CanvasGenerationPresetReference[];
+  textReferences: ImageGeneratorTextReference[];
+  connectionSummary: string;
+};
+
 export type CanvasGenerationContext = {
   target: CanvasGenerationTarget;
   imageReferences: CanvasGenerationImageReference[];
@@ -203,16 +221,21 @@ export type CreateAiJobRequest = {
   jobType: CarverJobKind;
   prompt: string;
   executionMode?: CarverImageExecutionMode;
+  targetType?: "canvas-node" | "image-generator";
   idempotencyKey?: string;
   inputSnapshotId?: string;
   threadId?: string;
   promptMode?: "auto" | "review" | "expert";
+  model?: string;
+  aspectRatio?: ImageGeneratorAspectRatio;
+  outputCount?: number;
   referenceAssetIds?: string[];
   selection?: Partial<CanvasSnapshotDocument["selection"]>;
   snapshot?: CanvasSnapshotDocument;
   targetNodeId?: string;
   mask?: CreateAiJobMaskInput;
   canvasGraphContext?: CanvasGenerationContext;
+  imageGeneratorContext?: ImageGeneratorGraphContext;
   simulation?: CarverAiJobSimulationConfig;
 };
 
@@ -228,7 +251,11 @@ export type CarverAiJobPayload = {
   userId: string;
   jobType: CarverJobKind;
   executionMode: CarverImageExecutionMode;
+  targetType?: "canvas-node" | "image-generator";
   prompt: string;
+  model?: string;
+  aspectRatio?: ImageGeneratorAspectRatio;
+  outputCount?: number;
   inputSnapshotId: string | null;
   threadId?: string | null;
   promptMode: "auto" | "review" | "expert";
@@ -238,6 +265,7 @@ export type CarverAiJobPayload = {
   targetNodeId?: string;
   maskAssetId?: string;
   canvasGraphContext?: CanvasGenerationContext;
+  imageGeneratorContext?: ImageGeneratorGraphContext;
   simulation?: CarverAiJobSimulationConfig;
   promptEngine?: {
     contextRevision: number;
