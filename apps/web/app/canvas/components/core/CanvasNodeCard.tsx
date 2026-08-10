@@ -38,7 +38,6 @@ import type {
 import {
   Box,
   ChevronDown,
-  Copy,
   Image as ImageIcon,
   ImagePlus,
   MapPin,
@@ -47,7 +46,6 @@ import {
   Plus,
   RefreshCw,
   Settings,
-  Trash2,
   Type,
 } from "lucide-react";
 import Sparkles from "../../../components/icons/CarverSparklesIcon";
@@ -1626,16 +1624,6 @@ export default function CanvasNodeCard({
         </div>
       ) : null}
 
-      {selected && selectedItem.type === "node" && selectedItem.menu ? (
-        <div onPointerDown={(event) => event.stopPropagation()}>
-          <ContextMenu
-            x={selectedItem.menu.x}
-            y={selectedItem.menu.y}
-            onToast={onToast}
-            onDelete={() => onDelete(node.id)}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1875,51 +1863,5 @@ function AdaptiveImageRenderer({
         />
       ) : null}
     </>
-  );
-}
-
-function ContextMenu({
-  x,
-  y,
-  onToast,
-  onDelete,
-}: {
-  x: number;
-  y: number;
-  onToast: (message: string) => void;
-  onDelete: () => void;
-}) {
-  const items = [
-    ["Duplicate", Copy],
-    ["Replace image", ImagePlus],
-    ["Use as layout source", RefreshCw],
-    ["Use as style reference", Sparkles],
-    ["Generate similar concept", Sparkles],
-    ["Remove", Trash2],
-  ] as const;
-
-  return (
-    <div
-      className="fixed z-[90] w-56 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-2 shadow-2xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
-      style={{ left: x, top: y }}
-    >
-      {items.map(([label, Icon]) => (
-        <button
-          key={label}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (label === "Remove") {
-              onDelete();
-              return;
-            }
-            onToast(`${label} mock`);
-          }}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold text-[var(--canvas-theme-text)] hover:bg-[var(--canvas-theme-hover)]"
-        >
-          <Icon className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-          {label}
-        </button>
-      ))}
-    </div>
   );
 }

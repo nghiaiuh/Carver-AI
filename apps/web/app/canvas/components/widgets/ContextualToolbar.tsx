@@ -36,7 +36,7 @@ export default function ContextualToolbar({
     <div
       className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-1 rounded-2xl border border-[#E5E3DC] bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-md"
       style={{
-        top: `${-56 * uiScale}px`,
+        top: `${-86 * uiScale}px`,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
