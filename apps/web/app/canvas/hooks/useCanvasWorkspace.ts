@@ -638,30 +638,59 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   latestEdgesRef.current = edges;
   latestActiveGenerationTargetIdRef.current = activeGenerationTargetId;
 
-  const generatorOutputAssetIdsKey = useMemo(
-    () =>
+  const generatorAssetIdsKey = useMemo(() => {
+    const generatorNodeIds = new Set(
+      nodes.filter(isCanvasImageGeneratorNode).map((node) => node.id),
+    );
+    const assetIds = new Set(
       nodes
         .filter(isCanvasImageGeneratorNode)
         .flatMap((node) => node.imageGenerator.outputAssetIds)
-        .filter((assetId, index, assetIds) => assetId.length > 0 && assetIds.indexOf(assetId) === index)
-        .sort()
-        .join("|"),
-    [nodes],
-  );
+        .filter(Boolean),
+    );
+
+    for (const edge of edges) {
+      if (
+        edge.targetPortId !== "image-generator-input-image" ||
+        !generatorNodeIds.has(edge.targetId)
+      ) {
+        continue;
+      }
+
+      const sourceNode = nodes.find((node) => node.id === edge.sourceId);
+      if (!sourceNode) {
+        continue;
+      }
+
+      if (sourceNode.sourceImage?.assetId) {
+        assetIds.add(sourceNode.sourceImage.assetId);
+      }
+
+      if (isPresetGroupNode(sourceNode)) {
+        for (const child of sourceNode.presetGroup.children) {
+          if (child.sourceImage?.assetId ?? child.assetId) {
+            assetIds.add(child.sourceImage?.assetId ?? child.assetId!);
+          }
+        }
+      }
+    }
+
+    return [...assetIds].sort().join("|");
+  }, [edges, nodes]);
 
   useEffect(() => {
-    if (!supabase || !generatorOutputAssetIdsKey) {
+    if (!supabase || !generatorAssetIdsKey) {
       return;
     }
 
-    const assetIds = generatorOutputAssetIdsKey.split("|").filter(Boolean);
+    const assetIds = generatorAssetIdsKey.split("|").filter(Boolean);
     if (assetIds.length === 0) {
       return;
     }
 
     let cancelled = false;
 
-    const resolveGeneratorOutputAssets = async () => {
+    const resolveGeneratorAssets = async () => {
       try {
         const client = requireCanvasSupabaseClient(supabase);
         const response = await authedFetch(client, "/api/assets/resolve", {
@@ -685,12 +714,19 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       }
     };
 
-    void resolveGeneratorOutputAssets();
+    void resolveGeneratorAssets();
+
+    // Delivery URLs are short-lived. Renew them before a card can render an expired reference.
+    const refreshInterval = window.setInterval(resolveGeneratorAssets, 12 * 60 * 1000);
+    const refreshOnFocus = () => void resolveGeneratorAssets();
+    window.addEventListener("focus", refreshOnFocus);
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener("focus", refreshOnFocus);
     };
-  }, [generatorOutputAssetIdsKey, supabase]);
+  }, [generatorAssetIdsKey, supabase]);
 
   useEffect(() => {
     let cancelled = false;

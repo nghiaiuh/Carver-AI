@@ -600,7 +600,7 @@ function ImageGeneratorNodeSurface({
       }
 
       if (edge.targetPortId === "image-generator-input-image") {
-        let previewUrl = sourceNode.sourceImage?.url ?? sourceNode.imageUrl ?? "";
+        let previewUrl = "";
         let assetId = sourceNode.sourceImage?.assetId;
         let title = sourceNode.title;
 
@@ -614,12 +614,23 @@ function ImageGeneratorNodeSurface({
           title = activeChild?.label ?? sourceNode.title;
         }
 
-        if (!previewUrl && assetId) {
+        if (assetId) {
           previewUrl =
             generatorAssetUrls[assetId]?.thumbUrl ??
             generatorAssetUrls[assetId]?.previewUrl ??
             generatorAssetUrls[assetId]?.originalUrl ??
             "";
+        }
+
+        if (!previewUrl) {
+          previewUrl = sourceNode.sourceImage?.url ?? sourceNode.imageUrl ?? "";
+          if (isPresetGroupNode(sourceNode)) {
+            const activeChild =
+              sourceNode.presetGroup.children.find(
+                (child) => child.id === sourceNode.presetGroup.activeChildId,
+              ) ?? sourceNode.presetGroup.children[0];
+            previewUrl = activeChild?.sourceImage?.url ?? activeChild?.imageSrc ?? "";
+          }
         }
 
         if (previewUrl) {
@@ -709,6 +720,20 @@ function ImageGeneratorNodeSurface({
     );
   };
 
+  const resizePromptTextarea = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizePromptTextarea();
+  }, [generator.prompt, node.width, resizePromptTextarea]);
+
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!surfaceRef.current?.contains(event.target as Node)) {
@@ -779,7 +804,7 @@ function ImageGeneratorNodeSurface({
         }
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col px-4 pb-3 pt-4">
+      <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-4">
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {outputCards.length > 0 ? (
             <div className={`grid h-full w-full ${gridColumnsClassName} gap-2 p-2`}>
@@ -833,65 +858,59 @@ function ImageGeneratorNodeSurface({
           ) : null}
         </div>
 
-        <div className="mt-2.5 flex items-center gap-1.5">
+        <div className="mt-2 flex min-h-10 items-center gap-2">
           <button
             type="button"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_4px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_4px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
             title="Add a reference image node"
             onClick={() => {
               textareaRef.current?.focus();
               onToast("Add or connect an image node to use it as a generator reference.");
             }}
           >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+            <Plus className="h-4 w-4" strokeWidth={2.2} />
           </button>
-          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
             {connectedReferences.imageReferences.map((reference) => (
               <div
                 key={reference.edgeId}
-                className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1"
+                className="shrink-0"
                 title={reference.title}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={reference.previewUrl}
                   alt={reference.title}
-                  className="h-8 w-8 rounded-lg object-cover"
+                  className="h-10 w-10 rounded-lg object-cover shadow-[0_3px_8px_var(--canvas-theme-shadow)]"
                   draggable={false}
                   decoding="async"
                 />
-                <span className="max-w-[76px] truncate text-[10px] font-medium text-[var(--canvas-theme-text-soft)]">
-                  {reference.title}
-                </span>
               </div>
             ))}
-            {connectedReferences.textReferences.length > 0 ? (
-              <div className="flex shrink-0 items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-[10px] font-medium text-[var(--canvas-theme-text-soft)]">
-                {connectedReferences.textReferences.length} text reference
-                {connectedReferences.textReferences.length === 1 ? "" : "s"}
-              </div>
-            ) : null}
           </div>
         </div>
 
-        <div className="mt-3 rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/72 px-3 py-2">
-          <textarea
-            ref={textareaRef}
-            value={generator.prompt}
-            onChange={(event) =>
-              updateGenerator({
-                prompt: event.target.value,
-                status: generator.status === "error" ? "idle" : generator.status,
-                errorMessage: undefined,
-              })
-            }
-            placeholder="Describe the image you want to generate..."
-            className="h-[20px] w-full resize-none bg-transparent font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
-          />
-        </div>
+        <textarea
+          ref={textareaRef}
+          value={generator.prompt}
+          onChange={(event) =>
+            updateGenerator({
+              prompt: event.target.value,
+              status: generator.status === "error" ? "idle" : generator.status,
+              errorMessage: undefined,
+            })
+          }
+          onInput={resizePromptTextarea}
+          placeholder={
+            connectedReferences.textReferences.length > 0
+              ? "Connected prompt. Use @ to add references or extra context"
+              : "Describe the image you want to generate..."
+          }
+          className="mt-3 min-h-7 max-h-[120px] w-full resize-none overflow-y-auto bg-transparent px-0 font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+        />
 
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1">
-          <div className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1">
+        <div className="mt-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+          <div className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-[var(--canvas-theme-surface-muted)] px-1">
             <button
               type="button"
               className="grid h-6 w-6 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -971,7 +990,7 @@ function ImageGeneratorNodeSurface({
           <div className="relative shrink-0">
             <button
               type="button"
-              className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-7 w-7 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={isRunning}
               title="Advanced settings"
               onClick={() => setOpenMenu((current) => (current === "settings" ? null : "settings"))}
