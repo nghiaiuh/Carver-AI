@@ -369,23 +369,25 @@ function AssistantNodeSurface({
       data-canvas-interactive="true"
       onPointerDown={(event) => {
         const target = event.target;
-        if (target instanceof HTMLElement && target.closest("button, textarea, input, select")) {
+        if (target instanceof Element && target.closest("button, textarea, input, select")) {
           event.stopPropagation();
         }
       }}
     >
       <div className="flex h-12 items-center justify-between overflow-visible px-3 pb-2 pt-2">
         <div className="flex items-center gap-1.5">
-          <div className="relative flex min-w-[66px] items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] p-[3px] shadow-[0_1px_2px_var(--canvas-theme-shadow)]">
+          <div className="relative grid h-10 w-[76px] grid-cols-2 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] p-1 shadow-[0_1px_2px_var(--canvas-theme-shadow)]">
             <button
               type="button"
               className={[
-                "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
+                "relative z-10 grid h-8 w-8 place-items-center rounded-full p-0 leading-none transition",
                 !showingResult
                   ? "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-[0_2px_7px_var(--canvas-theme-shadow)]"
                   : "text-[var(--canvas-theme-icon-muted)]",
               ].join(" ")}
               title="Prompt"
+              aria-label="Show prompt"
+              aria-pressed={!showingResult}
               onClick={() => updateAssistant({ mode: "prompt" })}
             >
               <svg
@@ -405,12 +407,14 @@ function AssistantNodeSurface({
             <button
               type="button"
               className={[
-                "relative z-10 grid h-7 w-7 place-items-center rounded-full transition",
+                "relative z-10 grid h-8 w-8 place-items-center rounded-full p-0 leading-none transition",
                 showingResult
                   ? "bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)] shadow-[0_2px_7px_var(--canvas-theme-shadow)]"
                   : "text-[var(--canvas-theme-icon-muted)]",
               ].join(" ")}
               title="Result"
+              aria-label="Show result"
+              aria-pressed={showingResult}
               onClick={() => updateAssistant({ mode: "result" })}
             >
               <Sparkles className="h-4 w-4" strokeWidth={2} />
@@ -799,7 +803,7 @@ function ImageGeneratorNodeSurface({
       data-canvas-interactive="true"
       onPointerDown={(event) => {
         const target = event.target;
-        if (target instanceof HTMLElement && target.closest("button, textarea, input, select")) {
+        if (target instanceof Element && target.closest("button, textarea, input, select")) {
           event.stopPropagation();
         }
       }}
