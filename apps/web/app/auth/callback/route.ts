@@ -24,10 +24,9 @@ export async function GET(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet, headers) {
+      setAll(cookiesToSet, headers = {}) {
         // Keep the PKCE verifier/session in cookies so the exchange stays on
         // the server and the authorization code never reaches application UI.
-        cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
         response = NextResponse.redirect(redirectUrl, 302);
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value));

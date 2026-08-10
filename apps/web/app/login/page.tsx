@@ -1,12 +1,22 @@
 import AuthForm from "../components/auth/AuthForm";
 import AuthPageShell from "../components/auth/AuthPageShell";
 
-export default function LoginPage({
+type LoginSearchParams = {
+  next?: string;
+};
+
+function isPromiseLike<T>(value: Promise<T> | T | undefined): value is Promise<T> {
+  return Boolean(value) && typeof (value as Promise<T>).then === "function";
+}
+
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { next?: string };
+  searchParams?: Promise<LoginSearchParams> | LoginSearchParams;
 }) {
-  const nextPath = typeof searchParams?.next === "string" ? searchParams.next : undefined;
+  const resolvedSearchParams = isPromiseLike(searchParams) ? await searchParams : searchParams;
+  const nextPath =
+    typeof resolvedSearchParams?.next === "string" ? resolvedSearchParams.next : undefined;
 
   return (
     <AuthPageShell

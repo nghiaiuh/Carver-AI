@@ -10,7 +10,7 @@ import "./globals.css";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased">
         {children}
       </body>
