@@ -113,6 +113,7 @@ const TEXT_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
 
 const IMAGE_GENERATOR_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
   nodeKind: "image-generator",
+  visualScale: 2 / 3,
   ports: [
     {
       id: "image-generator-input-text",

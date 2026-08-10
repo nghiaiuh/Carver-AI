@@ -2080,16 +2080,13 @@ export default function CanvasBoard({
 
     const worldRects = nodes.map((node) => {
       const bounds = getNodeDisplayBounds(node);
-      // Assistant cards intentionally render at two thirds of their persisted size.
-      // The minimap must use those same visual bounds to stay proportionally accurate.
-      const visualScale = node.kind === "assistant" ? 2 / 3 : 1;
 
       return {
         id: node.id,
         x: bounds.x,
         y: bounds.y,
-        width: bounds.width * visualScale,
-        height: bounds.height * visualScale,
+        width: bounds.width,
+        height: bounds.height,
       };
     });
 
