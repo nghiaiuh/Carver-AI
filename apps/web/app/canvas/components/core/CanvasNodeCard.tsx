@@ -780,7 +780,7 @@ function ImageGeneratorNodeSurface({
       }}
     >
       <div className="flex min-h-0 flex-1 flex-col px-4 pb-3 pt-4">
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[18px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-soft)]">
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           {outputCards.length > 0 ? (
             <div className={`grid h-full w-full ${gridColumnsClassName} gap-2 p-2`}>
               {outputCards.map((output) => {
@@ -815,21 +815,7 @@ function ImageGeneratorNodeSurface({
                 );
               })}
             </div>
-          ) : (
-            <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center">
-              <div className="space-y-3">
-                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]">
-                  <Sparkles className="h-5 w-5" strokeWidth={2.1} />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-[var(--canvas-theme-text)]">Ready to generate</p>
-                  <p className="mx-auto max-w-[260px] text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-                    Connect image or text references, describe the garden concept you want, then run this node.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+          ) : null}
 
           {isRunning ? (
             <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas-theme-surface-panel)]/72 backdrop-blur-[2px]">
@@ -847,40 +833,40 @@ function ImageGeneratorNodeSurface({
           ) : null}
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-2.5 flex items-center gap-1.5">
           <button
             type="button"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_4px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] shadow-[0_4px_10px_var(--canvas-theme-shadow)] transition hover:bg-[var(--canvas-theme-hover)]"
             title="Add a reference image node"
             onClick={() => {
               textareaRef.current?.focus();
               onToast("Add or connect an image node to use it as a generator reference.");
             }}
           >
-            <Plus className="h-4 w-4" strokeWidth={2.2} />
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
           </button>
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
             {connectedReferences.imageReferences.map((reference) => (
               <div
                 key={reference.edgeId}
-                className="flex shrink-0 items-center gap-2 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1.5"
+                className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1"
                 title={reference.title}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={reference.previewUrl}
                   alt={reference.title}
-                  className="h-9 w-9 rounded-xl object-cover"
+                  className="h-8 w-8 rounded-lg object-cover"
                   draggable={false}
                   decoding="async"
                 />
-                <span className="max-w-[88px] truncate text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">
+                <span className="max-w-[76px] truncate text-[10px] font-medium text-[var(--canvas-theme-text-soft)]">
                   {reference.title}
                 </span>
               </div>
             ))}
             {connectedReferences.textReferences.length > 0 ? (
-              <div className="flex shrink-0 items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-3 py-1.5 text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">
+              <div className="flex shrink-0 items-center rounded-2xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2.5 py-1 text-[10px] font-medium text-[var(--canvas-theme-text-soft)]">
                 {connectedReferences.textReferences.length} text reference
                 {connectedReferences.textReferences.length === 1 ? "" : "s"}
               </div>
@@ -900,15 +886,15 @@ function ImageGeneratorNodeSurface({
               })
             }
             placeholder="Describe the image you want to generate..."
-            className="h-[104px] w-full resize-none bg-transparent font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+            className="h-[20px] w-full resize-none bg-transparent font-[var(--font-botanical-sans)] text-sm leading-6 text-[var(--canvas-theme-text-soft)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
           />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex h-9 items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1">
+        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1">
+          <div className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-1">
             <button
               type="button"
-              className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-6 w-6 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={isRunning || generator.outputCount <= IMAGE_GENERATOR_MIN_OUTPUT_COUNT}
               onClick={() =>
                 updateGenerator({
@@ -920,14 +906,14 @@ function ImageGeneratorNodeSurface({
               }
               aria-label="Decrease output count"
             >
-              <Minus className="h-4 w-4" strokeWidth={2.1} />
+              <Minus className="h-3.5 w-3.5" strokeWidth={2.1} />
             </button>
-            <span className="min-w-[42px] text-center text-xs font-semibold text-[var(--canvas-theme-text)]">
+            <span className="min-w-[36px] text-center text-[11px] font-semibold text-[var(--canvas-theme-text)]">
               x{generator.outputCount}
             </span>
             <button
               type="button"
-              className="grid h-7 w-7 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-6 w-6 place-items-center rounded-full text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={isRunning || generator.outputCount >= IMAGE_GENERATOR_MAX_OUTPUT_COUNT}
               onClick={() =>
                 updateGenerator({
@@ -939,54 +925,58 @@ function ImageGeneratorNodeSurface({
               }
               aria-label="Increase output count"
             >
-              <Plus className="h-4 w-4" strokeWidth={2.1} />
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.1} />
             </button>
           </div>
 
-          <AssistantPopoverButton
-            label={
-              IMAGE_GENERATOR_MODEL_OPTIONS.find((option) => option.value === generator.model)?.label ??
-              generator.model
-            }
-            isOpen={openMenu === "model"}
-            onToggle={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
-            options={IMAGE_GENERATOR_MODEL_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-            onSelect={(value) => {
-              updateGenerator({ model: value });
-              setOpenMenu(null);
-            }}
-            disabled={isRunning}
-          />
+          <div className="shrink-0">
+            <AssistantPopoverButton
+              label={
+                IMAGE_GENERATOR_MODEL_OPTIONS.find((option) => option.value === generator.model)?.label ??
+                generator.model
+              }
+              isOpen={openMenu === "model"}
+              onToggle={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
+              options={IMAGE_GENERATOR_MODEL_OPTIONS.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              onSelect={(value) => {
+                updateGenerator({ model: value });
+                setOpenMenu(null);
+              }}
+              disabled={isRunning}
+            />
+          </div>
 
-          <AssistantPopoverButton
-            label={generator.aspectRatio}
-            isOpen={openMenu === "aspect"}
-            onToggle={() => setOpenMenu((current) => (current === "aspect" ? null : "aspect"))}
-            options={IMAGE_GENERATOR_ASPECT_RATIO_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-            onSelect={(value) => {
-              updateGenerator({
-                aspectRatio: value as CanvasImageGeneratorNode["imageGenerator"]["aspectRatio"],
-              });
-              setOpenMenu(null);
-            }}
-            disabled={isRunning}
-          />
+          <div className="shrink-0">
+            <AssistantPopoverButton
+              label={generator.aspectRatio}
+              isOpen={openMenu === "aspect"}
+              onToggle={() => setOpenMenu((current) => (current === "aspect" ? null : "aspect"))}
+              options={IMAGE_GENERATOR_ASPECT_RATIO_OPTIONS.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              onSelect={(value) => {
+                updateGenerator({
+                  aspectRatio: value as CanvasImageGeneratorNode["imageGenerator"]["aspectRatio"],
+                });
+                setOpenMenu(null);
+              }}
+              disabled={isRunning}
+            />
+          </div>
 
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={isRunning}
               title="Advanced settings"
               onClick={() => setOpenMenu((current) => (current === "settings" ? null : "settings"))}
             >
-              <Settings className="h-4 w-4" strokeWidth={1.9} />
+              <Settings className="h-3.5 w-3.5" strokeWidth={1.9} />
             </button>
             <AnimatePresence>
               {openMenu === "settings" ? (
@@ -1007,13 +997,13 @@ function ImageGeneratorNodeSurface({
             </AnimatePresence>
           </div>
 
-          <div className="ml-auto" />
+          <div className="ml-auto shrink-0" />
 
           <button
             type="button"
             disabled={isRunning || !hasPromptInput}
             className={[
-              "grid h-10 w-10 place-items-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] shadow-[0_10px_24px_var(--canvas-theme-shadow)] transition",
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)] transition",
               isRunning || !hasPromptInput
                 ? "cursor-not-allowed opacity-45"
                 : "hover:bg-[var(--canvas-theme-selection-hover)]",
@@ -1022,9 +1012,9 @@ function ImageGeneratorNodeSurface({
             onClick={runGenerator}
           >
             {isRunning ? (
-              <RefreshCw className="h-4 w-4 animate-spin" strokeWidth={1.9} />
+              <RefreshCw className="h-3 w-3 animate-spin" strokeWidth={1.9} />
             ) : (
-              <Play className="h-4 w-4 fill-current" strokeWidth={1.9} />
+              <Play className="h-3 w-3 fill-current" strokeWidth={1.9} />
             )}
           </button>
         </div>
