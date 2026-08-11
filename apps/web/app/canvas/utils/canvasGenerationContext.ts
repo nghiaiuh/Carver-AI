@@ -13,7 +13,11 @@ import type {
   SketchLine,
   ImageConnectionRole,
 } from "../types/canvas";
-import { isCanvasImageGeneratorNode, isCanvasTextNode } from "../types/canvas";
+import {
+  isCanvasImageGeneratorNode,
+  isCanvasImageOutputGalleryNode,
+  isCanvasTextNode,
+} from "../types/canvas";
 import type {
   CanvasGenerationContext,
   CanvasGenerationImageReference,
@@ -114,14 +118,31 @@ export function resolveConnectedImageReferences(
     const sourceNode = nodes.find((node) => node.id === edge.sourceId);
     if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasTextNode(sourceNode)) continue;
 
+    const galleryGeneratorNodeId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.generatorNodeId
+      : null;
+    const gallerySelectedOutputAssetId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.selectedOutputAssetId
+      : undefined;
+    const gallerySource = galleryGeneratorNodeId
+      ? nodes.find(
+          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
+            candidate.id === galleryGeneratorNodeId &&
+            isCanvasImageGeneratorNode(candidate),
+        )
+      : null;
+    const galleryOutput = gallerySource?.imageGenerator.outputs.find(
+      (output) => output.assetId === gallerySelectedOutputAssetId,
+    ) ?? gallerySource?.imageGenerator.outputs[0];
+
     const key = `${edge.sourceId}:${edge.sourcePresetChildId ?? "node"}:${edge.targetPresetChildId ?? "target"}`;
     if (references.has(key)) continue;
 
     references.set(key, {
       nodeId: sourceNode.id,
       title: sourceNode.title,
-      imageUrl: sourceNode.imageUrl,
-      assetId: sourceNode.sourceImage?.assetId,
+      imageUrl: galleryOutput?.imageUrl ?? sourceNode.imageUrl,
+      assetId: galleryOutput?.assetId ?? sourceNode.sourceImage?.assetId,
       role: normalizeRole(edge.role),
       sourcePresetChildId: edge.sourcePresetChildId ?? null,
     });
@@ -206,7 +227,8 @@ export function buildCanvasGenerationContext(
     isPresetGroupNode(target) ||
     isAssistantNode(target) ||
     isCanvasTextNode(target) ||
-    isCanvasImageGeneratorNode(target)
+    isCanvasImageGeneratorNode(target) ||
+    isCanvasImageOutputGalleryNode(target)
   ) {
     return null;
   }
@@ -272,6 +294,8 @@ export function buildCanvasSnapshotWithGraph(params: {
               ? "text"
               : isCanvasImageGeneratorNode(node)
                 ? "image-generator"
+                : isCanvasImageOutputGalleryNode(node)
+                  ? "image-output-gallery"
                 : "image",
         title: node.title,
         role: node.role,
@@ -310,6 +334,9 @@ export function buildCanvasSnapshotWithGraph(params: {
               ...node.imageGenerator,
               outputs: node.imageGenerator.outputs.map(sanitizePersistedGeneratorOutput),
             }
+          : undefined,
+        imageOutputGallery: isCanvasImageOutputGalleryNode(node)
+          ? node.imageOutputGallery
           : undefined,
         text: isCanvasTextNode(node) ? node.text : undefined,
       })),

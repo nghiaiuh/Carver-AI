@@ -2,6 +2,7 @@ import type {
   CanvasGraphSourceImage,
   CanvasSnapshotDocument,
 } from "@carver/shared";
+import { isImageGeneratorAspectRatio } from "@carver/shared";
 import type {
   AddedObject,
   CanvasEdge,
@@ -26,6 +27,7 @@ import { DEFAULT_PEN_SETTINGS, getDefaultInputPorts } from "../types/canvas";
 import {
   getAssistantInputPorts,
   getImageGeneratorInputPorts,
+  getImageOutputGalleryInputPorts,
   getTextNodeInputPorts,
 } from "./canvasNodePorts";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
@@ -318,18 +320,20 @@ function sanitizeImageGeneratorState(value: unknown): CanvasImageGeneratorState 
     source?.status === "error"
       ? source.status
       : "idle";
+  const activeJobId = stringValue(source?.activeJobId) ?? undefined;
   const normalizedStatus =
     persistedStatus === "queued" || persistedStatus === "generating"
-      ? outputAssetIds.length > 0
-        ? "completed"
-        : "idle"
+      ? activeJobId
+        ? persistedStatus
+        : outputAssetIds.length > 0
+          ? "completed"
+          : "idle"
       : persistedStatus;
 
   return {
     prompt: stringValue(source?.prompt) ?? "",
     model: stringValue(source?.model) ?? "auto",
-    aspectRatio:
-      source?.aspectRatio === "2:3" || source?.aspectRatio === "3:2" ? source.aspectRatio : "1:1",
+    aspectRatio: isImageGeneratorAspectRatio(source?.aspectRatio) ? source.aspectRatio : "1:1",
     outputCount:
       typeof source?.outputCount === "number" && Number.isFinite(source.outputCount)
         ? Math.min(4, Math.max(1, Math.round(source.outputCount)))
@@ -340,7 +344,19 @@ function sanitizeImageGeneratorState(value: unknown): CanvasImageGeneratorState 
     selectedOutputAssetId: stringValue(source?.selectedOutputAssetId) ?? outputAssetIds[0] ?? undefined,
     errorMessage: stringValue(source?.errorMessage) ?? undefined,
     lastRunAt: stringValue(source?.lastRunAt) ?? undefined,
+    activeJobId,
   };
+}
+
+function sanitizeImageOutputGalleryState(value: unknown) {
+  const source = objectValue(value);
+  const generatorNodeId = stringValue(source?.generatorNodeId);
+  return generatorNodeId
+    ? {
+        generatorNodeId,
+        selectedOutputAssetId: stringValue(source?.selectedOutputAssetId) ?? undefined,
+      }
+    : null;
 }
 
 function sanitizeTextNodeState(value: unknown) {
@@ -362,7 +378,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
         ? "assistant"
         : source?.kind === "image-generator"
           ? "image-generator"
-        : source?.kind === "text"
+          : source?.kind === "image-output-gallery"
+            ? "image-output-gallery"
+          : source?.kind === "text"
           ? "text"
           : "image";
   const title =
@@ -373,6 +391,8 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
         ? "Assistant"
         : kind === "image-generator"
           ? "Image Generator"
+          : kind === "image-output-gallery"
+            ? "Output Gallery"
           : kind === "text"
             ? "Text note"
             : "Untitled image");
@@ -480,6 +500,35 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       maskHistory: undefined,
       inputPorts: getImageGeneratorInputPorts(),
       imageGenerator,
+    };
+  }
+
+  if (kind === "image-output-gallery") {
+    const imageOutputGallery = sanitizeImageOutputGalleryState(source?.imageOutputGallery);
+    if (!imageOutputGallery) {
+      return null;
+    }
+
+    return {
+      id,
+      kind: "image-output-gallery",
+      title,
+      role: "output",
+      imageUrl,
+      prompt: null,
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 260)),
+      height: Math.max(1, numberValue(source?.height, 300)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getImageOutputGalleryInputPorts(),
+      imageOutputGallery,
     };
   }
 

@@ -1,6 +1,6 @@
 import type { AssistantCardContext } from "@carver/shared";
 import type { CanvasAssistantNode, CanvasNode, CanvasPresetGroupNode } from "../types/canvas";
-import { isCanvasTextNode } from "../types/canvas";
+import { isCanvasImageGeneratorNode, isCanvasImageOutputGalleryNode, isCanvasTextNode } from "../types/canvas";
 import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
 
 function getInboundEdgesForAssistant(nodeId: string, edges: Array<{
@@ -128,8 +128,25 @@ export function buildAssistantCardContext(
       continue;
     }
 
-    const imageUrl = sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
-    if (!imageUrl && !sourceNode.sourceImage?.assetId) {
+    const galleryGeneratorNodeId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.generatorNodeId
+      : null;
+    const gallerySelectedOutputAssetId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.selectedOutputAssetId
+      : undefined;
+    const galleryGenerator = galleryGeneratorNodeId
+      ? nodes.find(
+          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
+            candidate.id === galleryGeneratorNodeId &&
+            isCanvasImageGeneratorNode(candidate),
+        )
+      : null;
+    const galleryOutput = galleryGenerator?.imageGenerator.outputs.find(
+      (output) => output.assetId === gallerySelectedOutputAssetId,
+    ) ?? galleryGenerator?.imageGenerator.outputs[0];
+    const imageUrl = galleryOutput?.imageUrl || sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
+    const assetId = galleryOutput?.assetId ?? sourceNode.sourceImage?.assetId;
+    if (!imageUrl && !assetId) {
       continue;
     }
 
@@ -138,7 +155,7 @@ export function buildAssistantCardContext(
       nodeId: sourceNode.id,
       title: sourceNode.title,
       imageUrl,
-      assetId: sourceNode.sourceImage?.assetId,
+      assetId,
       role: edge.role ?? "generic_reference",
       sourceKind: "image",
       childId: null,

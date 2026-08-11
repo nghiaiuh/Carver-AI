@@ -52,6 +52,11 @@ export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
     add(extractAssetIdFromGatewayUrl(node.imageUrl));
     add(extractAssetIdFromGatewayUrl(node.sourceImage?.url));
 
+    for (const output of node.imageGenerator?.outputs ?? []) {
+      add(output.assetId);
+      add(extractAssetIdFromGatewayUrl(output.imageUrl));
+    }
+
     if (!node.presetGroup) {
       continue;
     }
@@ -100,12 +105,28 @@ export function applyResolvedAssetUrlsToSnapshot(
               : undefined,
         };
 
+        const resolvedGenerator = node.imageGenerator
+          ? {
+              ...node.imageGenerator,
+              outputs: node.imageGenerator.outputs.map((output) => {
+                const outputAssetId = output.assetId ?? extractAssetIdFromGatewayUrl(output.imageUrl);
+                const resolvedOutputUrl = outputAssetId ? assets[outputAssetId]?.originalUrl : undefined;
+                return {
+                  ...output,
+                  assetId: outputAssetId,
+                  imageUrl: resolvedOutputUrl ?? (outputAssetId ? "" : output.imageUrl),
+                };
+              }),
+            }
+          : undefined;
+
         if (!node.presetGroup) {
-          return nextNode;
+          return resolvedGenerator ? { ...nextNode, imageGenerator: resolvedGenerator } : nextNode;
         }
 
         return {
           ...nextNode,
+          ...(resolvedGenerator ? { imageGenerator: resolvedGenerator } : {}),
           presetGroup: {
             ...node.presetGroup,
             children: node.presetGroup.children.map((child) => {

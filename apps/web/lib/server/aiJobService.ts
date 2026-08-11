@@ -22,7 +22,10 @@ import { AI_CREDIT_COSTS } from "../../app/api/_lib/credits";
 import { getSupabaseAdmin } from "@carver/db/server";
 import { apiFailure, badRequest } from "../../app/api/_lib/http";
 import { enforceRateLimit } from "../../app/api/_lib/rateLimit";
-import { resolveAiJobResultAssetUrls } from "./assetService";
+import {
+  extractAssetIdFromGatewayUrl,
+  resolveAiJobResultAssetUrls,
+} from "./assetService";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,
@@ -63,6 +66,75 @@ const AI_JOB_SIMULATION_ENABLED =
 const isSafeInlineImageValidationMessage = (value: string) =>
   /^Inline image (must|type|is|content|dimensions)/.test(value);
 
+function getAiJobDatabaseFailure(params: {
+  error: { code?: string | null; message?: string | null };
+  requestId: string;
+  message: string;
+  fallbackCode: "AI_JOB_LOOKUP_FAILED" | "AI_JOB_CREATE_FAILED";
+}) {
+  const databaseMessage = params.error.message?.toLowerCase() ?? "";
+  const stableRpcFailures = [
+    {
+      marker: "input_asset_not_found",
+      code: "AI_JOB_INPUT_ASSET_NOT_FOUND",
+      message: "A connected image is no longer available in this project. Refresh the canvas and reconnect it.",
+      status: 400,
+    },
+    {
+      marker: "snapshot_not_found",
+      code: "SNAPSHOT_NOT_FOUND",
+      message: "The canvas checkpoint for this generation no longer exists.",
+      status: 404,
+    },
+    {
+      marker: "project_not_found",
+      code: "PROJECT_NOT_FOUND",
+      message: "Project not found.",
+      status: 404,
+    },
+    {
+      marker: "chat_thread_not_found",
+      code: "CHAT_THREAD_NOT_FOUND",
+      message: "The selected chat thread no longer exists.",
+      status: 404,
+    },
+    {
+      marker: "credit_idempotency_inconsistent",
+      code: "CREDIT_IDEMPOTENCY_CONFLICT",
+      message: "This generation request conflicts with an earlier credit reservation.",
+      status: 409,
+    },
+  ] as const;
+  const stableRpcFailure = stableRpcFailures.find((failure) =>
+    databaseMessage.includes(failure.marker),
+  );
+  if (stableRpcFailure) {
+    return apiFailure(
+      stableRpcFailure.code,
+      stableRpcFailure.message,
+      stableRpcFailure.status,
+      params.requestId,
+    );
+  }
+
+  const isSchemaFailure =
+    databaseMessage.includes("does not exist") ||
+    databaseMessage.includes("schema cache") ||
+    databaseMessage.includes("could not find the function") ||
+    params.error.code === "PGRST202" ||
+    params.error.code === "PGRST204" ||
+    params.error.code === "42703";
+
+  return isSchemaFailure
+    ? apiFailure(
+        "AI_JOB_SCHEMA_ERROR",
+        "AI job database schema is out of date. Apply the latest database migrations.",
+        500,
+        params.requestId,
+      )
+    : apiFailure(params.fallbackCode, params.message, 500, params.requestId);
+}
+
 type CreateAiJobWithCheckpointRpcRow = {
   id: string;
   project_id: string;
@@ -90,7 +162,7 @@ type AiJobCheckpointRpcClient = {
     args: Record<string, unknown>,
   ) => Promise<{
     data: CreateAiJobWithCheckpointRpcRow[] | null;
-    error: { message: string } | null;
+    error: { code?: string | null; message: string } | null;
   }>;
 };
 
@@ -166,12 +238,16 @@ function imageSourceValue(
     return null;
   }
 
+  const imageUrl = typeof source[imageKey] === "string" ? source[imageKey].trim() : "";
+
   return {
     ...source,
-    assetId: typeof source.assetId === "string" && source.assetId.trim() ? source.assetId.trim() : undefined,
+    assetId:
+      extractAssetIdFromGatewayUrl(imageUrl) ??
+      (typeof source.assetId === "string" && source.assetId.trim() ? source.assetId.trim() : undefined),
     title: typeof source.title === "string" ? source.title.trim() : undefined,
     label: typeof source.label === "string" ? source.label.trim() : undefined,
-    [imageKey]: typeof source[imageKey] === "string" ? source[imageKey].trim() : "",
+    [imageKey]: imageUrl,
   };
 }
 
@@ -319,6 +395,9 @@ export async function createProjectAiJob(params: {
 
   const { supabase, user } = context;
   const { project } = projectResult;
+  // Ownership was checked above. Internal idempotency and concurrency queries
+  // use the server client so RLS policy changes cannot break queue submission.
+  const adminSupabase = getSupabaseAdmin();
 
   const rateLimit = await enforceRateLimit(context, {
     scope: "ai-job",
@@ -629,7 +708,7 @@ export async function createProjectAiJob(params: {
       }
     : null;
 
-  const { data: existingJob, error: existingJobError } = await supabase
+  const { data: existingJob, error: existingJobError } = await adminSupabase
     .from("ai_jobs")
     .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result")
     .eq("project_id", projectId)
@@ -638,9 +717,21 @@ export async function createProjectAiJob(params: {
     .maybeSingle();
 
   if (existingJobError) {
+    logger.error("ai job idempotency lookup failed", {
+      requestId: context.requestId,
+      projectId,
+      userId: user.id,
+      databaseCode: existingJobError.code ?? null,
+      error: existingJobError,
+    });
     return {
       ok: false,
-      response: apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check existing AI job", 500, context.requestId),
+      response: getAiJobDatabaseFailure({
+        error: existingJobError,
+        requestId: context.requestId,
+        message: "Unable to check existing AI job",
+        fallbackCode: "AI_JOB_LOOKUP_FAILED",
+      }),
     };
   }
 
@@ -666,7 +757,7 @@ export async function createProjectAiJob(params: {
     };
   }
 
-  const { count: activeJobCount, error: activeJobError } = await supabase
+  const { count: activeJobCount, error: activeJobError } = await adminSupabase
     .from("ai_jobs")
     .select("id", { count: "exact", head: true })
     .eq("project_id", projectId)
@@ -674,9 +765,21 @@ export async function createProjectAiJob(params: {
     .in("status", ["queued", "running"]);
 
   if (activeJobError) {
+    logger.error("active ai job lookup failed", {
+      requestId: context.requestId,
+      projectId,
+      userId: user.id,
+      databaseCode: activeJobError.code ?? null,
+      error: activeJobError,
+    });
     return {
       ok: false,
-      response: apiFailure("AI_JOB_LOOKUP_FAILED", "Unable to check active AI jobs", 500, context.requestId),
+      response: getAiJobDatabaseFailure({
+        error: activeJobError,
+        requestId: context.requestId,
+        message: "Unable to check active AI jobs",
+        fallbackCode: "AI_JOB_LOOKUP_FAILED",
+      }),
     };
   }
 
@@ -725,7 +828,6 @@ export async function createProjectAiJob(params: {
     imageGeneratorContext: sanitizedImageGeneratorContext,
   } as const;
 
-  const adminSupabase = getSupabaseAdmin();
   const rpcClient = adminSupabase as unknown as AiJobCheckpointRpcClient;
   const { data: createdRows, error: aiJobError } = await rpcClient.rpc("create_ai_job_with_checkpoint", {
     target_project_id: projectId,
@@ -749,9 +851,10 @@ export async function createProjectAiJob(params: {
       requestId: context.requestId,
       userId: user.id,
       projectId,
+      databaseCode: aiJobError?.code ?? null,
       error: aiJobError,
     });
-    const { data: racedJob } = await supabase
+    const { data: racedJob } = await adminSupabase
       .from("ai_jobs")
       .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result")
       .eq("project_id", projectId)
@@ -801,7 +904,12 @@ export async function createProjectAiJob(params: {
     }).catch(() => undefined);
     return {
       ok: false,
-      response: apiFailure("AI_JOB_CREATE_FAILED", "Unable to create AI job", 500, context.requestId),
+      response: getAiJobDatabaseFailure({
+        error: aiJobError ?? { message: "AI job RPC returned no row." },
+        requestId: context.requestId,
+        message: "Unable to create AI job",
+        fallbackCode: "AI_JOB_CREATE_FAILED",
+      }),
     };
   }
 

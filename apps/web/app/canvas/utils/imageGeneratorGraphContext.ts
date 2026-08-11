@@ -6,7 +6,11 @@ import type {
   ImageGeneratorTextReference,
 } from "@carver/shared";
 import type { CanvasNode, CanvasPresetGroupNode } from "../types/canvas";
-import { isCanvasImageGeneratorNode, isCanvasTextNode } from "../types/canvas";
+import {
+  isCanvasImageGeneratorNode,
+  isCanvasImageOutputGalleryNode,
+  isCanvasTextNode,
+} from "../types/canvas";
 import { isAssistantNode, isImageGeneratorNode, isPresetGroupNode } from "./presetGroupHelpers";
 
 type InboundEdge = {
@@ -18,6 +22,33 @@ type InboundEdge = {
   createdAt?: string;
   role?: string;
 };
+
+function extractAssetIdFromGatewayUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(value, "https://carver.local");
+    return parsed.pathname.match(/^\/api\/assets\/([0-9a-f-]{36})\/content$/i)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveConnectedImageAssetId(params: {
+  imageUrl?: string;
+  sourceImageUrl?: string;
+  assetId?: string;
+}) {
+  // Runtime gateway URLs are refreshed from current asset metadata. Prefer
+  // their stable ID when an older draft still carries stale source metadata.
+  return (
+    extractAssetIdFromGatewayUrl(params.imageUrl) ??
+    extractAssetIdFromGatewayUrl(params.sourceImageUrl) ??
+    params.assetId
+  );
+}
 
 function sortEdges(edges: InboundEdge[]) {
   return [...edges].sort((left, right) => {
@@ -71,7 +102,11 @@ function appendPresetReferences(
       slot: child.slot,
       label: child.label,
       imageSrc: child.imageSrc || child.sourceImage?.url || "",
-      assetId: child.assetId ?? child.sourceImage?.assetId,
+      assetId: resolveConnectedImageAssetId({
+        imageUrl: child.imageSrc,
+        sourceImageUrl: child.sourceImage?.url,
+        assetId: child.assetId ?? child.sourceImage?.assetId,
+      }),
       role: edge.role ?? child.metadata?.roleHint ?? "generic_reference",
     });
   }
@@ -171,13 +206,35 @@ export function buildImageGeneratorGraphContext(
       continue;
     }
 
+    const galleryGeneratorNodeId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.generatorNodeId
+      : null;
+    const gallerySelectedOutputAssetId = isCanvasImageOutputGalleryNode(sourceNode)
+      ? sourceNode.imageOutputGallery.selectedOutputAssetId
+      : undefined;
+    const galleryGenerator = galleryGeneratorNodeId
+      ? nodes.find(
+          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
+            candidate.id === galleryGeneratorNodeId &&
+            isCanvasImageGeneratorNode(candidate),
+        )
+      : null;
+    const galleryOutput = galleryGenerator?.imageGenerator.outputs.find(
+      (output) => output.assetId === gallerySelectedOutputAssetId,
+    ) ?? galleryGenerator?.imageGenerator.outputs[0];
+
     const key = `${sourceNode.id}:${edge.sourcePresetChildId ?? "node"}:${edge.sourcePortId ?? "image"}`;
     if (seenImageKeys.has(key)) {
       continue;
     }
 
-    const imageUrl = sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
-    if (!imageUrl && !sourceNode.sourceImage?.assetId) {
+    const imageUrl = galleryOutput?.imageUrl || sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
+    const assetId = resolveConnectedImageAssetId({
+      imageUrl,
+      sourceImageUrl: sourceNode.sourceImage?.url,
+      assetId: galleryOutput?.assetId ?? sourceNode.sourceImage?.assetId,
+    });
+    if (!imageUrl && !assetId) {
       continue;
     }
 
@@ -186,7 +243,7 @@ export function buildImageGeneratorGraphContext(
       nodeId: sourceNode.id,
       title: sourceNode.title,
       imageUrl,
-      assetId: sourceNode.sourceImage?.assetId,
+      assetId,
       role: edge.role ?? "generic_reference",
       sourcePresetChildId: edge.sourcePresetChildId ?? null,
     });
