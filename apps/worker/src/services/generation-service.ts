@@ -20,6 +20,12 @@ import type {
   CarverEditBrief,
   GenerationPromptResultV2,
 } from "@carver/shared";
+import {
+  getImageGeneratorProviderSize,
+  resolveImageGeneratorAspectRatio,
+  type ResolvedImageGeneratorAspectRatio,
+} from "@carver/shared";
+import sharp from "sharp";
 import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
 import { generateImageFromPrompt } from "../providers/openai/generate-image";
 import {
@@ -33,12 +39,6 @@ import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
 
 const logger = createSafeLogger("worker.generation-service");
-const IMAGE_GENERATOR_ASPECT_RATIO_TO_SIZE: Record<string, string> = {
-  "1:1": "1024x1024",
-  "2:3": "1024x1536",
-  "3:2": "1536x1024",
-};
-
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
 
@@ -169,6 +169,55 @@ const buildRequiredAssetIds = (job: CarverAiJobPayload) => {
   return [...ids];
 };
 
+export function getExactCenterCropDimensions(params: {
+  width: number;
+  height: number;
+  ratio: ResolvedImageGeneratorAspectRatio;
+}) {
+  const [ratioWidth, ratioHeight] = params.ratio.split(":").map(Number);
+  const widthUnits = Math.max(1, Math.floor(params.width / ratioWidth));
+  const heightUnits = Math.max(1, Math.floor(params.height / ratioHeight));
+  const units = Math.min(widthUnits, heightUnits);
+  const width = units * ratioWidth;
+  const height = units * ratioHeight;
+
+  return {
+    width,
+    height,
+    left: Math.max(0, Math.floor((params.width - width) / 2)),
+    top: Math.max(0, Math.floor((params.height - height) / 2)),
+  };
+}
+
+export async function cropGeneratedImageToAspectRatio(params: {
+  buffer: Buffer;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  ratio: ResolvedImageGeneratorAspectRatio;
+}) {
+  const metadata = await sharp(params.buffer, { failOn: "none", limitInputPixels: 40_000_000 }).metadata();
+  if (!metadata.width || !metadata.height) {
+    throw new Error("Generated image has invalid dimensions for aspect-ratio crop.");
+  }
+
+  const crop = getExactCenterCropDimensions({
+    width: metadata.width,
+    height: metadata.height,
+    ratio: params.ratio,
+  });
+  let pipeline = sharp(params.buffer, { failOn: "none", limitInputPixels: 40_000_000 }).extract(crop);
+  pipeline = params.mimeType === "image/png"
+    ? pipeline.png()
+    : params.mimeType === "image/jpeg"
+      ? pipeline.jpeg()
+      : pipeline.webp();
+
+  return {
+    buffer: await pipeline.toBuffer(),
+    width: crop.width,
+    height: crop.height,
+  };
+}
+
 const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: string) => {
   const textReferences = job.imageGeneratorContext?.textReferences ?? [];
   if (textReferences.length === 0) {
@@ -276,6 +325,18 @@ export const executeGeneratedImageJob = async (
       throw new Error("Region edit jobs require a resolved mask image.");
     }
 
+    const inputMetadataSource = targetImage ?? referenceImages[0] ?? null;
+    const inputMetadata = inputMetadataSource
+      ? await sharp(inputMetadataSource.buffer, { failOn: "none", limitInputPixels: 40_000_000 }).metadata()
+      : null;
+    const generatorAspectRatio = job.targetType === "image-generator"
+      ? resolveImageGeneratorAspectRatio({
+          requested: job.aspectRatio,
+          inputWidth: inputMetadata?.width,
+          inputHeight: inputMetadata?.height,
+        })
+      : null;
+
     for (let outputIndex = 0; outputIndex < requestedOutputCount; outputIndex += 1) {
       const providerImage = job.simulation
         ? await generateSimulatedImage({
@@ -287,7 +348,7 @@ export const executeGeneratedImageJob = async (
             prompt: state.finalPrompt,
             mode: job.executionMode,
             model: job.model && job.model !== "auto" ? job.model : undefined,
-            size: job.aspectRatio ? IMAGE_GENERATOR_ASPECT_RATIO_TO_SIZE[job.aspectRatio] : undefined,
+            size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
             targetImage,
             referenceImages,
             maskImage,
@@ -304,6 +365,14 @@ export const executeGeneratedImageJob = async (
         provider: providerImage.provider,
       });
 
+      const normalizedImage = generatorAspectRatio
+        ? await cropGeneratedImageToAspectRatio({
+            buffer: providerImage.buffer,
+            mimeType: providerImage.mimeType,
+            ratio: generatorAspectRatio,
+          })
+        : providerImage;
+
       const persisted = await persistGeneratedImageAsset({
         jobId: job.jobId,
         projectId: job.projectId,
@@ -311,10 +380,10 @@ export const executeGeneratedImageJob = async (
         prompt: providerImage.revisedPrompt ?? state.finalPrompt,
         title: requestedOutputCount > 1 ? `Generated concept ${outputIndex + 1}` : "Generated concept",
         outputIndex,
-        buffer: providerImage.buffer,
+        buffer: normalizedImage.buffer,
         mimeType: providerImage.mimeType,
-        width: providerImage.width,
-        height: providerImage.height,
+        width: normalizedImage.width,
+        height: normalizedImage.height,
         provider: providerImage.provider,
       });
 

@@ -168,6 +168,7 @@ async function fetchWithTimeout(
 
 async function createImagesEditRequest(params: {
   prompt: string;
+  size: string;
   targetImage: ImageInput;
   referenceImages: ImageInput[];
   maskImage?: ImageInput | null;
@@ -175,7 +176,7 @@ async function createImagesEditRequest(params: {
   const formData = new FormData();
   formData.set("model", OPENAI_IMAGE_MODEL);
   formData.set("prompt", params.prompt);
-  formData.set("size", OPENAI_IMAGE_SIZE);
+  formData.set("size", params.size);
   formData.set("quality", OPENAI_IMAGE_QUALITY);
   formData.set("output_format", OPENAI_IMAGE_OUTPUT_FORMAT);
 
@@ -242,6 +243,7 @@ export async function generateImageFromPrompt(params: {
         })
       : await createImagesEditRequest({
           prompt: params.prompt,
+          size: resolvedSize,
           targetImage: resolvedTargetImage as ImageInput,
           referenceImages: params.referenceImages ?? [],
           maskImage: params.maskImage,
