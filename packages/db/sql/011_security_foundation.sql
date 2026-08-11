@@ -360,9 +360,9 @@ begin
 
   select *
   into locked_project
-  from public.projects
-  where id = target_project_id
-    and owner_id = target_created_by
+  from public.projects as projects
+  where projects.id = target_project_id
+    and projects.owner_id = target_created_by
   for update;
 
   if not found then
@@ -373,17 +373,17 @@ begin
   -- makes job idempotency and credit debit one database transaction.
   select *
   into created_job
-  from public.ai_jobs
-  where project_id = target_project_id
-    and created_by = target_created_by
-    and idempotency_key = trim(target_idempotency_key)
+  from public.ai_jobs as jobs
+  where jobs.project_id = target_project_id
+    and jobs.created_by = target_created_by
+    and jobs.idempotency_key = trim(target_idempotency_key)
   limit 1;
 
   if found then
     select credits_amount
     into next_credits
-    from public.profiles
-    where id = target_created_by;
+    from public.profiles as profiles
+    where profiles.id = target_created_by;
 
     return query
     select
@@ -420,8 +420,8 @@ begin
 
     select *
     into current_profile
-    from public.profiles
-    where id = target_created_by
+    from public.profiles as profiles
+    where profiles.id = target_created_by
     for update;
 
     if not found then
@@ -433,9 +433,9 @@ begin
     end if;
 
     next_credits := current_profile.credits_amount - target_credit_amount;
-    update public.profiles
+    update public.profiles as profiles
     set credits_amount = next_credits
-    where id = target_created_by;
+    where profiles.id = target_created_by;
 
     insert into public.credit_ledger (
       profile_id,
@@ -547,10 +547,10 @@ begin
   )
   returning * into created_job;
 
-  delete from public.canvas_snapshots
-  where project_id = target_project_id
-    and snapshot_kind = 'job_checkpoint'
-    and id in (
+  delete from public.canvas_snapshots as snapshots
+  where snapshots.project_id = target_project_id
+    and snapshots.snapshot_kind = 'job_checkpoint'
+    and snapshots.id in (
       select stale_snapshots.id
       from public.canvas_snapshots as stale_snapshots
       where stale_snapshots.project_id = target_project_id

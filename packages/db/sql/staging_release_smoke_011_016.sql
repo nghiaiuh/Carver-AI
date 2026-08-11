@@ -149,6 +149,15 @@ begin
     end if;
   end loop;
 
+  -- The lease RPC must use the INSERT target alias in its ON CONFLICT predicate.
+  -- Checking only that the function exists would miss SQLSTATE 42P01 at runtime.
+  if position(
+    'where leases.expires_at <= now()'
+    in pg_get_functiondef('public.claim_worker_maintenance_lease(text,text,integer)'::regprocedure)
+  ) = 0 then
+    missing := array_append(missing, 'maintenance lease RPC has an invalid conflict predicate');
+  end if;
+
   if not exists (
     select 1
     from pg_proc as functions
@@ -159,6 +168,23 @@ begin
       and functions.prosecdef
   ) then
     missing := array_append(missing, 'missing security-definer create_ai_job_with_checkpoint RPC');
+  end if;
+
+  -- RETURNS TABLE exposes `id` and `project_id` as PL/pgSQL variables. The
+  -- transactional RPC must qualify table columns or it fails with SQLSTATE
+  -- 42702 before an AI job can be inserted.
+  if position(
+    'from public.projects as projects'
+    in pg_get_functiondef(
+      'public.create_ai_job_with_checkpoint(uuid,uuid,uuid,public.ai_job_type,text,uuid[],text,text,jsonb,jsonb,text,integer,text)'::regprocedure
+    )
+  ) = 0 or position(
+    'from public.ai_jobs as jobs'
+    in pg_get_functiondef(
+      'public.create_ai_job_with_checkpoint(uuid,uuid,uuid,public.ai_job_type,text,uuid[],text,text,jsonb,jsonb,text,integer,text)'::regprocedure
+    )
+  ) = 0 then
+    missing := array_append(missing, 'AI job checkpoint RPC has ambiguous table identifiers');
   end if;
 
   if not exists (

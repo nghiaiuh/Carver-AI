@@ -258,8 +258,8 @@ begin
     holder_id = excluded.holder_id,
     expires_at = excluded.expires_at,
     updated_at = now()
-  where public.worker_maintenance_leases.expires_at <= now()
-    or public.worker_maintenance_leases.holder_id = excluded.holder_id;
+  where leases.expires_at <= now()
+    or leases.holder_id = excluded.holder_id;
 
   return found;
 end;
