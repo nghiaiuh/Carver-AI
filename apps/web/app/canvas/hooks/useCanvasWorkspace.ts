@@ -14,8 +14,12 @@ import { useCanvasLibrary } from "./useCanvasLibrary";
 import {
   type AssistantCardContext,
   type AssistantCardRequestBody,
+  applyCanvasDraftOperations,
   coerceCanvasSnapshotDocument,
+  getCanvasOperationConflict,
   type CanvasGenerationAssistantMessage,
+  type CanvasOperationV2,
+  toCanvasOperationV2,
   type CanvasSnapshotDocument,
   type CarverAiJobRecord,
 } from "@carver/shared";
@@ -103,7 +107,9 @@ import {
   upsertPresetChild,
 } from "../utils/presetGroupHelpers";
 import {
-  clearCanvasDraft,
+  acknowledgeCanvasDraftOperations,
+  applyRemoteCanvasDraftOperations,
+  initializeCanvasDraftBranch,
   loadCanvasDraft,
   markCanvasDraftClean,
   pruneExpiredCanvasDrafts,
@@ -214,6 +220,10 @@ type DraftRouteResponse = {
     projectId: string;
     document?: CanvasSnapshotDocument | null;
     draft?: ProjectDraftMeta | null;
+    ackedOperationIds?: string[];
+    batchId?: string;
+    rebased?: boolean;
+    operations?: CanvasOperationV2[];
     assetDeliveryWarning?: string;
   };
   error?: string;
@@ -347,8 +357,9 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
 
 // Local draft is the crash/reload recovery path, so it must land quickly after
 // semantic canvas changes. Cloud draft stays lightly debounced to batch bursts.
-const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 120;
-const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 900;
+const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 50;
+const CLOUD_DRAFT_SYNC_DEBOUNCE_MS = 500;
+const CLOUD_DRAFT_SYNC_MAX_WAIT_MS = 2_000;
 const CLOUD_DRAFT_SYNC_RETRY_LIMIT = 4;
 const CLOUD_DRAFT_SYNC_RETRY_BASE_MS = 2_000;
 const DRAFT_BROADCAST_CHANNEL = "carver:canvas-draft";
@@ -357,6 +368,18 @@ function createDraftMutationId() {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `draft-mutation-${Date.now()}`;
+}
+
+function getCanvasDraftClientId() {
+  const key = "carver:canvasDraftClientId";
+  if (typeof window !== "undefined") {
+    const existing = window.sessionStorage.getItem(key);
+    if (existing) return existing;
+    const next = createDraftMutationId();
+    window.sessionStorage.setItem(key, next);
+    return next;
+  }
+  return createDraftMutationId();
 }
 
 function hasTransientSnapshotContent(document: CanvasSnapshotDocument) {
@@ -535,7 +558,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [creditsAmount, setCreditsAmount] = useState<number | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isCloudDraftSyncLeader, setIsCloudDraftSyncLeader] = useState(true);
   const [draftConflict, setDraftConflict] = useState<LocalCanvasDraftRecord | null>(null);
   const [draftWarning, setDraftWarning] = useState<string | null>(null);
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
@@ -545,6 +567,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const draftSaveTimeoutRef = useRef<number | null>(null);
   const lastPersistedLocalDraftFingerprintRef = useRef<string | null>(null);
   const cloudDraftSyncTimeoutRef = useRef<number | null>(null);
+  const cloudDraftFirstDirtyAtRef = useRef<number | null>(null);
   const cloudDraftRetryTimeoutRef = useRef<number | null>(null);
   const cloudDraftRetryAttemptRef = useRef(0);
   const cloudDraftSyncInFlightRef = useRef(false);
@@ -574,13 +597,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     version: null,
     documentHash: null,
   });
-  const tabIdRef = useRef(
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `tab-${Date.now()}`,
-  );
+  const tabIdRef = useRef(getCanvasDraftClientId());
   const draftChannelRef = useRef<BroadcastChannel | null>(null);
-  const syncLeaderAbortRef = useRef<AbortController | null>(null);
 
   // ── Sub-hooks ───────────────────────────────────────────────────────────────
   const library = useCanvasLibrary();
@@ -1197,8 +1215,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
     if (
       !projectId ||
-      !currentUserId ||
-      (!syncParams.allowNonLeader && !isCloudDraftSyncLeader)
+      !currentUserId
     ) {
       recordCanvasPersistenceBenchmarkEvent({
         operation: "cloud-draft-sync",
@@ -1209,18 +1226,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         payloadBytes,
         requestSent: false,
         result: "skipped",
-        skipReason: !projectId || !currentUserId ? "not-ready" : "not-leader",
+        skipReason: "not-ready",
       });
       return false;
     }
 
-    const snapshotDocument = latestSnapshotDocumentRef.current;
-    const snapshotFingerprint = latestSnapshotFingerprintRef.current;
-    if (
-      !syncParams.force &&
-      cloudDraftMetaRef.current.documentHash &&
-      cloudDraftMetaRef.current.documentHash === snapshotFingerprint
-    ) {
+    const localDraft = await loadCanvasDraft(currentUserId, projectId, tabIdRef.current);
+    const pendingOperations = localDraft?.pendingOperations ?? [];
+    if (pendingOperations.length === 0) {
       recordCanvasPersistenceBenchmarkEvent({
         operation: "cloud-draft-sync",
         projectId,
@@ -1234,6 +1247,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       return false;
     }
+    // Freeze the exact journal materialization that this batch represents.
+    // New edits may continue locally while the request is in flight and must
+    // become a later batch, never a mismatched hash for this ACK.
+    const snapshotDocument = localDraft?.document ?? latestSnapshotDocumentRef.current;
+    const snapshotFingerprint = createSnapshotFingerprint(snapshotDocument);
 
     if (cloudDraftSyncInFlightRef.current) {
       recordCanvasPersistenceBenchmarkEvent({
@@ -1255,24 +1273,33 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     try {
       const client = requireCanvasSupabaseClient(supabase);
-      const mutationId = latestDraftMutationIdRef.current ?? createDraftMutationId();
-      const response = await authedFetch(client, `/api/project-drafts/${projectId}`, {
-        method: "PUT",
+      // The first pending operation ID is a stable UUID for this batch. A
+      // transport retry must reuse it, otherwise a lost response can become a
+      // second write with the same mutations.
+      const batchId = pendingOperations[0]?.operationId ?? createDraftMutationId();
+      const response = await authedFetch(client, `/api/project-drafts/${projectId}/operations`, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          batchId,
+          clientId: tabIdRef.current,
+          baseRevision: localDraft?.meta.cloudDraftRevision ?? cloudDraftMetaRef.current.revision ?? 0,
+          operations: pendingOperations.map((operation) => toCanvasOperationV2(operation, {
+            clientId: tabIdRef.current,
+            clientSequence: operation.sequence,
+          })),
           document: snapshotDocument,
-          expectedRevision: cloudDraftMetaRef.current.revision ?? 0,
           documentHash: snapshotFingerprint,
-          mutationId,
           baseSnapshotId: snapshotBaselineRef.current.snapshotId ?? null,
         }),
       });
       const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
 
-      if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
-        setDraftWarning("Cloud draft changed in another tab or device. Reload the saved version or restore your local draft intentionally.");
+      if (response.status === 409 || payload.code === "DRAFT_CONFLICT" || payload.code === "DRAFT_ENTITY_CONFLICT") {
+        setDraftWarning("Some changes conflicted. A recovery copy was saved; cloud changes remain visible.");
+        showToast("Some changes conflicted. A recovery copy was saved.");
         recordCanvasPersistenceBenchmarkEvent({
           operation: "cloud-draft-sync",
           projectId,
@@ -1292,20 +1319,20 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       }
 
       const hasNewerLocalMutation =
-        latestDraftMutationIdRef.current !== null &&
-        latestDraftMutationIdRef.current !== mutationId;
+        latestSnapshotFingerprintRef.current !== snapshotFingerprint;
       cloudDraftMetaRef.current = {
         baseSnapshotId: payload.data.draft.baseSnapshotId,
         revision: payload.data.draft.revision,
         documentHash: payload.data.draft.documentHash ?? snapshotFingerprint,
         lastMutationId: hasNewerLocalMutation
           ? latestDraftMutationIdRef.current
-          : (payload.data.draft.lastMutationId ?? mutationId),
+          : (payload.data.draft.lastMutationId ?? batchId),
       };
       if (!hasNewerLocalMutation) {
-        latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? mutationId;
+        latestDraftMutationIdRef.current = payload.data.draft.lastMutationId ?? batchId;
       }
       cloudDraftRetryAttemptRef.current = 0;
+      cloudDraftFirstDirtyAtRef.current = null;
       if (cloudDraftRetryTimeoutRef.current !== null) {
         window.clearTimeout(cloudDraftRetryTimeoutRef.current);
         cloudDraftRetryTimeoutRef.current = null;
@@ -1314,8 +1341,22 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       await recordCanvasDraftCloudSync(currentUserId, projectId, {
         cloudDraftRevision: payload.data.draft.revision,
         cloudDraftHash: payload.data.draft.documentHash ?? snapshotFingerprint,
-        lastMutationId: payload.data.draft.lastMutationId ?? mutationId,
+        lastMutationId: payload.data.draft.lastMutationId ?? batchId,
+      }, tabIdRef.current).catch(() => undefined);
+      await acknowledgeCanvasDraftOperations(currentUserId, projectId, {
+        clientId: tabIdRef.current,
+        operationIds: payload.data.ackedOperationIds ?? pendingOperations.map((operation) => operation.operationId),
+        cloudDraftRevision: payload.data.draft.revision,
+        cloudDraftHash: payload.data.draft.documentHash ?? snapshotFingerprint,
+        lastMutationId: payload.data.draft.lastMutationId ?? batchId,
       }).catch(() => undefined);
+
+      draftChannelRef.current?.postMessage({
+        type: "draft-acknowledged",
+        userId: currentUserId,
+        projectId,
+        tabId: tabIdRef.current,
+      });
 
       // An edit may have happened while this request was active. Its normal
       // debounce can skip because the previous write was in flight, so flush
@@ -1355,8 +1396,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       if (
         retryAttempt <= CLOUD_DRAFT_SYNC_RETRY_LIMIT &&
         typeof window !== "undefined" &&
-        cloudDraftRetryTimeoutRef.current === null &&
-        (syncParams.allowNonLeader || isCloudDraftSyncLeader)
+        cloudDraftRetryTimeoutRef.current === null
       ) {
         const retryDelayMs = Math.min(
           CLOUD_DRAFT_SYNC_RETRY_BASE_MS * 2 ** (retryAttempt - 1),
@@ -1388,7 +1428,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       if (
         needsFollowUpSync &&
         typeof window !== "undefined" &&
-        (syncParams.allowNonLeader || isCloudDraftSyncLeader) &&
         cloudDraftSyncTimeoutRef.current === null
       ) {
         cloudDraftSyncTimeoutRef.current = window.setTimeout(() => {
@@ -1401,7 +1440,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         }, 0);
       }
     }
-  }, [currentUserId, isCloudDraftSyncLeader, params.projectId, supabase]);
+  }, [currentUserId, params.projectId, supabase]);
 
   const saveSnapshotDocument = useCallback(async (saveParams: {
     projectId?: string;
@@ -1643,66 +1682,45 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     });
   }, [activeNodeId, nodes]);
 
-  useEffect(() => {
-    syncLeaderAbortRef.current?.abort();
-    syncLeaderAbortRef.current = null;
+  const reconcileRemoteCanvasOperations = useCallback(async () => {
+    if (!currentUserId || !params.projectId) return;
+    const afterRevision = cloudDraftMetaRef.current.revision ?? 0;
+    const client = requireCanvasSupabaseClient(supabase);
+    const response = await authedFetch(
+      client,
+      `/api/project-drafts/${params.projectId}/operations?afterRevision=${afterRevision}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
+    const remoteOperations = (payload.data?.operations ?? [])
+      .filter((operation) => operation.clientId !== tabIdRef.current);
+    if (!response.ok || remoteOperations.length === 0) return;
 
-    if (!currentUserId || !params.projectId) {
-      queueMicrotask(() => {
-        setIsCloudDraftSyncLeader(true);
-      });
+    const localDraft = await loadCanvasDraft(currentUserId, params.projectId, tabIdRef.current);
+    const conflict = getCanvasOperationConflict(localDraft?.pendingOperations ?? [], remoteOperations);
+    if (conflict.hasConflict) {
+      setDraftWarning("Another tab changed the same canvas item. Your local changes remain in the recovery journal.");
       return;
     }
 
-    if (typeof navigator === "undefined" || !("locks" in navigator)) {
-      queueMicrotask(() => {
-        setIsCloudDraftSyncLeader(true);
-      });
-      return;
-    }
-
-    const abortController = new AbortController();
-    syncLeaderAbortRef.current = abortController;
-    queueMicrotask(() => {
-      setIsCloudDraftSyncLeader(false);
+    const latestRevision = Math.max(
+      afterRevision,
+      ...remoteOperations.map((operation) => operation.committedRevision ?? afterRevision),
+    );
+    await applyRemoteCanvasDraftOperations(currentUserId, params.projectId, {
+      clientId: tabIdRef.current,
+      operations: remoteOperations.map((operation) => operation.payload),
+      cloudDraftRevision: latestRevision,
     });
-
-    void navigator.locks
-      .request(
-        `carver-canvas-sync:${currentUserId}:${params.projectId}`,
-        { mode: "exclusive", signal: abortController.signal },
-        async () => {
-          if (abortController.signal.aborted) {
-            return;
-          }
-
-          setIsCloudDraftSyncLeader(true);
-          draftChannelRef.current?.postMessage({
-            type: "draft-leader",
-            userId: currentUserId,
-            projectId: params.projectId,
-            tabId: tabIdRef.current,
-          });
-
-          await new Promise<void>((resolve) => {
-            abortController.signal.addEventListener("abort", () => resolve(), { once: true });
-          });
-        },
-      )
-      .catch(() => {
-        if (!abortController.signal.aborted) {
-          setIsCloudDraftSyncLeader(true);
-        }
-      });
-
-    return () => {
-      abortController.abort();
-      if (syncLeaderAbortRef.current === abortController) {
-        syncLeaderAbortRef.current = null;
-      }
-      setIsCloudDraftSyncLeader(true);
+    applyHydratedSnapshotState(applyCanvasDraftOperations(
+      latestSnapshotDocumentRef.current,
+      remoteOperations.map((operation) => operation.payload),
+    ));
+    cloudDraftMetaRef.current = {
+      ...cloudDraftMetaRef.current,
+      revision: latestRevision,
     };
-  }, [currentUserId, params.projectId]);
+  }, [applyHydratedSnapshotState, currentUserId, params.projectId, supabase]);
 
   useEffect(() => {
     if (!currentUserId || !params.projectId) {
@@ -1727,6 +1745,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           projectId?: string;
           tabId?: string;
         }
+        | {
+          type?: "draft-acknowledged";
+          userId?: string;
+          projectId?: string;
+          tabId?: string;
+        }
         | undefined;
 
       if (!message) {
@@ -1741,12 +1765,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         return;
       }
 
-      if (message.type === "draft-updated") {
-        setDraftWarning("Another tab updated this local draft. Your next save will use last-write-wins.");
+      if (message.type === "draft-updated" || message.type === "draft-acknowledged") {
+        void reconcileRemoteCanvasOperations().catch(() => undefined);
       }
 
       if (message.type === "draft-leader") {
-        setDraftWarning("Another tab is the active cloud-sync leader for this project.");
+        // Compatibility with messages from older tabs. New tabs rely on CAS
+        // batches, so a leader is not part of correctness anymore.
+        void reconcileRemoteCanvasOperations().catch(() => undefined);
       }
     };
 
@@ -1756,7 +1782,15 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         draftChannelRef.current = null;
       }
     };
-  }, [currentUserId, params.projectId]);
+  }, [currentUserId, params.projectId, reconcileRemoteCanvasOperations]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void reconcileRemoteCanvasOperations().catch(() => undefined);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [reconcileRemoteCanvasOperations]);
 
   useEffect(() => {
     const projectId = params.projectId;
@@ -1859,12 +1893,29 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         );
 
         const draftRecord =
-          currentUserId ? await loadCanvasDraft(currentUserId, projectId) : null;
+          currentUserId ? await loadCanvasDraft(currentUserId, projectId, tabIdRef.current) : null;
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }
 
-        if (!draftRecord || draftRecord.meta.documentHash === draftRecord.meta.basedOnHash) {
+        if (!draftRecord) {
+          if (currentUserId) {
+            await initializeCanvasDraftBranch(currentUserId, projectId, {
+              clientId: tabIdRef.current,
+              document: baseDocument,
+              documentHash: createSnapshotFingerprint(baseDocument),
+              basedOnSnapshotId: snapshotPayload.data.snapshot?.snapshotId ?? null,
+              basedOnVersion: snapshotPayload.data.snapshot?.version ?? null,
+              basedOnHash: snapshotPayload.data.snapshot?.documentHash ?? null,
+              cloudDraftRevision: cloudDraftMeta?.revision ?? null,
+              cloudDraftHash: cloudDraftMeta?.documentHash ?? null,
+            });
+          }
+          applyHydratedSnapshotState(baseDocument);
+          return;
+        }
+
+        if (draftRecord.meta.documentHash === draftRecord.meta.basedOnHash) {
           applyHydratedSnapshotState(baseDocument);
           return;
         }
@@ -1884,11 +1935,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
         if (hasSnapshotConflict || hasCloudConflict) {
           applyHydratedSnapshotState(baseDocument);
-          if (currentUserId) {
-            await clearCanvasDraft(currentUserId, projectId).catch(() => undefined);
-          }
-          setDraftConflict(null);
-          setDraftWarning(null);
+          // Never clear a branch merely because the cloud advanced. Its pending
+          // operations are the only lossless input for a later rebase/recovery.
+          setDraftConflict(draftRecord);
+          setDraftWarning("A newer cloud draft exists. Local changes remain safe and can be recovered.");
           return;
         }
 
@@ -2024,7 +2074,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     if (
       !currentUserId ||
       !params.projectId ||
-      !isCloudDraftSyncLeader ||
       isSnapshotLoading ||
       !snapshotBaselineRef.current.documentHash
     ) {
@@ -2034,15 +2083,24 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const baselineHash = snapshotBaselineRef.current.documentHash;
     const currentHash = latestSnapshotFingerprintRef.current;
     if (!currentHash || currentHash === baselineHash || currentHash === cloudDraftMetaRef.current.documentHash) {
+      cloudDraftFirstDirtyAtRef.current = null;
       return;
     }
+
+    const now = Date.now();
+    const firstDirtyAt = cloudDraftFirstDirtyAtRef.current ?? now;
+    cloudDraftFirstDirtyAtRef.current = firstDirtyAt;
+    const delayMs = Math.max(
+      0,
+      Math.min(CLOUD_DRAFT_SYNC_DEBOUNCE_MS, CLOUD_DRAFT_SYNC_MAX_WAIT_MS - (now - firstDirtyAt)),
+    );
 
     cloudDraftSyncTimeoutRef.current = window.setTimeout(() => {
       cloudDraftSyncTimeoutRef.current = null;
       void syncCloudDraft({
         quiet: true,
       }).catch(() => undefined);
-    }, CLOUD_DRAFT_SYNC_DEBOUNCE_MS);
+    }, delayMs);
 
     return () => {
       if (cloudDraftSyncTimeoutRef.current !== null) {
@@ -2053,7 +2111,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [
     currentSnapshotFingerprint,
     currentUserId,
-    isCloudDraftSyncLeader,
     isSnapshotLoading,
     params.projectId,
     syncCloudDraft,
@@ -2124,9 +2181,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     );
     if (resumableJobs.length === 0) return;
 
-    setPendingGenerationJobs((current) => {
-      const missing = resumableJobs.filter((candidate) => !current.some((entry) => entry.jobId === candidate.jobId));
-      return missing.length > 0 ? [...current, ...missing] : current;
+    queueMicrotask(() => {
+      setPendingGenerationJobs((current) => {
+        const missing = resumableJobs.filter((candidate) => !current.some((entry) => entry.jobId === candidate.jobId));
+        return missing.length > 0 ? [...current, ...missing] : current;
+      });
     });
   }, [nodes, params.projectId]);
 
@@ -3171,10 +3230,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       return;
     }
 
-    await clearCanvasDraft(currentUserId, params.projectId).catch(() => undefined);
     setDraftConflict(null);
     setDraftWarning(null);
-    showToast("Using the saved version");
+    showToast("Using the saved version. Local recovery data was kept safely.");
   }, [currentUserId, params.projectId]);
 
   // Đóng modal nhiều góc nhìn; phần generate riêng chưa được cài đặt.

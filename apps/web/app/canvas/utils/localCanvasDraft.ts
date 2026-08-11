@@ -10,14 +10,12 @@ import {
 } from "@carver/shared";
 
 const LOCAL_DRAFT_DB_NAME = "carver-canvas-drafts";
-const LOCAL_DRAFT_DB_VERSION = 2;
+const LOCAL_DRAFT_DB_VERSION = 3;
 const DRAFT_META_STORE_NAME = "draftMeta";
 const DRAFT_OPERATION_STORE_NAME = "draftOperations";
 const DRAFT_CHECKPOINT_STORE_NAME = "draftCheckpoints";
 const DRAFT_OPERATIONS_BY_KEY_INDEX = "byDraftKey";
 
-const MAX_DRAFT_OPERATION_COUNT = 100;
-const MAX_DRAFT_OPERATION_BYTES = 1_000_000;
 
 export const LOCAL_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -36,6 +34,7 @@ export type LocalCanvasDraftMeta = {
   cloudDraftRevision: number | null;
   cloudDraftHash: string | null;
   lastMutationId: string | null;
+  clientId?: string;
 };
 
 type LocalCanvasDraftMetaStoreRecord = {
@@ -61,8 +60,14 @@ export type LocalCanvasDraftRecord = {
   pendingOperations: CanvasDraftOperation[];
 };
 
-function getDraftKey(userId: string, projectId: string) {
+function getLegacyDraftKey(userId: string, projectId: string) {
   return `carver:canvasDraft:${userId}:${projectId}`;
+}
+
+function getDraftKey(userId: string, projectId: string, clientId?: string) {
+  return clientId
+    ? `${getLegacyDraftKey(userId, projectId)}:client:${clientId}`
+    : getLegacyDraftKey(userId, projectId);
 }
 
 function requestToPromise<T>(request: IDBRequest<T>) {
@@ -200,10 +205,6 @@ function materializeDraftRecord(params: {
   } satisfies LocalCanvasDraftRecord;
 }
 
-function estimateOperationsSize(operations: CanvasDraftOperation[]) {
-  return new TextEncoder().encode(JSON.stringify(operations)).byteLength;
-}
-
 async function deleteDraftOperationRecords(
   operationStore: IDBObjectStore,
   draftKey: string,
@@ -231,20 +232,107 @@ async function readDraftRecord(stores: {
   });
 }
 
-export async function loadCanvasDraft(userId: string, projectId: string) {
-  const draftKey = getDraftKey(userId, projectId);
+export async function loadCanvasDraft(userId: string, projectId: string, clientId?: string) {
+  const draftKey = getDraftKey(userId, projectId, clientId);
   const record = await withDatabase("readonly", (stores) => readDraftRecord(stores, draftKey));
 
   if (!record.meta.projectId || !record.meta.userId) {
-    return null;
+    if (!clientId) {
+      return null;
+    }
+
+    // Version 2 kept one shared document per project. Preserve it as a
+    // checkpoint branch for this tab instead of deleting it during migration.
+    const legacyKey = getLegacyDraftKey(userId, projectId);
+    const legacyRecord = await withDatabase("readonly", (stores) => readDraftRecord(stores, legacyKey));
+    if (!legacyRecord.meta.projectId || !legacyRecord.meta.userId) {
+      return null;
+    }
+
+    const migrated = await withDatabase("readwrite", async (stores) => {
+      const now = new Date().toISOString();
+      const meta: LocalCanvasDraftMeta = {
+        ...legacyRecord.meta,
+        tabId: clientId,
+        clientId,
+        updatedAt: now,
+        expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+        // The legacy materialized document becomes a recovery checkpoint.
+        operationCount: 0,
+      };
+      await requestToPromise(stores.checkpointStore.put({
+        key: draftKey,
+        checkpoint: {
+          document: legacyRecord.document,
+          documentHash: legacyRecord.meta.documentHash,
+          createdAt: now,
+        },
+      } satisfies LocalCanvasDraftCheckpointStoreRecord));
+      await requestToPromise(stores.metaStore.put({
+        key: draftKey,
+        meta,
+      } satisfies LocalCanvasDraftMetaStoreRecord));
+      return {
+        key: draftKey,
+        meta,
+        document: legacyRecord.document,
+        pendingOperations: [],
+      } satisfies LocalCanvasDraftRecord;
+    });
+    return migrated;
   }
 
   if (isExpired(record.meta.expiresAt)) {
-    await clearCanvasDraft(userId, projectId);
+    await clearCanvasDraft(userId, projectId, clientId);
     return null;
   }
 
   return record;
+}
+
+export async function initializeCanvasDraftBranch(
+  userId: string,
+  projectId: string,
+  params: {
+    clientId: string;
+    document: CanvasSnapshotDocument;
+    documentHash: string;
+    basedOnSnapshotId: string | null;
+    basedOnVersion: number | null;
+    basedOnHash: string | null;
+    cloudDraftRevision: number | null;
+    cloudDraftHash: string | null;
+  },
+) {
+  const draftKey = getDraftKey(userId, projectId, params.clientId);
+  return withDatabase("readwrite", async (stores) => {
+    const existing = await readDraftRecord(stores, draftKey);
+    if (existing.meta.projectId) return existing;
+    const updatedAt = new Date().toISOString();
+    const meta: LocalCanvasDraftMeta = {
+      projectId,
+      userId,
+      tabId: params.clientId,
+      clientId: params.clientId,
+      updatedAt,
+      expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+      basedOnSnapshotId: params.basedOnSnapshotId,
+      basedOnVersion: params.basedOnVersion,
+      basedOnHash: params.basedOnHash,
+      documentHash: params.documentHash,
+      lastSequence: 0,
+      operationCount: 0,
+      cloudDraftRevision: params.cloudDraftRevision,
+      cloudDraftHash: params.cloudDraftHash,
+      lastMutationId: null,
+    };
+    await requestToPromise(stores.checkpointStore.put({
+      key: draftKey,
+      checkpoint: { document: params.document, documentHash: params.documentHash, createdAt: updatedAt },
+    } satisfies LocalCanvasDraftCheckpointStoreRecord));
+    await requestToPromise(stores.metaStore.put({ key: draftKey, meta } satisfies LocalCanvasDraftMetaStoreRecord));
+    return { key: draftKey, meta, document: params.document, pendingOperations: [] } satisfies LocalCanvasDraftRecord;
+  });
 }
 
 export async function saveCanvasDraft(
@@ -254,7 +342,7 @@ export async function saveCanvasDraft(
   meta: Omit<LocalCanvasDraftMeta, "projectId" | "userId" | "lastSequence" | "operationCount"> &
     Partial<Pick<LocalCanvasDraftMeta, "lastSequence" | "operationCount">>,
 ) {
-  const draftKey = getDraftKey(userId, projectId);
+  const draftKey = getDraftKey(userId, projectId, meta.tabId);
 
   return withDatabase("readwrite", async (stores) => {
     const currentRecord = await readDraftRecord(stores, draftKey);
@@ -284,6 +372,7 @@ export async function saveCanvasDraft(
       projectId,
       userId,
       tabId: meta.tabId,
+      clientId: meta.tabId,
       updatedAt: meta.updatedAt,
       expiresAt: meta.expiresAt,
       basedOnSnapshotId: meta.basedOnSnapshotId,
@@ -297,10 +386,10 @@ export async function saveCanvasDraft(
       lastMutationId: meta.lastMutationId ?? currentRecord.meta.lastMutationId ?? null,
     };
 
-    const shouldCompact =
-      nextMeta.operationCount >= MAX_DRAFT_OPERATION_COUNT ||
-      estimateOperationsSize([...currentRecord.pendingOperations, ...operations]) >=
-        MAX_DRAFT_OPERATION_BYTES;
+    // Pending operations must remain individually addressable until the server
+    // acknowledges their IDs. Compaction is performed by acknowledge below,
+    // never while a local operation could still be lost in transit.
+    const shouldCompact = false;
 
     if (shouldCompact || !currentRecord.meta.projectId) {
       await deleteDraftOperationRecords(stores.operationStore, draftKey);
@@ -360,6 +449,117 @@ export async function saveCanvasDraft(
   });
 }
 
+export async function acknowledgeCanvasDraftOperations(
+  userId: string,
+  projectId: string,
+  params: {
+    clientId: string;
+    operationIds: string[];
+    cloudDraftRevision: number;
+    cloudDraftHash: string | null;
+    lastMutationId?: string | null;
+  },
+) {
+  const draftKey = getDraftKey(userId, projectId, params.clientId);
+  const acknowledged = new Set(params.operationIds);
+
+  return withDatabase("readwrite", async (stores) => {
+    const currentRecord = await readDraftRecord(stores, draftKey);
+    if (!currentRecord.meta.projectId) {
+      return null;
+    }
+
+    const allRecords = await getOperationRecordsForDraft(stores.operationStore, draftKey);
+    const acknowledgedOperations = allRecords
+      .filter((record) => acknowledged.has(record.operationId))
+      .map((record) => record.operation)
+      .sort((left, right) => left.sequence - right.sequence);
+    const currentCheckpoint = (await requestToPromise(
+      stores.checkpointStore.get(draftKey),
+    )) as LocalCanvasDraftCheckpointStoreRecord | undefined;
+    const checkpointDocument = applyCanvasDraftOperations(
+      currentCheckpoint?.checkpoint.document ?? coerceCanvasSnapshotDocument(undefined),
+      acknowledgedOperations,
+    );
+
+    for (const record of allRecords) {
+      if (acknowledged.has(record.operationId)) {
+        await requestToPromise(stores.operationStore.delete(record.operationId));
+      }
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextMeta: LocalCanvasDraftMeta = {
+      ...currentRecord.meta,
+      cloudDraftRevision: params.cloudDraftRevision,
+      cloudDraftHash: params.cloudDraftHash,
+      lastMutationId: params.lastMutationId ?? currentRecord.meta.lastMutationId,
+      updatedAt,
+      expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+      operationCount: Math.max(0, currentRecord.pendingOperations.length - acknowledgedOperations.length),
+    };
+    await requestToPromise(stores.checkpointStore.put({
+      key: draftKey,
+      checkpoint: {
+        document: checkpointDocument,
+        documentHash: params.cloudDraftHash ?? currentCheckpoint?.checkpoint.documentHash ?? "",
+        createdAt: updatedAt,
+      },
+    } satisfies LocalCanvasDraftCheckpointStoreRecord));
+    await requestToPromise(stores.metaStore.put({
+      key: draftKey,
+      meta: nextMeta,
+    } satisfies LocalCanvasDraftMetaStoreRecord));
+
+    return readDraftRecord(stores, draftKey);
+  });
+}
+
+export async function applyRemoteCanvasDraftOperations(
+  userId: string,
+  projectId: string,
+  params: {
+    clientId: string;
+    operations: CanvasDraftOperation[];
+    cloudDraftRevision: number;
+    cloudDraftHash?: string | null;
+  },
+) {
+  const draftKey = getDraftKey(userId, projectId, params.clientId);
+  return withDatabase("readwrite", async (stores) => {
+    const currentRecord = await readDraftRecord(stores, draftKey);
+    if (!currentRecord.meta.projectId) return null;
+    const currentCheckpoint = (await requestToPromise(
+      stores.checkpointStore.get(draftKey),
+    )) as LocalCanvasDraftCheckpointStoreRecord | undefined;
+    const checkpointDocument = applyCanvasDraftOperations(
+      currentCheckpoint?.checkpoint.document ?? coerceCanvasSnapshotDocument(undefined),
+      params.operations,
+    );
+    const updatedAt = new Date().toISOString();
+    const nextMeta: LocalCanvasDraftMeta = {
+      ...currentRecord.meta,
+      cloudDraftRevision: params.cloudDraftRevision,
+      cloudDraftHash: params.cloudDraftHash ?? currentRecord.meta.cloudDraftHash,
+      updatedAt,
+      expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+    };
+    await requestToPromise(stores.checkpointStore.put({
+      key: draftKey,
+      checkpoint: {
+        document: checkpointDocument,
+        documentHash: nextMeta.cloudDraftHash ?? currentCheckpoint?.checkpoint.documentHash ?? "",
+        createdAt: updatedAt,
+      },
+    } satisfies LocalCanvasDraftCheckpointStoreRecord));
+    await requestToPromise(stores.metaStore.put({
+      key: draftKey,
+      meta: nextMeta,
+    } satisfies LocalCanvasDraftMetaStoreRecord));
+    return readDraftRecord(stores, draftKey);
+  });
+}
+
 export async function recordCanvasDraftCloudSync(
   userId: string,
   projectId: string,
@@ -368,8 +568,9 @@ export async function recordCanvasDraftCloudSync(
     cloudDraftHash: string | null;
     lastMutationId: string | null;
   },
+  clientId?: string,
 ) {
-  const draftKey = getDraftKey(userId, projectId);
+  const draftKey = getDraftKey(userId, projectId, clientId);
 
   return withDatabase("readwrite", async (stores) => {
     const currentRecord = await readDraftRecord(stores, draftKey);
@@ -423,8 +624,9 @@ export async function markCanvasDraftClean(
     | "cloudDraftHash"
     | "lastMutationId"
   >,
+  clientId?: string,
 ) {
-  const draftKey = getDraftKey(userId, projectId);
+  const draftKey = getDraftKey(userId, projectId, clientId ?? params.tabId);
 
   return withDatabase("readwrite", async (stores) => {
     const currentRecord = await readDraftRecord(stores, draftKey);
@@ -478,8 +680,8 @@ export async function markCanvasDraftClean(
   });
 }
 
-export async function clearCanvasDraft(userId: string, projectId: string) {
-  const draftKey = getDraftKey(userId, projectId);
+export async function clearCanvasDraft(userId: string, projectId: string, clientId?: string) {
+  const draftKey = getDraftKey(userId, projectId, clientId);
 
   await withDatabase("readwrite", async (stores) => {
     await Promise.all([
