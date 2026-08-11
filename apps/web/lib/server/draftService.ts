@@ -2,7 +2,11 @@ import "server-only";
 
 import type { Database } from "@carver/db";
 import {
+  applyCanvasDraftOperations,
   coerceCanvasSnapshotDocument,
+  getCanvasOperationConflict,
+  type CanvasDraftOperation,
+  type CanvasOperationV2,
   type CanvasSnapshotDocument,
 } from "@carver/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -39,12 +43,46 @@ type FinalizeProjectCanvasDraftRpcRow = {
   draft_revision: number;
 };
 
+type CommitProjectCanvasOperationBatchRpcRow = ProjectCanvasDraftRpcRow & {
+  batch_id: string;
+  acked_operation_ids: string[];
+};
+
+type ProjectCanvasDraftOperationRow = {
+  operation_id: string;
+  project_id: string;
+  client_id: string;
+  client_sequence: number;
+  batch_id: string;
+  base_revision: number;
+  committed_revision: number;
+  entity_key: string;
+  operation_type: CanvasDraftOperation["type"];
+  payload: CanvasDraftOperation;
+  created_at: string;
+};
+
+type ProjectCanvasRecoveryRow = {
+  id: string;
+  project_id: string;
+  created_by: string;
+  client_id: string;
+  base_revision: number;
+  cloud_revision: number;
+  document_hash: string;
+  canvas_json: unknown;
+  conflicting_entity_keys: string[];
+  reason: string;
+  created_at: string;
+  resolved_at: string | null;
+};
+
 type DraftRpcClient = {
   rpc: (
     fn: string,
     args: Record<string, unknown>,
   ) => Promise<{
-    data: ProjectCanvasDraftRpcRow[] | FinalizeProjectCanvasDraftRpcRow[] | null;
+    data: ProjectCanvasDraftRpcRow[] | FinalizeProjectCanvasDraftRpcRow[] | CommitProjectCanvasOperationBatchRpcRow[] | null;
     error: { message: string; code?: string; details?: string; hint?: string } | null;
   }>;
 };
@@ -53,12 +91,18 @@ export class ProjectCanvasDraftConflictError extends Error {}
 export class ProjectCanvasDraftProjectNotFoundError extends Error {}
 export class ProjectCanvasDraftSchemaError extends Error {}
 export class ProjectCanvasDraftPermissionError extends Error {}
+export class ProjectCanvasDraftEntityConflictError extends Error {
+  constructor(readonly entityKeys: string[]) {
+    super("DRAFT_ENTITY_CONFLICT");
+  }
+}
 
 export type ProjectCanvasDraftServiceErrorCode =
   | "PROJECT_NOT_FOUND"
   | "DRAFT_CONFLICT"
   | "DRAFT_SCHEMA_ERROR"
   | "DRAFT_PERMISSION_ERROR"
+  | "DRAFT_ENTITY_CONFLICT"
   | "DRAFT_SAVE_FAILED"
   | "DRAFT_LOAD_FAILED"
   | "DRAFT_FINALIZE_FAILED";
@@ -147,6 +191,10 @@ export function getProjectCanvasDraftErrorCode(
     return "DRAFT_CONFLICT";
   }
 
+  if (error instanceof ProjectCanvasDraftEntityConflictError) {
+    return "DRAFT_ENTITY_CONFLICT";
+  }
+
   if (error instanceof ProjectCanvasDraftSchemaError) {
     return "DRAFT_SCHEMA_ERROR";
   }
@@ -167,11 +215,70 @@ export function getProjectCanvasDraftErrorStatus(error: unknown) {
     return 409;
   }
 
+  if (error instanceof ProjectCanvasDraftEntityConflictError) {
+    return 409;
+  }
+
   if (error instanceof ProjectCanvasDraftSchemaError || error instanceof ProjectCanvasDraftPermissionError) {
     return 500;
   }
 
   return 500;
+}
+
+function toOperationV2(row: ProjectCanvasDraftOperationRow): CanvasOperationV2 {
+  return {
+    operationId: row.operation_id,
+    projectId: row.project_id,
+    clientId: row.client_id,
+    clientSequence: row.client_sequence,
+    committedRevision: row.committed_revision,
+    baseRevision: row.base_revision,
+    entityKey: row.entity_key,
+    type: row.operation_type,
+    payload: row.payload,
+    createdAt: row.created_at,
+  };
+}
+
+export type ProjectCanvasRecovery = {
+  id: string;
+  projectId: string;
+  clientId: string;
+  baseRevision: number;
+  cloudRevision: number;
+  documentHash: string;
+  document: CanvasSnapshotDocument;
+  conflictingEntityKeys: string[];
+  reason: string;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+function toRecovery(row: ProjectCanvasRecoveryRow): ProjectCanvasRecovery {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    clientId: row.client_id,
+    baseRevision: row.base_revision,
+    cloudRevision: row.cloud_revision,
+    documentHash: row.document_hash,
+    document: coerceCanvasSnapshotDocument(row.canvas_json),
+    conflictingEntityKeys: row.conflicting_entity_keys ?? [],
+    reason: row.reason,
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+function createDocumentHash(document: CanvasSnapshotDocument) {
+  const serialized = JSON.stringify(document);
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function throwIfConflict(message: string): never {
@@ -274,6 +381,163 @@ export async function saveProjectCanvasDraft(
     lastMutationId: savedDraft.last_mutation_id,
     updatedAt: savedDraft.updated_at,
   } satisfies ProjectCanvasDraftMeta;
+}
+
+export async function listProjectCanvasDraftOperations(
+  supabase: SupabaseClient<Database>,
+  params: { projectId: string; afterRevision: number },
+) {
+  const { data, error } = await supabase
+    .from("project_canvas_draft_operations" as never)
+    .select("operation_id, project_id, client_id, client_sequence, batch_id, base_revision, committed_revision, entity_key, operation_type, payload, created_at")
+    .eq("project_id" as never, params.projectId)
+    .gt("committed_revision" as never, params.afterRevision)
+    .order("committed_revision" as never, { ascending: true })
+    .order("created_at" as never, { ascending: true });
+
+  if (error) {
+    if (isDraftSchemaMessage(error.message)) {
+      throw new ProjectCanvasDraftSchemaError(error.message);
+    }
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as ProjectCanvasDraftOperationRow[]).map(toOperationV2);
+}
+
+export async function commitProjectCanvasOperationBatch(
+  supabase: SupabaseClient<Database>,
+  params: {
+    actorUserId: string;
+    projectId: string;
+    expectedRevision: number;
+    batchId: string;
+    clientId: string;
+    baseSnapshotId: string | null;
+    operations: CanvasOperationV2[];
+    cloudDocument: CanvasSnapshotDocument;
+    documentHash: string;
+  },
+) {
+  const latest = await loadProjectCanvasDraft(supabase, params.projectId);
+  const actualRevision = latest.draft?.revision ?? 0;
+  const operations = params.operations;
+  let rebased = false;
+
+  if (actualRevision !== params.expectedRevision) {
+    const remoteOperations = await listProjectCanvasDraftOperations(supabase, {
+      projectId: params.projectId,
+      afterRevision: params.expectedRevision,
+    });
+    const conflict = getCanvasOperationConflict(operations, remoteOperations);
+    if (conflict.hasConflict) {
+      throw new ProjectCanvasDraftEntityConflictError(conflict.entityKeys);
+    }
+    rebased = true;
+  }
+
+  const resultingDocument = applyCanvasDraftOperations(
+    // A project may not have a mutable draft yet. In that first batch the
+    // client branch is rooted in the immutable snapshot, so use its validated
+    // materialized document as the base instead of accidentally starting empty.
+    latest.document ?? params.cloudDocument,
+    operations.map((operation) => operation.payload),
+  );
+  const resultingDocumentHash = createDocumentHash(resultingDocument);
+  const rpcClient = supabase as unknown as DraftRpcClient;
+  const { data, error } = await rpcClient.rpc("commit_project_canvas_operation_batch", {
+    actor_user_id: params.actorUserId,
+    target_project_id: params.projectId,
+    expected_revision: actualRevision,
+    target_batch_id: params.batchId,
+    target_client_id: params.clientId,
+    batch_operations: operations,
+    resulting_canvas_json: resultingDocument,
+    resulting_document_hash: resultingDocumentHash,
+    draft_base_snapshot_id: params.baseSnapshotId,
+  });
+  if (error) {
+    throwIfConflict(error.message);
+  }
+
+  const savedDraft = (data as CommitProjectCanvasOperationBatchRpcRow[] | null)?.[0];
+  if (!savedDraft) {
+    throw new Error("Draft operation batch RPC returned no draft row.");
+  }
+
+  return {
+    draft: toDraftMeta(savedDraft),
+    batchId: savedDraft.batch_id,
+    ackedOperationIds: savedDraft.acked_operation_ids ?? operations.map((operation) => operation.operationId),
+    document: resultingDocument,
+    rebased,
+  };
+}
+
+export async function createProjectCanvasRecovery(
+  supabase: SupabaseClient<Database>,
+  params: {
+    projectId: string;
+    actorUserId: string;
+    clientId: string;
+    baseRevision: number;
+    cloudRevision: number;
+    documentHash: string;
+    document: CanvasSnapshotDocument;
+    conflictingEntityKeys: string[];
+    reason: string;
+  },
+) {
+  const { data, error } = await supabase
+    .from("project_canvas_recoveries" as never)
+    .insert({
+      project_id: params.projectId,
+      created_by: params.actorUserId,
+      client_id: params.clientId,
+      base_revision: params.baseRevision,
+      cloud_revision: params.cloudRevision,
+      document_hash: params.documentHash,
+      canvas_json: params.document,
+      conflicting_entity_keys: params.conflictingEntityKeys,
+      reason: params.reason,
+    } as never)
+    .select("id, project_id, created_by, client_id, base_revision, cloud_revision, document_hash, canvas_json, conflicting_entity_keys, reason, created_at, resolved_at")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Recovery save returned no row.");
+  }
+  return toRecovery(data as ProjectCanvasRecoveryRow);
+}
+
+export async function listProjectCanvasRecoveries(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+) {
+  const { data, error } = await supabase
+    .from("project_canvas_recoveries" as never)
+    .select("id, project_id, created_by, client_id, base_revision, cloud_revision, document_hash, canvas_json, conflicting_entity_keys, reason, created_at, resolved_at")
+    .eq("project_id" as never, projectId)
+    .is("resolved_at" as never, null)
+    .order("created_at" as never, { ascending: false });
+  if (error) {
+    throw new Error(error.message);
+  }
+  return ((data ?? []) as ProjectCanvasRecoveryRow[]).map(toRecovery);
+}
+
+export async function resolveProjectCanvasRecovery(
+  supabase: SupabaseClient<Database>,
+  params: { projectId: string; recoveryId: string },
+) {
+  const { error } = await supabase
+    .from("project_canvas_recoveries" as never)
+    .update({ resolved_at: new Date().toISOString() } as never)
+    .eq("id" as never, params.recoveryId)
+    .eq("project_id" as never, params.projectId);
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export async function finalizeProjectCanvasDraft(
