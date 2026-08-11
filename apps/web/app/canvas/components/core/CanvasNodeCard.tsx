@@ -1615,6 +1615,7 @@ export default function CanvasNodeCard({
             <ContextualToolbar
               itemLabel={getNodeKindLabel(node.role)}
               viewportZoom={viewportZoom}
+              visualTopOffset={isAssistant || isImageGenerator ? 36 : 0}
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
               onTool={onTool}

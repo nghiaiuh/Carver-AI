@@ -12,9 +12,15 @@
 import { Play, ChevronDown, Link2, Crop, Trash2, MoreHorizontal, Paintbrush } from "lucide-react";
 import type { EditorTool } from "../../types/canvas";
 
+// These are screen-space measurements. The world layer scales with zoom, so
+// both values must be converted back into world units before positioning.
+const CONTEXTUAL_TOOLBAR_HEIGHT_PX = 42;
+const CONTEXTUAL_TOOLBAR_OBJECT_GAP_PX = 12;
+
 type ContextualToolbarProps = {
   itemLabel: "Image" | "Reference" | "Object" | "Assistant" | "Image Generator" | "Text note";
   viewportZoom?: number;
+  visualTopOffset?: number;
   onMultiAngle: () => void;
   onAddObject: () => void;
   onTool: (tool: EditorTool) => void;
@@ -25,18 +31,25 @@ type ContextualToolbarProps = {
 
 export default function ContextualToolbar({
   viewportZoom = 1,
+  visualTopOffset = 0,
   onTool,
   onToast,
   onDelete,
   onRun,
 }: ContextualToolbarProps) {
-  const uiScale = 1 / viewportZoom;
+  const uiScale = 1 / Math.max(viewportZoom, 0.0001);
+  const toolbarOffset =
+    visualTopOffset +
+    (CONTEXTUAL_TOOLBAR_HEIGHT_PX + CONTEXTUAL_TOOLBAR_OBJECT_GAP_PX) * uiScale;
 
   return (
     <div
       className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-1 rounded-2xl border border-[#E5E3DC] bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-md"
       style={{
-        top: `${-86 * uiScale}px`,
+        // `visualTopOffset` includes content such as an Assistant title which
+        // scales with the canvas above the card frame. The remaining terms stay
+        // fixed in screen pixels, so the gap is stable at every zoom level.
+        top: `${-toolbarOffset}px`,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
