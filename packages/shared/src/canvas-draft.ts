@@ -97,6 +97,112 @@ export type CanvasDraftOperation =
   | CanvasDraftPenSettingsSetOperation
   | CanvasDraftCameraSetOperation;
 
+/**
+ * Transport shape used by the operation-first draft API. `payload` keeps the
+ * legacy operation intact so old snapshots can continue to replay while the
+ * server records a stable, collaboration-ready entity key.
+ */
+export type CanvasOperationV2Type =
+  | CanvasDraftOperation["type"]
+  | "marker.upsert"
+  | "marker.delete"
+  | "added-object.upsert"
+  | "added-object.delete"
+  | "sketch-line.upsert"
+  | "sketch-line.delete"
+  | "sketch-group.upsert"
+  | "sketch-group.delete"
+  | "pen-stroke.upsert"
+  | "pen-stroke.delete";
+
+export type CanvasOperationV2 = {
+  operationId: string;
+  projectId: string;
+  clientId: string;
+  clientSequence: number;
+  committedRevision?: number;
+  baseRevision: number | null;
+  entityKey: string;
+  type: CanvasOperationV2Type;
+  payload: CanvasDraftOperation;
+  createdAt: string;
+};
+
+export type CanvasOperationConflict = {
+  entityKeys: string[];
+  hasConflict: boolean;
+};
+
+export function getCanvasDraftOperationEntityKey(operation: CanvasDraftOperation) {
+  switch (operation.type) {
+    case "node.upsert":
+    case "node.delete":
+      return `node:${operation.nodeId}`;
+    case "edge.upsert":
+    case "edge.delete":
+      return `edge:${operation.edgeId}`;
+    case "target.set":
+      return "target";
+    case "markers.set":
+      return "markers";
+    case "added-objects.set":
+      return "added-objects";
+    case "sketch-lines.set":
+      return "sketch-lines";
+    case "sketch-groups.set":
+      return "sketch-groups";
+    case "pen-strokes.set":
+      return "pen-strokes";
+    case "pen-settings.set":
+      return "pen-settings";
+    case "camera.set":
+      // Camera remains snapshot-compatible today. A later per-user view-state
+      // migration can omit this entity from shared operation batches.
+      return "camera";
+  }
+}
+
+export function toCanvasOperationV2(
+  operation: CanvasDraftOperation,
+  params: { clientId: string; clientSequence: number },
+): CanvasOperationV2 {
+  return {
+    operationId: operation.operationId,
+    projectId: operation.projectId,
+    clientId: params.clientId,
+    clientSequence: params.clientSequence,
+    baseRevision: operation.baseRevision,
+    entityKey: getCanvasDraftOperationEntityKey(operation),
+    type: operation.type,
+    payload: operation,
+    createdAt: operation.createdAt,
+  };
+}
+
+export function getCanvasOperationConflict(
+  localOperations: Array<CanvasOperationV2 | CanvasDraftOperation>,
+  remoteOperations: Array<CanvasOperationV2 | CanvasDraftOperation>,
+): CanvasOperationConflict {
+  const localKeys = new Set(
+    localOperations.map((operation) =>
+      "entityKey" in operation
+        ? operation.entityKey
+        : getCanvasDraftOperationEntityKey(operation),
+    ),
+  );
+  const entityKeys = [...new Set(
+    remoteOperations
+      .map((operation) =>
+        "entityKey" in operation
+          ? operation.entityKey
+          : getCanvasDraftOperationEntityKey(operation),
+      )
+      .filter((entityKey) => localKeys.has(entityKey)),
+  )].sort();
+
+  return { entityKeys, hasConflict: entityKeys.length > 0 };
+}
+
 export type CanvasDraftCheckpoint = {
   document: CanvasSnapshotDocument;
   documentHash: string;

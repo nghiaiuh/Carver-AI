@@ -4,6 +4,8 @@ import {
   applyCanvasDraftOperations,
   buildCanvasDraftOperations,
   createEmptyCanvasSnapshotDocument,
+  getCanvasOperationConflict,
+  toCanvasOperationV2,
 } from "./index";
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
@@ -127,4 +129,55 @@ test("draft operations replay viewport zoom changes", () => {
 
   assert.equal(restored.camera.zoom, 1.75);
   assert.deepEqual(restored.camera, nextDocument.camera);
+});
+
+test("draft operation conflicts only when two batches touch the same entity", () => {
+  const original = buildDocument();
+  const local = buildDocument();
+  const remote = buildDocument();
+  local.graph.nodes[0] = { ...local.graph.nodes[0], x: 120 };
+  remote.graph.nodes[1] = { ...remote.graph.nodes[1], x: 540 };
+
+  const localOperations = buildCanvasDraftOperations({
+    previousDocument: original,
+    nextDocument: local,
+    projectId: PROJECT_ID,
+    tabId: "tab-local",
+    baseRevision: 3,
+    sequenceStart: 0,
+  }).operations.map((operation, index) => toCanvasOperationV2(operation, {
+    clientId: "tab-local",
+    clientSequence: index + 1,
+  }));
+  const remoteOperations = buildCanvasDraftOperations({
+    previousDocument: original,
+    nextDocument: remote,
+    projectId: PROJECT_ID,
+    tabId: "tab-remote",
+    baseRevision: 3,
+    sequenceStart: 0,
+  }).operations.map((operation, index) => toCanvasOperationV2(operation, {
+    clientId: "tab-remote",
+    clientSequence: index + 1,
+  }));
+
+  assert.equal(getCanvasOperationConflict(localOperations, remoteOperations).hasConflict, false);
+
+  const sameNode = buildDocument();
+  sameNode.graph.nodes[0] = { ...sameNode.graph.nodes[0], y: 200 };
+  const sameNodeOperations = buildCanvasDraftOperations({
+    previousDocument: original,
+    nextDocument: sameNode,
+    projectId: PROJECT_ID,
+    tabId: "tab-remote",
+    baseRevision: 3,
+    sequenceStart: 0,
+  }).operations.map((operation, index) => toCanvasOperationV2(operation, {
+    clientId: "tab-remote",
+    clientSequence: index + 1,
+  }));
+
+  const conflict = getCanvasOperationConflict(localOperations, sameNodeOperations);
+  assert.equal(conflict.hasConflict, true);
+  assert.deepEqual(conflict.entityKeys, ["node:pasted-image"]);
 });
