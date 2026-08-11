@@ -1,3 +1,5 @@
+import type { ImageGeneratorAspectRatio } from "@carver/shared";
+
 /*
  * Shared canvas domain types.
  * All types that were previously embedded in CanvasWorkspace.tsx live here
@@ -271,7 +273,7 @@ type CanvasNodeBase = {
 };
 
 export type CanvasAssistantOutputFormat = "list" | "text";
-export type CanvasImageGeneratorAspectRatio = "1:1" | "2:3" | "3:2";
+export type CanvasImageGeneratorAspectRatio = ImageGeneratorAspectRatio;
 export type CanvasImageGeneratorStatus =
   | "idle"
   | "queued"
@@ -317,6 +319,12 @@ export type CanvasImageGeneratorState = {
   selectedOutputAssetId?: string;
   errorMessage?: string;
   lastRunAt?: string;
+  activeJobId?: string;
+};
+
+export type CanvasImageOutputGalleryState = {
+  generatorNodeId: string;
+  selectedOutputAssetId?: string;
 };
 
 export type CanvasImageNode = CanvasNodeBase & {
@@ -355,12 +363,22 @@ export type CanvasImageGeneratorNode = CanvasNodeBase & {
   text?: never;
 };
 
+export type CanvasImageOutputGalleryNode = CanvasNodeBase & {
+  kind: "image-output-gallery";
+  imageOutputGallery: CanvasImageOutputGalleryState;
+  presetGroup?: never;
+  assistant?: never;
+  text?: never;
+  imageGenerator?: never;
+};
+
 export type CanvasNode =
   | CanvasImageNode
   | CanvasPresetGroupNode
   | CanvasAssistantNode
   | CanvasTextNode
-  | CanvasImageGeneratorNode;
+  | CanvasImageGeneratorNode
+  | CanvasImageOutputGalleryNode;
 
 export function isCanvasTextNode(node: CanvasNode): node is CanvasTextNode {
   return node.kind === "text";
@@ -368,6 +386,10 @@ export function isCanvasTextNode(node: CanvasNode): node is CanvasTextNode {
 
 export function isCanvasImageGeneratorNode(node: CanvasNode): node is CanvasImageGeneratorNode {
   return node.kind === "image-generator";
+}
+
+export function isCanvasImageOutputGalleryNode(node: CanvasNode): node is CanvasImageOutputGalleryNode {
+  return node.kind === "image-output-gallery";
 }
 
 export type CanvasEdge = {

@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { getOptionalBrowserSupabaseClient } from "@carver/db/client";
 import { useCanvasLibrary } from "./useCanvasLibrary";
 import {
@@ -19,6 +19,7 @@ import {
   type CanvasSnapshotDocument,
   type CarverAiJobRecord,
 } from "@carver/shared";
+import { getImageGeneratorCardSize, resolveImageGeneratorAspectRatio } from "@carver/shared";
 import {
   buildCanvasThemeStyle,
   CANVAS_THEME_STORAGE_KEY,
@@ -34,15 +35,18 @@ import {
   type CanvasPresetGroupNode,
   DEFAULT_ASSISTANT_NODE_HEIGHT,
   DEFAULT_ASSISTANT_NODE_WIDTH,
-  DEFAULT_IMAGE_GENERATOR_NODE_HEIGHT,
-  DEFAULT_IMAGE_GENERATOR_NODE_WIDTH,
   DEFAULT_PEN_SETTINGS,
   IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
   IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
 } from "../types/canvas";
-import { getAssistantInputPorts, getImageGeneratorInputPorts } from "../utils/canvasNodePorts";
+import {
+  getAssistantInputPorts,
+  getCanvasNodeVisualScale,
+  getImageGeneratorInputPorts,
+  getImageOutputGalleryInputPorts,
+} from "../utils/canvasNodePorts";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import {
   buildCanvasGenerationContext,
@@ -72,6 +76,7 @@ import type {
   AddedObject,
   CanvasEdge,
   CanvasImageGeneratorNode,
+  CanvasImageOutputGalleryNode,
   MaskData,
   CanvasNode,
   EditorTool,
@@ -84,7 +89,11 @@ import type {
   SketchGroup,
   SketchLine,
 } from "../types/canvas";
-import { isCanvasImageGeneratorNode, isCanvasTextNode } from "../types/canvas";
+import {
+  isCanvasImageGeneratorNode,
+  isCanvasImageOutputGalleryNode,
+  isCanvasTextNode,
+} from "../types/canvas";
 import {
   isAssistantNode,
   isPresetGroupNode,
@@ -502,6 +511,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const [generationAssistantMessages, setGenerationAssistantMessages] = useState<CanvasGenerationAssistantMessage[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [pendingGenerationJobs, setPendingGenerationJobs] = useState<PendingGenerationJob[]>([]);
+  const generationPollInFlightJobIdsRef = useRef(new Set<string>());
   const [resolvedGeneratorAssetUrls, setResolvedGeneratorAssetUrls] = useState<Record<string, ResolvedAssetUrls>>({});
 
   // ── UI state ────────────────────────────────────────────────────────────────
@@ -604,6 +614,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             !isPresetGroupNode(node) &&
             !isAssistantNode(node) &&
             !isCanvasImageGeneratorNode(node) &&
+            !isCanvasImageOutputGalleryNode(node) &&
             !isCanvasTextNode(node),
         ) ?? null
       : null;
@@ -1025,8 +1036,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     }
 
     if (params.targetType === "image-generator" && params.targetNodeId) {
-      setNodes((current) =>
-        current.map((node) => {
+      setNodes((current) => {
+        const nextNodes = current.map((node) => {
           if (node.id !== params.targetNodeId || node.kind !== "image-generator") {
             return node;
           }
@@ -1048,9 +1059,21 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
               : outputs[0]?.assetId;
           const selectedOutput =
             outputs.find((output) => output.assetId === selectedOutputAssetId) ?? outputs[0] ?? null;
+          const nextSize =
+            node.imageGenerator.aspectRatio === "auto" && selectedOutput?.width && selectedOutput?.height
+              ? getImageGeneratorCardSize({
+                  ratio: resolveImageGeneratorAspectRatio({
+                    requested: "auto",
+                    inputWidth: selectedOutput.width,
+                    inputHeight: selectedOutput.height,
+                  }),
+                  shortSide: Math.min(node.width, node.height),
+                })
+              : null;
 
           return {
             ...node,
+            ...(nextSize ?? {}),
             imageUrl: selectedOutput?.imageUrl ?? "",
             sourceImage: selectedOutput
               ? {
@@ -1073,10 +1096,69 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
               selectedOutputAssetId,
               errorMessage: undefined,
               lastRunAt: new Date().toISOString(),
+              activeJobId: undefined,
             },
           };
-        }),
-      );
+        });
+        const generator = nextNodes.find(
+          (node): node is CanvasImageGeneratorNode =>
+            node.id === params.targetNodeId && node.kind === "image-generator",
+        );
+        if (!generator) return nextNodes;
+
+        const galleryId = `image-output-gallery-${generator.id}`;
+        const existingGallery = nextNodes.find(
+          (node) => node.kind === "image-output-gallery" && node.imageOutputGallery.generatorNodeId === generator.id,
+        );
+        const gallery: CanvasImageOutputGalleryNode = existingGallery && existingGallery.kind === "image-output-gallery"
+          ? {
+              ...existingGallery,
+              imageOutputGallery: {
+                ...existingGallery.imageOutputGallery,
+                selectedOutputAssetId: generator.imageGenerator.selectedOutputAssetId,
+              },
+            }
+          : {
+              id: galleryId,
+              kind: "image-output-gallery",
+              x: generator.x + generator.width * getCanvasNodeVisualScale(generator) + 80,
+              y: generator.y,
+              width: 260,
+              height: Math.max(240, Math.min(generator.height, 420)),
+              scale: 1,
+              imageUrl: "",
+              title: `${generator.title} Outputs`,
+              prompt: null,
+              role: "output",
+              inputPorts: getImageOutputGalleryInputPorts(),
+              imageOutputGallery: {
+                generatorNodeId: generator.id,
+                selectedOutputAssetId: generator.imageGenerator.selectedOutputAssetId,
+              },
+            };
+        return existingGallery
+          ? nextNodes.map((node) => node.id === gallery.id ? gallery : node)
+          : [...nextNodes, gallery];
+      });
+      setEdges((current) => {
+        const edgeId = `image-generator-gallery-edge-${params.targetNodeId}`;
+        return current.some((edge) => edge.id === edgeId)
+          ? current
+          : [
+              ...current,
+              {
+                id: edgeId,
+                sourceId: params.targetNodeId!,
+                targetId: `image-output-gallery-${params.targetNodeId}`,
+                sourcePortId: "image-generator-output-image",
+                targetPortId: "image-output-gallery-input-image",
+                kind: "image",
+                label: "Generated output",
+                role: "output_result",
+                createdAt: new Date().toISOString(),
+              },
+            ];
+      });
       setSelectedItem({ type: "node", id: params.targetNodeId });
       setActiveNodeId(params.targetNodeId);
       showToast(getTerminalGenerationStatusMessage(params.job));
@@ -1101,6 +1183,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     setSelectedItem({ type: "node", id: outputNode.id });
     showToast(getTerminalGenerationStatusMessage(params.job));
   }, [activeGenerationTarget, nodes]);
+  const applyCompletedGenerationJobEvent = useEffectEvent(applyCompletedGenerationJob);
 
   const syncCloudDraft = useCallback(async (syncParams: {
     projectId?: string;
@@ -2025,33 +2108,67 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [currentUserId, params.projectId]);
 
   useEffect(() => {
+    if (!params.projectId) return;
+
+    const resumableJobs = nodes.flatMap((node) =>
+      node.kind === "image-generator" &&
+      node.imageGenerator.activeJobId &&
+      (node.imageGenerator.status === "queued" || node.imageGenerator.status === "generating")
+        ? [{
+            jobId: node.imageGenerator.activeJobId,
+            projectId: params.projectId!,
+            targetNodeId: node.id,
+            targetType: "image-generator" as const,
+          }]
+        : [],
+    );
+    if (resumableJobs.length === 0) return;
+
+    setPendingGenerationJobs((current) => {
+      const missing = resumableJobs.filter((candidate) => !current.some((entry) => entry.jobId === candidate.jobId));
+      return missing.length > 0 ? [...current, ...missing] : current;
+    });
+  }, [nodes, params.projectId]);
+
+  useEffect(() => {
     if (pendingGenerationJobs.length === 0) return;
 
     let cancelled = false;
-    let intervalId: number | null = null;
-    const inFlightJobIds = new Set<string>();
+    let timeoutId: number | null = null;
     const setGeneratorRuntimeState = (
       nodeId: string,
       update: Partial<CanvasImageGeneratorNode["imageGenerator"]>,
     ) => {
-      setNodes((current) =>
-        current.map((node) =>
-          node.id === nodeId && node.kind === "image-generator"
-            ? {
-                ...node,
-                imageGenerator: {
-                  ...node.imageGenerator,
-                  ...update,
-                },
-              }
-            : node,
-        ),
-      );
+      setNodes((current) => {
+        let changed = false;
+        const next = current.map((node) => {
+          if (node.id !== nodeId || node.kind !== "image-generator") {
+            return node;
+          }
+
+          const hasChange = Object.entries(update).some(
+            ([key, value]) => node.imageGenerator[key as keyof typeof node.imageGenerator] !== value,
+          );
+          if (!hasChange) {
+            return node;
+          }
+
+          changed = true;
+          return {
+            ...node,
+            imageGenerator: {
+              ...node.imageGenerator,
+              ...update,
+            },
+          };
+        });
+        return changed ? next : current;
+      });
     };
 
     const pollPendingJob = async (pendingJob: PendingGenerationJob) => {
-      if (cancelled || inFlightJobIds.has(pendingJob.jobId)) return;
-      inFlightJobIds.add(pendingJob.jobId);
+      if (cancelled || generationPollInFlightJobIdsRef.current.has(pendingJob.jobId)) return;
+      generationPollInFlightJobIdsRef.current.add(pendingJob.jobId);
 
       try {
         const response = await authedFetch(
@@ -2062,6 +2179,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           },
         );
         const payload = (await response.json().catch(() => ({}))) as GetAiJobResponse;
+        if (cancelled) return;
         recordAiJobPollRequest({
           jobId: pendingJob.jobId,
           projectId: pendingJob.projectId,
@@ -2108,6 +2226,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
               setGeneratorRuntimeState(pendingJob.targetNodeId, {
                 status: "error",
                 errorMessage: job.errorMessage ?? "Generation failed. Please try again.",
+                activeJobId: undefined,
               });
             }
             showToast(getTerminalGenerationStatusMessage(job));
@@ -2122,13 +2241,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           terminalStatus: "succeeded",
           generatedImageCount: job.jobResult?.generatedImages?.length ?? 0,
         });
-        applyCompletedGenerationJob({
+        applyCompletedGenerationJobEvent({
           job,
           targetNodeId: pendingJob.targetNodeId,
           targetType: pendingJob.targetType,
           syncAssistantMessage: pendingJob.targetType !== "image-generator",
         });
       } catch (error) {
+        if (cancelled) return;
         finishAiJobBenchmarkRun({
           jobId: pendingJob.jobId,
           projectId: pendingJob.projectId,
@@ -2141,11 +2261,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           setGeneratorRuntimeState(pendingJob.targetNodeId, {
             status: "error",
             errorMessage: error instanceof Error ? error.message : "Unable to load AI job status.",
+            activeJobId: undefined,
           });
         }
         showToast(error instanceof Error ? error.message : "Unable to load AI job status.");
       } finally {
-        inFlightJobIds.delete(pendingJob.jobId);
+        generationPollInFlightJobIdsRef.current.delete(pendingJob.jobId);
       }
     };
 
@@ -2153,18 +2274,24 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       await Promise.all(pendingGenerationJobs.map((pendingJob) => pollPendingJob(pendingJob)));
     };
 
-    void pollJobs();
-    intervalId = window.setInterval(() => {
-      void pollJobs();
-    }, 2000);
+    const pollAndScheduleNext = async () => {
+      await pollJobs();
+      if (!cancelled) {
+        timeoutId = window.setTimeout(() => {
+          void pollAndScheduleNext();
+        }, 2000);
+      }
+    };
+
+    void pollAndScheduleNext();
 
     return () => {
       cancelled = true;
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
       }
     };
-  }, [applyCompletedGenerationJob, pendingGenerationJobs, supabase]);
+  }, [pendingGenerationJobs, supabase]);
 
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -2351,13 +2478,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const anchorNode = selectedNode ?? nodes.at(-1) ?? null;
     const id = `image-generator-${Date.now()}`;
     const title = `Image Generator #${nodes.filter((node) => isCanvasImageGeneratorNode(node)).length + 1}`;
+    const defaultSize = getImageGeneratorCardSize({ ratio: "1:1" });
     const newNode: CanvasNode = {
       id,
       kind: "image-generator",
       x: anchorNode ? anchorNode.x + anchorNode.width + 112 : 280 + nodes.length * 24,
       y: anchorNode ? anchorNode.y : 220 + nodes.length * 18,
-      width: DEFAULT_IMAGE_GENERATOR_NODE_WIDTH,
-      height: DEFAULT_IMAGE_GENERATOR_NODE_HEIGHT,
+      width: defaultSize.width,
+      height: defaultSize.height,
       scale: 1,
       imageUrl: "",
       title,
@@ -2627,6 +2755,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       updateImageGeneratorNode(nodeId, {
         status: job.status === "running" ? "generating" : job.status === "queued" ? "queued" : "generating",
         errorMessage: undefined,
+        activeJobId: job.id,
       });
 
       setPendingGenerationJobs((current) => {

@@ -192,6 +192,11 @@ type CanvasBoardProps = {
 };
 
 type DeletedNodeSnapshot = {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+};
+
+type CreatedNodeSnapshot = {
   node: CanvasNode;
   edges: CanvasEdge[];
 };
@@ -378,7 +383,7 @@ export default function CanvasBoard({
   const pendingWheelCursorRef = useRef<Point | null>(null);
   const [deletedNodeStack, setDeletedNodeStack] = useState<DeletedNodeSnapshot[]>([]);
   const [createdNodeStack, setCreatedNodeStack] = useState<CanvasNode[]>([]);
-  const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<DeletedNodeSnapshot[]>([]);
+  const [createdNodeRedoStack, setCreatedNodeRedoStack] = useState<CreatedNodeSnapshot[]>([]);
   const [createdEdgeStack, setCreatedEdgeStack] = useState<CreatedEdgeSnapshot[]>([]);
   const [createdEdgeRedoStack, setCreatedEdgeRedoStack] = useState<CreatedEdgeSnapshot[]>([]);
   const [nodeResizeUndoStack, setNodeResizeUndoStack] = useState<NodeResizeSnapshot[]>([]);
@@ -1740,11 +1745,26 @@ export default function CanvasBoard({
       const nodeToDelete = nodes.find((node) => node.id === nodeId);
       if (!nodeToDelete) return;
 
-      const relatedEdges = edges.filter((edge) => edge.sourceId === nodeId || edge.targetId === nodeId);
+      const cascadeNodeIds = new Set([
+        nodeId,
+        ...(nodeToDelete.kind === "image-generator"
+          ? nodes
+              .filter(
+                (node) =>
+                  node.kind === "image-output-gallery" &&
+                  node.imageOutputGallery.generatorNodeId === nodeId,
+              )
+              .map((node) => node.id)
+          : []),
+      ]);
+      const deletedNodes = nodes.filter((node) => cascadeNodeIds.has(node.id));
+      const relatedEdges = edges.filter(
+        (edge) => cascadeNodeIds.has(edge.sourceId) || cascadeNodeIds.has(edge.targetId),
+      );
 
-      setDeletedNodeStack((prev) => [...prev, { node: nodeToDelete, edges: relatedEdges }]);
-      onNodesChange((prev) => prev.filter((node) => node.id !== nodeId));
-      onEdgesChange((prev) => prev.filter((edge) => edge.sourceId !== nodeId && edge.targetId !== nodeId));
+      setDeletedNodeStack((prev) => [...prev, { nodes: deletedNodes, edges: relatedEdges }]);
+      onNodesChange((prev) => prev.filter((node) => !cascadeNodeIds.has(node.id)));
+      onEdgesChange((prev) => prev.filter((edge) => !cascadeNodeIds.has(edge.sourceId) && !cascadeNodeIds.has(edge.targetId)));
       if (activeNodeId === nodeId) {
         const nextActiveNode = nodes.find((node) => node.id !== nodeId);
         onSetActiveNode(nextActiveNode?.id ?? "");
@@ -1777,15 +1797,18 @@ export default function CanvasBoard({
     }
 
     setDeletedNodeStack((prev) => prev.slice(0, -1));
-    onNodesChange((currentNodes) =>
-      currentNodes.some((node) => node.id === snapshot.node.id) ? currentNodes : [...currentNodes, snapshot.node],
-    );
+    onNodesChange((currentNodes) => [
+      ...currentNodes,
+      ...snapshot.nodes.filter((node) => !currentNodes.some((currentNode) => currentNode.id === node.id)),
+    ]);
     onEdgesChange((currentEdges) => [
       ...currentEdges,
       ...snapshot.edges.filter((edge) => !currentEdges.some((currentEdge) => currentEdge.id === edge.id)),
     ]);
-    onSetActiveNode(snapshot.node.id);
-    onSelect({ type: "node", id: snapshot.node.id });
+    onSetActiveNode(snapshot.nodes[0]?.id ?? "");
+    if (snapshot.nodes[0]) {
+      onSelect({ type: "node", id: snapshot.nodes[0].id });
+    }
     onToast("Image restored");
     return true;
   }, [deletedNodeStack, onEdgesChange, onNodesChange, onSelect, onSetActiveNode, onToast]);
