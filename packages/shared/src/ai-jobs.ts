@@ -6,6 +6,7 @@
  */
 
 import type { CanvasReferenceRole, CanvasSnapshotDocument } from "./snapshot";
+import type { ImageGeneratorAspectRatio } from "./image-generator";
 import type {
   ExecutionDecision,
   ExecutionRevalidationContract,
@@ -82,8 +83,6 @@ export type ImageGeneratorTextReference = {
   content: string;
   sourceKind: "text" | "assistant";
 };
-
-export type ImageGeneratorAspectRatio = "1:1" | "2:3" | "3:2";
 
 export type ImageGeneratorGraphContext = {
   nodeId: string;

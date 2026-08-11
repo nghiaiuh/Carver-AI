@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IMAGE_GENERATOR_ASPECT_RATIO_VALUES } from "./image-generator";
 
 const MAX_PROMPT_LENGTH = 12_000;
 const MAX_LABEL_LENGTH = 240;
@@ -179,7 +180,7 @@ export const createAiJobBodySchema = z
     threadId: uuidLikeString.optional(),
     promptMode: z.enum(CARVER_PROMPT_MODE_VALUES).optional(),
     model: trimmedString.min(1).max(120).optional(),
-    aspectRatio: z.enum(["1:1", "2:3", "3:2"]).optional(),
+    aspectRatio: z.enum(IMAGE_GENERATOR_ASPECT_RATIO_VALUES).optional(),
     outputCount: z.number().int().min(1).max(4).optional(),
     referenceAssetIds: z.array(uuidLikeString).max(32).optional(),
     selection: selectionSchema.optional(),

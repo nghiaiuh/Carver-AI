@@ -11,5 +11,6 @@ export * from "./prompt-engine";
 export * from "./ai-jobs";
 export * from "./api-schemas";
 export * from "./constants";
+export * from "./image-generator";
 export * from "./safe-logger";
 export * from "./operational-alert";

@@ -1,3 +1,5 @@
+import type { ImageGeneratorAspectRatio } from "./image-generator";
+
 /*
  * Flow: Defines the canonical canvas snapshot document.
  * 1. Capture the canvas state that AI and versioning depend on.
@@ -134,7 +136,7 @@ export type CanvasGraphPresetChild = {
 
 export type CanvasGraphNodeSnapshot = {
   id: string;
-  kind: "image" | "presetGroup" | "assistant" | "text" | "image-generator";
+  kind: "image" | "presetGroup" | "assistant" | "text" | "image-generator" | "image-output-gallery";
   title: string;
   role: string;
   imageUrl: string;
@@ -167,7 +169,7 @@ export type CanvasGraphNodeSnapshot = {
   imageGenerator?: {
     prompt: string;
     model: string;
-    aspectRatio: "1:1" | "2:3" | "3:2";
+    aspectRatio: ImageGeneratorAspectRatio;
     outputCount: number;
     status: "idle" | "queued" | "generating" | "completed" | "error";
     outputAssetIds: string[];
@@ -184,6 +186,11 @@ export type CanvasGraphNodeSnapshot = {
     }>;
     errorMessage?: string;
     lastRunAt?: string;
+    activeJobId?: string;
+  };
+  imageOutputGallery?: {
+    generatorNodeId: string;
+    selectedOutputAssetId?: string;
   };
   text?: {
     content: string;
