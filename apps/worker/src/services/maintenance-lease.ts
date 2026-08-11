@@ -13,9 +13,18 @@ const logger = createSafeLogger("worker.maintenance-lease");
 type MaintenanceLeaseRpcClient = {
   rpc: (name: string, args: Record<string, unknown>) => Promise<{
     data: boolean | null;
-    error: { message: string } | null;
+    error: { code?: string | null; message: string } | null;
   }>;
 };
+
+export class MaintenanceLeaseError extends Error {
+  constructor(
+    readonly failureCode: "MAINTENANCE_LEASE_CLAIM_FAILED",
+    readonly databaseCode: string | null,
+  ) {
+    super(failureCode);
+  }
+}
 
 export type RunWithMaintenanceLease = <T>(
   taskName: string,
@@ -39,7 +48,9 @@ export function createMaintenanceLeaseRunner(holderId = `${process.env.HOSTNAME 
     });
 
     if (acquireError) {
-      throw new Error(`Unable to acquire maintenance lease for ${taskName}: ${acquireError.message}`);
+      // Keep the database message out of process logs; callers only need the
+      // stable operation and PostgREST/Postgres code to diagnose migrations.
+      throw new MaintenanceLeaseError("MAINTENANCE_LEASE_CLAIM_FAILED", acquireError.code ?? null);
     }
 
     if (!acquired) {
