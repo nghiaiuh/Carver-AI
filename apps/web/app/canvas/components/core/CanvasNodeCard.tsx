@@ -247,7 +247,7 @@ function AssistantPopoverButton({
         className={[
           "inline-flex min-w-0 items-center gap-1 rounded-full transition",
           isImageGeneratorOverlay
-            ? "h-8 border border-white/8 bg-black/26 px-3 text-xs font-medium text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md"
+            ? "h-7 border border-white/8 bg-black/26 px-2.5 text-[11px] font-medium text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md"
             : "h-6 bg-[var(--canvas-theme-surface-muted)] px-3 text-xs font-medium text-[var(--canvas-theme-text-soft)] opacity-80",
           disabled
             ? "cursor-not-allowed opacity-45"
@@ -260,12 +260,14 @@ function AssistantPopoverButton({
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <span className="max-w-32 truncate text-left text-xs">{label}</span>
+        <span className={`max-w-32 truncate text-left ${isImageGeneratorOverlay ? "text-[11px]" : "text-xs"}`}>
+          {label}
+        </span>
         <motion.span
           animate={{ rotate: isOpen ? 180 : 0 }}
           transition={{ duration: 0.16, ease: "easeOut" }}
         >
-          <ChevronDown className="h-3 w-3" strokeWidth={1.9} />
+          <ChevronDown className={isImageGeneratorOverlay ? "h-2.5 w-2.5" : "h-3 w-3"} strokeWidth={1.9} />
         </motion.span>
       </button>
 
@@ -748,6 +750,12 @@ function ImageGeneratorNodeSurface({
     null;
   const showInteractiveChrome = isHovered || selected;
   const showReferenceButton = connectedReferences.imageReferences.length > 0;
+  const hoverMotionEase = [0.22, 1, 0.36, 1] as const;
+  const revealTransition = (delay = 0, icon = false) => ({
+    duration: showInteractiveChrome ? (icon ? 0.16 : 0.2) : 0.16,
+    delay: showInteractiveChrome ? delay : 0,
+    ease: hoverMotionEase,
+  });
 
   const updateGenerator = (update: Partial<CanvasImageGeneratorNode["imageGenerator"]>) => {
     onUpdateNode(node.id, (current) =>
@@ -831,18 +839,18 @@ function ImageGeneratorNodeSurface({
             className="pointer-events-none absolute inset-0 z-[1]"
             style={{
               background:
-                "linear-gradient(to top, rgba(0, 0, 0, 0.26) 0%, rgba(0, 0, 0, 0.08) 30%, rgba(0, 0, 0, 0) 58%)",
+                "linear-gradient(to top, rgba(0, 0, 0, 0.08) 0%, rgba(0, 0, 0, 0.03) 32%, rgba(0, 0, 0, 0) 60%)",
             }}
           />
           <motion.div
             aria-hidden="true"
             initial={false}
             animate={{ opacity: showInteractiveChrome ? 1 : 0 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
+            transition={{ duration: 0.24, ease: "easeOut" }}
             className="pointer-events-none absolute inset-0 z-[2]"
             style={{
               background:
-                "linear-gradient(to top, rgba(0, 0, 0, 0.50) 0%, rgba(0, 0, 0, 0.5) 20%, rgba(0, 0, 0, 0.34) 48%, rgba(0, 0, 0, 0) 76%)",
+                "linear-gradient(to bottom, rgba(0, 0, 0, 0.10) 0%, rgba(0, 0, 0, 0.20) 45%, rgba(0, 0, 0, 0.58) 100%)",
             }}
           />
         </>
@@ -863,30 +871,38 @@ function ImageGeneratorNodeSurface({
           </div>
         ) : null}
 
-        <motion.div
-          initial={false}
-          animate={{
-            opacity: showInteractiveChrome ? 1 : 0,
-            y: showInteractiveChrome ? 0 : 4,
-          }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
+        <div
           className="absolute left-4 top-4 z-20 flex items-center gap-2"
           style={{ pointerEvents: showInteractiveChrome ? "auto" : "none" }}
         >
-          <button
+          <motion.button
             type="button"
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/8 bg-black/28 text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur-md transition hover:bg-black/38"
+            initial={false}
+            animate={{
+              opacity: showInteractiveChrome ? 1 : 0,
+              y: showInteractiveChrome ? 0 : 6,
+              scale: showInteractiveChrome ? 1 : 0.94,
+            }}
+            transition={revealTransition(0.05, true)}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/8 bg-black/28 text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur-md transition hover:bg-black/38"
             title="Add a reference image node"
             onClick={() => {
               textareaRef.current?.focus();
               onToast("Add or connect an image node to use it as a generator reference.");
             }}
           >
-            <Plus className="h-5 w-5" strokeWidth={2.2} />
-          </button>
-          <button
+            <Plus className="h-4 w-4" strokeWidth={2.2} />
+          </motion.button>
+          <motion.button
             type="button"
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/8 bg-black/28 text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur-md transition hover:bg-black/38"
+            initial={false}
+            animate={{
+              opacity: showInteractiveChrome ? 1 : 0,
+              y: showInteractiveChrome ? 0 : 6,
+              scale: showInteractiveChrome ? 1 : 0.94,
+            }}
+            transition={revealTransition(0.07, true)}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/8 bg-black/28 text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur-md transition hover:bg-black/38"
             title={showReferenceButton ? "Show connected references" : "No connected image references yet"}
             onClick={() => {
               if (!showReferenceButton) {
@@ -896,9 +912,9 @@ function ImageGeneratorNodeSurface({
               setOpenMenu((current) => (current === "references" ? null : "references"));
             }}
           >
-            <List className="h-5 w-5" strokeWidth={2.1} />
-          </button>
-        </motion.div>
+            <List className="h-4 w-4" strokeWidth={2.1} />
+          </motion.button>
+        </div>
 
         <AnimatePresence>
           {openMenu === "references" && showReferenceButton ? (
@@ -907,7 +923,7 @@ function ImageGeneratorNodeSurface({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
-              className="absolute left-4 top-[66px] z-30 max-w-[240px] rounded-[20px] border border-white/10 bg-black/42 p-2.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+              className="absolute left-4 top-[58px] z-30 max-w-[240px] rounded-[20px] border border-white/10 bg-black/42 p-2.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.24)] backdrop-blur-xl"
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/66">
                 Connected references
@@ -930,7 +946,15 @@ function ImageGeneratorNodeSurface({
           ) : null}
         </AnimatePresence>
 
-        <div className="absolute bottom-[88px] left-4 right-20 z-20">
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: showInteractiveChrome ? 0.9 : 0.65,
+            y: showInteractiveChrome ? 0 : 52,
+          }}
+          transition={{ duration: showInteractiveChrome ? 0.21 : 0.18, ease: hoverMotionEase }}
+          className="absolute bottom-[88px] left-4 right-20 z-20"
+        >
           <textarea
             ref={textareaRef}
             value={generator.prompt}
@@ -949,16 +973,16 @@ function ImageGeneratorNodeSurface({
             }
             className="min-h-12 max-h-[112px] w-full resize-none overflow-y-auto bg-transparent px-0 font-[var(--font-botanical-sans)] text-[15px] leading-7 text-[#A1A4A6] outline-none placeholder:text-white/62"
           />
-        </div>
+        </motion.div>
 
-        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="relative h-9 min-w-[64px] shrink-0">
+        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="relative h-7 w-[76px] shrink-0">
               <motion.div
                 initial={false}
                 animate={{ opacity: showInteractiveChrome ? 0 : 1, y: showInteractiveChrome ? 4 : 0 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center pl-4 text-[14px] font-semibold text-white/78"
+                transition={{ duration: showInteractiveChrome ? 0.15 : 0.16, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center pl-3 text-[13px] font-semibold text-white/78"
                 style={{ pointerEvents: showInteractiveChrome ? "none" : "auto" }}
               >
                 x{generator.outputCount}
@@ -966,13 +990,13 @@ function ImageGeneratorNodeSurface({
               <motion.div
                 initial={false}
                 animate={{ opacity: showInteractiveChrome ? 1 : 0, y: showInteractiveChrome ? 0 : 4 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
-                className="absolute inset-0 inline-flex items-center gap-1 rounded-full border border-white/8 bg-black/26 px-1.5 text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md"
+                transition={revealTransition(0.07)}
+                className="absolute inset-0 inline-flex items-center justify-center gap-0.5 rounded-full border border-white/8 bg-black/26 px-1 text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md"
                 style={{ pointerEvents: showInteractiveChrome ? "auto" : "none" }}
               >
                 <button
                   type="button"
-                  className="grid h-6 w-6 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={isRunning || generator.outputCount <= IMAGE_GENERATOR_MIN_OUTPUT_COUNT}
                   onClick={() =>
                     updateGenerator({
@@ -984,14 +1008,14 @@ function ImageGeneratorNodeSurface({
                   }
                   aria-label="Decrease output count"
                 >
-                  <Minus className="h-3.5 w-3.5" strokeWidth={2.1} />
+                  <Minus className="h-3 w-3" strokeWidth={2.1} />
                 </button>
-                <span className="min-w-[28px] text-center text-[12px] font-semibold text-white/90">
+                <span className="min-w-[24px] text-center text-[11px] font-semibold text-white/90">
                   x{generator.outputCount}
                 </span>
                 <button
                   type="button"
-                  className="grid h-6 w-6 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={isRunning || generator.outputCount >= IMAGE_GENERATOR_MAX_OUTPUT_COUNT}
                   onClick={() =>
                     updateGenerator({
@@ -1003,19 +1027,25 @@ function ImageGeneratorNodeSurface({
                   }
                   aria-label="Increase output count"
                 >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={2.1} />
+                  <Plus className="h-3 w-3" strokeWidth={2.1} />
                 </button>
               </motion.div>
             </div>
 
-            <motion.div
-              initial={false}
-              animate={{ opacity: showInteractiveChrome ? 1 : 0, y: showInteractiveChrome ? 0 : 4 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              className="flex items-center gap-2"
+            <div
+              className="flex items-center gap-1.5"
               style={{ pointerEvents: showInteractiveChrome ? "auto" : "none" }}
             >
-              <div className="shrink-0">
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: showInteractiveChrome ? 1 : 0,
+                  y: showInteractiveChrome ? 0 : 6,
+                  scale: showInteractiveChrome ? 1 : 0.98,
+                }}
+                transition={revealTransition(0.085)}
+                className="shrink-0"
+              >
                 <AssistantPopoverButton
                   label={
                     IMAGE_GENERATOR_MODEL_OPTIONS.find((option) => option.value === generator.model)?.label ??
@@ -1034,9 +1064,18 @@ function ImageGeneratorNodeSurface({
                   disabled={isRunning}
                   variant="image-generator-overlay"
                 />
-              </div>
+              </motion.div>
 
-              <div className="shrink-0">
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: showInteractiveChrome ? 1 : 0,
+                  y: showInteractiveChrome ? 0 : 6,
+                  scale: showInteractiveChrome ? 1 : 0.98,
+                }}
+                transition={revealTransition(0.105)}
+                className="shrink-0"
+              >
                 <AssistantPopoverButton
                   label={generator.aspectRatio}
                   isOpen={openMenu === "aspect"}
@@ -1072,35 +1111,43 @@ function ImageGeneratorNodeSurface({
                   disabled={isRunning}
                   variant="image-generator-overlay"
                 />
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </div>
 
           <motion.div
             initial={false}
             animate={{ opacity: showInteractiveChrome ? 1 : 0, y: showInteractiveChrome ? 0 : 4 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="flex items-center gap-2"
+            transition={revealTransition(0.12)}
+            className="flex items-center gap-1.5"
             style={{ pointerEvents: showInteractiveChrome ? "auto" : "none" }}
           >
             <button
               type="button"
               disabled={isRunning}
-              className="inline-flex h-8 items-center rounded-full border border-white/8 bg-black/26 px-3 text-xs font-medium text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md transition hover:bg-black/34 disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-7 items-center rounded-full border border-white/8 bg-black/26 px-2.5 text-[11px] font-medium text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md transition hover:bg-black/34 disabled:cursor-not-allowed disabled:opacity-45"
               onClick={() => setOpenMenu((current) => (current === "settings" ? null : "settings"))}
             >
               4K
-              <ChevronDown className="ml-1 h-3 w-3" strokeWidth={1.9} />
+              <ChevronDown className="ml-1 h-2.5 w-2.5" strokeWidth={1.9} />
             </button>
-            <div className="relative shrink-0">
+            <motion.div
+              initial={false}
+              animate={{
+                opacity: showInteractiveChrome ? 1 : 0,
+                scale: showInteractiveChrome ? 1 : 0.9,
+              }}
+              transition={revealTransition(0.135, true)}
+              className="relative shrink-0"
+            >
               <button
                 type="button"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/8 bg-black/26 text-white/88 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md transition hover:bg-black/34 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-7 w-7 place-items-center rounded-full border border-white/8 bg-black/26 text-white/88 shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md transition hover:bg-black/34 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={isRunning}
                 title="Advanced settings"
                 onClick={() => setOpenMenu((current) => (current === "settings" ? null : "settings"))}
               >
-                <Settings className="h-3.5 w-3.5" strokeWidth={1.9} />
+                <Settings className="h-3 w-3" strokeWidth={1.9} />
               </button>
               <AnimatePresence>
                 {openMenu === "settings" ? (
@@ -1119,7 +1166,7 @@ function ImageGeneratorNodeSurface({
                   </motion.div>
                 ) : null}
               </AnimatePresence>
-            </div>
+            </motion.div>
           </motion.div>
         </div>
 
@@ -1128,7 +1175,7 @@ function ImageGeneratorNodeSurface({
             type="button"
             disabled={isRunning || !hasPromptInput}
             className={[
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#1A1A1A] shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#1A1A1A] shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition",
               isRunning || !hasPromptInput
                 ? "cursor-not-allowed opacity-45"
                 : "hover:scale-[1.03] hover:bg-white/92",
@@ -1136,7 +1183,7 @@ function ImageGeneratorNodeSurface({
             title="Run image generator"
             onClick={runGenerator}
           >
-            <RefreshCw className={isRunning ? "h-4 w-4 animate-spin" : "h-5 w-5"} strokeWidth={2.1} />
+            <RefreshCw className={isRunning ? "h-3.5 w-3.5 animate-spin" : "h-4 w-4"} strokeWidth={2.1} />
           </button>
         </div>
       </div>
