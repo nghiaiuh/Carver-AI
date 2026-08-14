@@ -9,6 +9,7 @@ import { getSupabaseAdmin } from "@carver/db/server";
 import type { Database } from "@carver/db";
 import {
   coerceCanvasSnapshotDocument,
+  isImageGeneratorAspectRatio,
   type CarverAiJobPayload,
   type CarverAiJobSimulationConfig,
   type CreateAiJobRequest,
@@ -55,6 +56,35 @@ export type StaleRunningJob = {
   bullJobId: string | null;
   lastAttemptAt: string | null;
 };
+
+export function readPersistedGenerationOptions(payload: Record<string, unknown>) {
+  const imageGeneratorContext = objectValue(payload.imageGeneratorContext);
+  const targetType: CarverAiJobPayload["targetType"] =
+    payload.targetType === "canvas-node"
+      ? "canvas-node"
+      : payload.targetType === "image-generator"
+        ? "image-generator"
+        : undefined;
+  const outputCount =
+    typeof payload.outputCount === "number" && Number.isInteger(payload.outputCount)
+      ? Math.min(Math.max(payload.outputCount, 1), 4)
+      : undefined;
+
+  return {
+    targetType,
+    model: typeof payload.model === "string" && payload.model.trim() ? payload.model.trim() : undefined,
+    aspectRatio: isImageGeneratorAspectRatio(payload.aspectRatio) ? payload.aspectRatio : undefined,
+    outputCount,
+    imageGeneratorContext:
+      typeof imageGeneratorContext.nodeId === "string" &&
+      typeof imageGeneratorContext.nodeTitle === "string" &&
+      Array.isArray(imageGeneratorContext.imageReferences) &&
+      Array.isArray(imageGeneratorContext.presetReferences) &&
+      Array.isArray(imageGeneratorContext.textReferences)
+        ? (imageGeneratorContext as CreateAiJobRequest["imageGeneratorContext"])
+        : undefined,
+  };
+}
 
 type StartJobResult =
   | { kind: "started" | "resumed"; status: "running" }
@@ -192,6 +222,7 @@ const loadForProcessing = async (
   }
 
   const canvasGraphContext = objectValue(payload.canvasGraphContext);
+  const generationOptions = readPersistedGenerationOptions(payload);
 
   return {
     kind: "process",
@@ -214,6 +245,10 @@ const loadForProcessing = async (
         payload.executionMode === "region_edit"
           ? payload.executionMode
           : "image_edit",
+      targetType: generationOptions.targetType,
+      model: generationOptions.model,
+      aspectRatio: generationOptions.aspectRatio,
+      outputCount: generationOptions.outputCount,
       snapshot,
       referenceAssetIds: Array.isArray(payload.referenceAssetIds)
         ? payload.referenceAssetIds.filter((item): item is string => typeof item === "string")
@@ -231,6 +266,7 @@ const loadForProcessing = async (
       canvasGraphContext: "target" in canvasGraphContext
         ? (canvasGraphContext as CreateAiJobRequest["canvasGraphContext"])
         : undefined,
+      imageGeneratorContext: generationOptions.imageGeneratorContext,
       promptEngine: {
         contextRevision: snapshotVersion ?? snapshot.snapshotVersion,
         snapshotId:
