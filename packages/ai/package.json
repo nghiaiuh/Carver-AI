@@ -32,10 +32,10 @@
   },
   "dependencies": {
     "@carver/shared": "*",
-    "@langchain/langgraph": "^1.4.8"
+    "@langchain/langgraph": "^1.4.9"
   },
   "devDependencies": {
-    "@types/node": "^26",
+    "@types/node": "^26.2.0",
     "typescript": "^5.4.5"
   }
 }
