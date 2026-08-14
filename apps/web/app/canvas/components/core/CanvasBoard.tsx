@@ -8,6 +8,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CarverAiJobSimulationConfig } from "@carver/shared";
 import {
   ChevronDown,
   Download,
@@ -178,7 +179,10 @@ type CanvasBoardProps = {
     preserveTitle?: boolean;
   }>;
   onRunAssistantNode: (nodeId: string) => void | Promise<void>;
-  onRunImageGeneratorNode: (nodeId: string) => void | Promise<void>;
+  onRunImageGeneratorNode: (
+    nodeId: string,
+    options?: { simulation?: CarverAiJobSimulationConfig },
+  ) => void | Promise<void>;
   generatorAssetUrls: Record<string, {
     thumbUrl: string;
     previewUrl: string;

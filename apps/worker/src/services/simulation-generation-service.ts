@@ -1,4 +1,6 @@
 import type { CarverAiJobPayload, CarverAiJobSimulationConfig } from "@carver/shared";
+import { resolveImageGeneratorAspectRatio } from "@carver/shared";
+import sharp from "sharp";
 
 type SimulatedGeneratedImage = {
   buffer: Buffer;
@@ -11,8 +13,7 @@ type SimulatedGeneratedImage = {
 
 const DEFAULT_SIMULATION_DELAY_MS = 400;
 const SLOW_SIMULATION_DELAY_MS = 3_500;
-const SIMULATION_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9oN2VNcAAAAASUVORK5CYII=";
+const SIMULATION_RATIO_SCALE = 32;
 
 function resolveSimulationDelay(config: CarverAiJobSimulationConfig) {
   if (typeof config.delayMs === "number" && Number.isFinite(config.delayMs) && config.delayMs >= 0) {
@@ -24,6 +25,30 @@ function resolveSimulationDelay(config: CarverAiJobSimulationConfig) {
 
 async function wait(delayMs: number) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function getSimulatedImageDimensions(job: CarverAiJobPayload) {
+  const ratio = job.targetType === "image-generator"
+    ? resolveImageGeneratorAspectRatio({ requested: job.aspectRatio })
+    : "1:1";
+  const [widthUnits, heightUnits] = ratio.split(":").map(Number);
+  return {
+    width: widthUnits * SIMULATION_RATIO_SCALE,
+    height: heightUnits * SIMULATION_RATIO_SCALE,
+  };
+}
+
+async function createSimulatedImageBuffer(job: CarverAiJobPayload) {
+  const dimensions = getSimulatedImageDimensions(job);
+  return sharp({
+    create: {
+      ...dimensions,
+      channels: 3,
+      background: { r: 56, g: 103, b: 78 },
+    },
+  })
+    .png()
+    .toBuffer();
 }
 
 export function isAiJobSimulationEnabled() {
@@ -79,11 +104,11 @@ export async function generateSimulatedImage(params: {
     }
   }
 
+  const dimensions = getSimulatedImageDimensions(params.job);
   return {
-    buffer: Buffer.from(SIMULATION_PNG_BASE64, "base64"),
+    buffer: await createSimulatedImageBuffer(params.job),
     mimeType: "image/png",
-    width: 1,
-    height: 1,
+    ...dimensions,
     revisedPrompt: `Simulated output for: ${params.prompt}`,
     provider: `carver-simulation:${simulation.scenario}`,
   };

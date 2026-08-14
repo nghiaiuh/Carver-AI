@@ -22,6 +22,7 @@ import {
   toCanvasOperationV2,
   type CanvasSnapshotDocument,
   type CarverAiJobRecord,
+  type CarverAiJobSimulationConfig,
 } from "@carver/shared";
 import {
   getImageGeneratorCardSize,
@@ -2750,7 +2751,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     }
   }, [edges, nodes, params.projectId, supabase, updateAssistantNode]);
 
-  const runImageGeneratorNode = useCallback(async (nodeId: string) => {
+  const runImageGeneratorNode = useCallback(async (
+    nodeId: string,
+    options?: { simulation?: CarverAiJobSimulationConfig },
+  ) => {
     const generatorNode = nodes.find(
       (node): node is Extract<CanvasNode, { kind: "image-generator" }> =>
         node.id === nodeId && node.kind === "image-generator",
@@ -2824,6 +2828,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         model: generatorNode.imageGenerator.model,
         aspectRatio: generatorNode.imageGenerator.aspectRatio,
         outputCount,
+        simulation: options?.simulation,
         canvasGraphContext: resolvedExecutionContext ?? undefined,
         imageGeneratorContext: graphContext.generatorContext,
       };

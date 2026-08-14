@@ -14,6 +14,7 @@ import {
   IMAGE_GENERATOR_ASPECT_RATIO_OPTIONS,
   OPENAI_IMAGE_MODEL,
   resolveImageGeneratorAspectRatio,
+  type CarverAiJobSimulationConfig,
 } from "@carver/shared";
 import {
   IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
@@ -615,7 +616,10 @@ function ImageGeneratorNodeSurface({
   edges: CanvasEdge[];
   generatorAssetUrls: ResolvedGeneratorAssetUrls;
   onUpdateNode: (id: string, update: (node: CanvasNode) => CanvasNode) => void;
-  onRunImageGenerator: (nodeId: string) => void | Promise<void>;
+  onRunImageGenerator: (
+    nodeId: string,
+    options?: { simulation?: CarverAiJobSimulationConfig },
+  ) => void | Promise<void>;
   onToast: (message: string) => void;
 }) {
   const generator = node.imageGenerator;
@@ -623,6 +627,8 @@ function ImageGeneratorNodeSurface({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [openMenu, setOpenMenu] = useState<"model" | "aspect" | "settings" | "references" | null>(null);
+  const [useSimulation, setUseSimulation] = useState(false);
+  const isDevelopment = process.env.NODE_ENV === "development";
 
   const connectedReferences = React.useMemo(() => {
     const inboundEdges = edges
@@ -818,7 +824,12 @@ function ImageGeneratorNodeSurface({
   }, []);
 
   const runGenerator = () => {
-    void onRunImageGenerator(node.id);
+    void onRunImageGenerator(
+      node.id,
+      useSimulation && isDevelopment
+        ? { simulation: { scenario: "success", delayMs: 450 } }
+        : undefined,
+    );
     setOpenMenu(null);
   };
 
@@ -1178,6 +1189,29 @@ function ImageGeneratorNodeSurface({
                       <p className="font-semibold text-white/92">Generation settings</p>
                       <p>Model routing and aspect ratio are supported in phase 1.</p>
                       <p>Connected references: {connectedReferences.imageReferences.length} image / {connectedReferences.textReferences.length} text.</p>
+                      {isDevelopment ? (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={useSimulation}
+                          disabled={isRunning}
+                          onClick={() => setUseSimulation((current) => !current)}
+                          className="mt-2 flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/18 px-2.5 py-2 text-left text-[11px] text-white/88 transition hover:bg-black/28 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <span>
+                            <span className="block font-semibold">Simulated run</span>
+                            <span className="block text-[10px] text-white/56">No OpenAI call or credit charge</span>
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            className={`relative h-4 w-7 rounded-full transition-colors ${useSimulation ? "bg-emerald-400/90" : "bg-white/20"}`}
+                          >
+                            <span
+                              className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${useSimulation ? "translate-x-3.5" : "translate-x-0.5"}`}
+                            />
+                          </span>
+                        </button>
+                      ) : null}
                     </div>
                   </motion.div>
                 ) : null}
