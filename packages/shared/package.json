@@ -11,12 +11,18 @@
       "import": "./dist/index.js",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./testing/openaiTransport": {
+      "types": "./src/testing/openaiTransport.ts",
+      "import": "./dist/testing/openaiTransport.js",
+      "require": "./dist/testing/openaiTransport.js",
+      "default": "./dist/testing/openaiTransport.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -w",
-    "test": "tsx --test src/security-contracts.test.ts src/canvas-draft.test.ts src/image-generator.test.ts",
+    "test": "tsx --test src/security-contracts.test.ts src/canvas-draft.test.ts src/image-generator.test.ts src/assistant-output.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
