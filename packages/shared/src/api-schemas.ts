@@ -196,10 +196,14 @@ export const createAiJobBodySchema = z
   })
   .strip()
   .superRefine((value, context) => {
-    if (!value.prompt && !value.rawPrompt) {
+    const hasConnectedTextDirection =
+      value.targetType === "image-generator" &&
+      (value.imageGeneratorContext?.textReferences.length ?? 0) > 0;
+
+    if (!value.prompt && !value.rawPrompt && !hasConnectedTextDirection) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "prompt or rawPrompt is required",
+        message: "prompt, rawPrompt, or an Image Generator text reference is required",
         path: ["prompt"],
       });
     }

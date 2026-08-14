@@ -37,6 +37,47 @@ test("AI job schema rejects invalid asset identifiers and oversized prompts", ()
   assert.equal(oversizedPrompt.success, false);
 });
 
+test("Image Generator can use a connected text reference without a direct prompt", () => {
+  const textOnlyGenerator = createAiJobBodySchema.safeParse({
+    projectId: UUID,
+    targetType: "image-generator",
+    targetNodeId: "image-generator-1",
+    imageGeneratorContext: {
+      nodeId: "image-generator-1",
+      nodeTitle: "Image Generator #1",
+      imageReferences: [],
+      presetReferences: [],
+      textReferences: [
+        {
+          nodeId: "assistant-1",
+          title: "Assistant #1",
+          content: "Create one coherent autumn garden concept.",
+          sourceKind: "assistant",
+        },
+      ],
+      connectionSummary: "Text refs: Assistant #1.",
+    },
+  });
+
+  assert.equal(textOnlyGenerator.success, true);
+
+  const missingDirection = createAiJobBodySchema.safeParse({
+    projectId: UUID,
+    targetType: "image-generator",
+    targetNodeId: "image-generator-1",
+    imageGeneratorContext: {
+      nodeId: "image-generator-1",
+      nodeTitle: "Image Generator #1",
+      imageReferences: [],
+      presetReferences: [],
+      textReferences: [],
+      connectionSummary: "Text refs: none.",
+    },
+  });
+
+  assert.equal(missingDirection.success, false);
+});
+
 test("safe logger redacts secrets, signed URL queries, private content, and errors", () => {
   const redacted = redactLogValue({
     authorization: "Bearer secret-token",

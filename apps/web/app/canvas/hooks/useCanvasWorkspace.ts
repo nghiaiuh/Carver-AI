@@ -2817,7 +2817,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         projectId: params.projectId,
         // The worker owns prompt compilation. Keep the user's direction separate
         // from graph references so it can assign each one a deterministic role.
-        prompt,
+        ...(prompt ? { prompt } : {}),
         targetType: "image-generator" as const,
         canvasId: "canvas-main",
         targetNodeId: generatorNode.id,

@@ -355,10 +355,6 @@ export async function createProjectAiJob(params: {
     return { ok: false, response: badRequest("projectId is invalid") };
   }
 
-  const prompt = body.prompt ?? body.rawPrompt;
-  if (!prompt) {
-    return { ok: false, response: badRequest("prompt is required") };
-  }
   const inputSnapshotId = body.inputSnapshotId;
   const threadId = body.threadId;
   const referenceAssetIds = body.referenceAssetIds ?? [];
@@ -376,6 +372,15 @@ export async function createProjectAiJob(params: {
   const maskInput = maskValue(body.mask);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
   const simulation = normalizeSimulation(body.simulation);
+  const prompt = body.prompt ?? body.rawPrompt ?? "";
+  const hasConnectedTextDirection =
+    targetType === "image-generator" &&
+    Array.isArray(imageGeneratorContext?.textReferences) &&
+    imageGeneratorContext.textReferences.length > 0;
+
+  if (!prompt && !hasConnectedTextDirection) {
+    return { ok: false, response: badRequest("prompt is required") };
+  }
 
   if (!SUPPORTED_JOB_TYPES.includes(jobType)) {
     return { ok: false, response: badRequest(`jobType ${jobType} is not supported yet`) };
