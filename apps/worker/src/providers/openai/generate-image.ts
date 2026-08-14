@@ -9,14 +9,15 @@ import {
   type CarverImageExecutionMode,
   OPENAI_IMAGE_MODEL,
   OPENAI_IMAGE_OUTPUT_FORMAT,
-  OPENAI_IMAGE_PARTIAL_IMAGES,
   OPENAI_IMAGE_QUALITY,
   OPENAI_IMAGE_SIZE,
   OPENAI_IMAGES_URL,
 } from "@carver/shared";
+import type { OpenAIHttpTransport } from "@carver/shared";
 import { hasAllowedMagicBytes } from "@carver/storage/image-format";
 import { createSafeLogger } from "@carver/shared";
 import sharp from "sharp";
+import { GenerationStageError } from "../../errors/generation-stage-error";
 
 const logger = createSafeLogger("worker.openai-image");
 const DEFAULT_OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
@@ -39,8 +40,12 @@ type OpenAIImageGenerationResponse = {
   }>;
   error?: {
     message?: string;
+    code?: string;
   };
 };
+
+const MIN_OPENAI_IMAGE_OUTPUT_COUNT = 1;
+const MAX_OPENAI_IMAGE_OUTPUT_COUNT = 4;
 
 export type OpenAiGeneratedImage = {
   buffer: Buffer;
@@ -60,9 +65,10 @@ function toBlobPart(buffer: Buffer) {
   return new Uint8Array(buffer);
 }
 
-async function imageUrlToBuffer(imageUrl: string) {
+async function imageUrlToBuffer(imageUrl: string, transport: OpenAIHttpTransport) {
   const response = await fetchWithTimeout(imageUrl, {
     timeoutMs: getOpenAiImageRequestTimeoutMs(),
+    transport,
   });
   if (!response.ok) {
     throw new Error("OpenAI returned an image URL that could not be downloaded.");
@@ -118,46 +124,73 @@ async function inspectGeneratedImage(
   return { width: metadata.width, height: metadata.height };
 }
 
-async function parseGeneratedImage(payload: OpenAIImageGenerationResponse) {
-  const firstImage = payload.data?.[0];
-  if (!firstImage) {
+export function normalizeOpenAiImageOutputCount(value: number | undefined) {
+  const candidate =
+    typeof value === "number" && Number.isInteger(value) ? value : MIN_OPENAI_IMAGE_OUTPUT_COUNT;
+  return Math.min(MAX_OPENAI_IMAGE_OUTPUT_COUNT, Math.max(MIN_OPENAI_IMAGE_OUTPUT_COUNT, candidate));
+}
+
+export function buildOpenAiImageGenerationRequestBody(params: {
+  model: string;
+  prompt: string;
+  size: string;
+  outputCount?: number;
+}) {
+  return JSON.stringify({
+    model: params.model,
+    prompt: params.prompt,
+    size: params.size,
+    quality: OPENAI_IMAGE_QUALITY,
+    output_format: OPENAI_IMAGE_OUTPUT_FORMAT,
+    n: normalizeOpenAiImageOutputCount(params.outputCount),
+  });
+}
+
+async function parseGeneratedImages(payload: OpenAIImageGenerationResponse, transport: OpenAIHttpTransport) {
+  const images = payload.data ?? [];
+  if (images.length === 0) {
     throw new Error("Image generation returned no image.");
   }
 
-  const buffer = firstImage.b64_json
-    ? Buffer.from(firstImage.b64_json, "base64")
-    : firstImage.url
-      ? await imageUrlToBuffer(firstImage.url)
-      : null;
+  return Promise.all(
+    images.map(async (image) => {
+      const buffer = image.b64_json
+        ? Buffer.from(image.b64_json, "base64")
+        : image.url
+          ? await imageUrlToBuffer(image.url, transport)
+          : null;
 
-  if (!buffer) {
-    throw new Error("Image generation returned no image buffer.");
-  }
-  if (buffer.length > MAX_PROVIDER_IMAGE_BYTES) {
-    throw new Error("OpenAI returned an image that exceeds the output limit.");
-  }
+      if (!buffer) {
+        throw new Error("Image generation returned no image buffer.");
+      }
+      if (buffer.length > MAX_PROVIDER_IMAGE_BYTES) {
+        throw new Error("OpenAI returned an image that exceeds the output limit.");
+      }
 
-  return {
-    buffer,
-    revisedPrompt: firstImage.revised_prompt ?? null,
-  };
+      return {
+        buffer,
+        revisedPrompt: image.revised_prompt ?? null,
+      };
+    }),
+  );
 }
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
-  init: RequestInit & { timeoutMs: number },
+  init: RequestInit & { timeoutMs: number; transport: OpenAIHttpTransport },
 ) {
+  const { timeoutMs, transport, ...requestInit } = init;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), init.timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetch(input, {
-      ...init,
+    return await transport(String(input), {
+      ...requestInit,
       signal: controller.signal,
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`OpenAI image request timed out after ${init.timeoutMs / 1000} seconds.`);
+      throw new Error(`OpenAI image request timed out after ${timeoutMs / 1000} seconds.`);
     }
 
     throw error;
@@ -169,6 +202,7 @@ async function fetchWithTimeout(
 async function createImagesEditRequest(params: {
   prompt: string;
   size: string;
+  outputCount: number;
   targetImage: ImageInput;
   referenceImages: ImageInput[];
   maskImage?: ImageInput | null;
@@ -179,6 +213,7 @@ async function createImagesEditRequest(params: {
   formData.set("size", params.size);
   formData.set("quality", OPENAI_IMAGE_QUALITY);
   formData.set("output_format", OPENAI_IMAGE_OUTPUT_FORMAT);
+  formData.set("n", String(params.outputCount));
 
   formData.append(
     "image[]",
@@ -202,19 +237,24 @@ async function createImagesEditRequest(params: {
   return formData;
 }
 
-export async function generateImageFromPrompt(params: {
+export async function generateImagesFromPrompt(params: {
   prompt: string;
   mode: CarverImageExecutionMode;
   model?: string;
   size?: string;
+  outputCount?: number;
   targetImage?: ImageInput | null;
   referenceImages?: ImageInput[];
   maskImage?: ImageInput | null;
-}): Promise<OpenAiGeneratedImage> {
+  transport?: OpenAIHttpTransport;
+}): Promise<OpenAiGeneratedImage[]> {
   const apiKey = process.env.OPENAI_API_KEY;
+  const transport = params.transport ?? ((input, init) => fetch(input, init));
 
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is required to generate images.");
+  if (!apiKey && !params.transport) {
+    throw new GenerationStageError("provider_configuration", "OpenAI image provider is not configured.", {
+      providerCode: "missing_api_key",
+    });
   }
 
   const endpoint =
@@ -223,27 +263,26 @@ export async function generateImageFromPrompt(params: {
       : OPENAI_IMAGES_URL.replace("/generations", "/edits");
 
   if (params.mode !== "text_to_image" && !params.targetImage) {
-    throw new Error("Image edit requires a target image.");
+    throw new GenerationStageError("input_resolution", "Image edit is missing a target image.");
   }
 
   const resolvedModel = params.model?.trim() || OPENAI_IMAGE_MODEL;
   const resolvedSize = params.size?.trim() || OPENAI_IMAGE_SIZE;
+  const resolvedOutputCount = normalizeOpenAiImageOutputCount(params.outputCount);
   const resolvedTargetImage = params.targetImage ?? null;
 
   const requestBody =
     params.mode === "text_to_image"
-      ? JSON.stringify({
+      ? buildOpenAiImageGenerationRequestBody({
           model: resolvedModel,
           prompt: params.prompt,
           size: resolvedSize,
-          quality: OPENAI_IMAGE_QUALITY,
-          output_format: OPENAI_IMAGE_OUTPUT_FORMAT,
-          partial_images: OPENAI_IMAGE_PARTIAL_IMAGES,
-          n: 1,
+          outputCount: resolvedOutputCount,
         })
       : await createImagesEditRequest({
           prompt: params.prompt,
           size: resolvedSize,
+          outputCount: resolvedOutputCount,
           targetImage: resolvedTargetImage as ImageInput,
           referenceImages: params.referenceImages ?? [],
           maskImage: params.maskImage,
@@ -254,47 +293,77 @@ export async function generateImageFromPrompt(params: {
     endpoint,
     mode: params.mode,
     size: resolvedSize,
+    outputCount: resolvedOutputCount,
     referenceImageCount: params.referenceImages?.length ?? 0,
     hasTargetImage: Boolean(params.targetImage),
     hasMaskImage: Boolean(params.maskImage),
   });
 
-  const response = await fetchWithTimeout(endpoint, {
-    method: "POST",
-    headers:
-      requestBody instanceof FormData
-        ? {
-            Authorization: `Bearer ${apiKey}`,
-          }
-        : {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-    body: requestBody,
-    timeoutMs: getOpenAiImageRequestTimeoutMs(),
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(endpoint, {
+      method: "POST",
+      headers:
+        requestBody instanceof FormData
+          ? {
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            }
+          : {
+              "Content-Type": "application/json",
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+      body: requestBody,
+      timeoutMs: getOpenAiImageRequestTimeoutMs(),
+      transport,
+    });
+  } catch (error) {
+    throw new GenerationStageError("provider_request", "OpenAI image request did not complete.", { cause: error });
+  }
 
   const payload = (await response.json().catch(() => ({}))) as OpenAIImageGenerationResponse;
   if (!response.ok) {
-    throw new Error(payload.error?.message || "Image generation failed.");
+    throw new GenerationStageError("provider_request", "OpenAI image request was rejected.", {
+      providerStatus: response.status,
+      providerCode: typeof payload.error?.code === "string" ? payload.error.code : null,
+    });
   }
 
-  const { buffer, revisedPrompt } = await parseGeneratedImage(payload);
-  const mimeType = inferOutputMimeType(buffer);
-  logger.info("openai images api succeeded", {
-    model: resolvedModel,
-    mode: params.mode,
-    size: resolvedSize,
-    mimeType,
-  });
+  let parsedImages: Awaited<ReturnType<typeof parseGeneratedImages>>;
+  try {
+    parsedImages = await parseGeneratedImages(payload, transport);
+  } catch (error) {
+    throw new GenerationStageError("provider_request", "OpenAI returned an unusable image response.", { cause: error });
+  }
 
-  const { width, height } = await inspectGeneratedImage(buffer, mimeType);
-  return {
-    buffer,
-    mimeType,
-    width,
-    height,
-    revisedPrompt,
-    provider: resolvedModel,
-  };
+  if (parsedImages.length !== resolvedOutputCount) {
+    throw new GenerationStageError("provider_request", "OpenAI returned an incomplete image response.", {
+      providerCode: "incomplete_image_output_count",
+    });
+  }
+
+  try {
+    const images = await Promise.all(
+      parsedImages.map(async ({ buffer, revisedPrompt }) => {
+        const mimeType = inferOutputMimeType(buffer);
+        const dimensions = await inspectGeneratedImage(buffer, mimeType);
+        return {
+          buffer,
+          mimeType,
+          width: dimensions.width,
+          height: dimensions.height,
+          revisedPrompt,
+          provider: resolvedModel,
+        };
+      }),
+    );
+    logger.info("openai images api succeeded", {
+      model: resolvedModel,
+      mode: params.mode,
+      size: resolvedSize,
+      outputCount: images.length,
+    });
+    return images;
+  } catch (error) {
+    throw new GenerationStageError("provider_request", "OpenAI returned an invalid image response.", { cause: error });
+  }
 }

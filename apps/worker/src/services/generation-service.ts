@@ -27,7 +27,7 @@ import {
 } from "@carver/shared";
 import sharp from "sharp";
 import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/build-job-result";
-import { generateImageFromPrompt } from "../providers/openai/generate-image";
+import { generateImagesFromPrompt } from "../providers/openai/generate-image";
 import {
   findReusableGeneratedImageAsset,
   persistGeneratedImageAsset,
@@ -37,6 +37,7 @@ import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGe
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
+import { runGenerationStage } from "../errors/generation-stage-error";
 
 const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
@@ -169,6 +170,26 @@ const buildRequiredAssetIds = (job: CarverAiJobPayload) => {
   return [...ids];
 };
 
+export type GenerationServiceDependencies = {
+  findReusableGeneratedImageAsset: typeof findReusableGeneratedImageAsset;
+  persistGeneratedImageAsset: typeof persistGeneratedImageAsset;
+  resolveGenerationTargetImage: typeof resolveGenerationTargetImage;
+  resolveGenerationReferenceImages: typeof resolveGenerationReferenceImages;
+  resolveGenerationMaskImage: typeof resolveGenerationMaskImage;
+  generateImagesFromPrompt: typeof generateImagesFromPrompt;
+  persistGeneratedAssistantMessage: typeof persistGeneratedAssistantMessage;
+};
+
+const defaultGenerationServiceDependencies: GenerationServiceDependencies = {
+  findReusableGeneratedImageAsset,
+  persistGeneratedImageAsset,
+  resolveGenerationTargetImage,
+  resolveGenerationReferenceImages,
+  resolveGenerationMaskImage,
+  generateImagesFromPrompt,
+  persistGeneratedAssistantMessage,
+};
+
 export function getExactCenterCropDimensions(params: {
   width: number;
   height: number;
@@ -218,18 +239,30 @@ export async function cropGeneratedImageToAspectRatio(params: {
   };
 }
 
-const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: string) => {
+export const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: string) => {
+  const primaryDirection = basePrompt.trim();
   const textReferences = job.imageGeneratorContext?.textReferences ?? [];
   if (textReferences.length === 0) {
-    return basePrompt;
+    return primaryDirection;
   }
 
+  const referenceSection = textReferences
+    .map((reference, index) => `[${index + 1}] ${reference.title}\n${reference.content.trim()}`)
+    .join("\n\n");
+
   return [
-    "IMAGE GENERATOR TASK",
-    basePrompt,
+    "IMAGE GENERATOR BRIEF",
     "",
-    "CONNECTED TEXT REFERENCES",
-    ...textReferences.map((reference, index) => `${index + 1}. ${reference.title}: ${reference.content}`),
+    "PRIMARY DIRECTION",
+    primaryDirection || "No direct direction was entered in the Image Generator card.",
+    "",
+    "CONNECTED TEXT REFERENCE MATERIAL",
+    referenceSection,
+    "",
+    "INTERPRETATION RULES",
+    primaryDirection
+      ? "Follow PRIMARY DIRECTION as the requested outcome. Use connected text only as supporting context; do not let it override the primary direction."
+      : "Use the connected text as the requested direction. If it contains alternatives or numbered options, choose one coherent option for this image and do not blend contradictory options together.",
   ].join("\n");
 };
 
@@ -247,12 +280,14 @@ export const prepareGenerationState = async (
   const shouldCompilePrompt = shouldCompilePromptForJob(job.jobType);
 
   const compiledPromptV2 = shouldCompilePrompt
-    ? await compileGenerationPromptV2({
-        rawPrompt: promptWithTextReferences,
-        trustedContext: buildTrustedContextForJob(job),
-        requiredAssetIds: buildRequiredAssetIds(job),
-        parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
-      })
+    ? await runGenerationStage("prompt_compile", () =>
+        compileGenerationPromptV2({
+          rawPrompt: promptWithTextReferences,
+          trustedContext: buildTrustedContextForJob(job),
+          requiredAssetIds: buildRequiredAssetIds(job),
+          parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
+        }),
+      )
     : null;
 
   return {
@@ -279,17 +314,22 @@ export const executeGeneratedImageJob = async (
   state: PreparedGenerationState,
   options?: {
     currentAttempt?: number;
+    dependencies?: Partial<GenerationServiceDependencies>;
   },
 ): Promise<PreparedGenerationJobResult> => {
   if (!state.finalPrompt) {
     throw new Error("Image-generating jobs require a compiled prompt.");
   }
+  const finalPrompt = state.finalPrompt;
+  const dependencies = { ...defaultGenerationServiceDependencies, ...options?.dependencies };
 
-  const reusableOutput = await findReusableGeneratedImageAsset({
-    jobId: job.jobId,
-    projectId: job.projectId,
-    ownerId: job.userId,
-  });
+  const reusableOutput = await runGenerationStage("asset_persistence", () =>
+    dependencies.findReusableGeneratedImageAsset({
+      jobId: job.jobId,
+      projectId: job.projectId,
+      ownerId: job.userId,
+    }),
+  );
   let persistedOutputs: PersistedGeneratedOutput[] = [];
   const requestedOutputCount = Math.min(Math.max(job.outputCount ?? 1, 1), 4);
   const shouldPersistChatMessage = job.targetType !== "image-generator";
@@ -302,11 +342,13 @@ export const executeGeneratedImageJob = async (
       assetId: reusableOutput.assetId,
     });
   } else {
-    const [targetImage, referenceImages, maskImage] = await Promise.all([
-      resolveGenerationTargetImage(job),
-      resolveGenerationReferenceImages(job),
-      resolveGenerationMaskImage(job),
-    ]);
+    const [targetImage, referenceImages, maskImage] = await runGenerationStage("input_resolution", () =>
+      Promise.all([
+        dependencies.resolveGenerationTargetImage(job),
+        dependencies.resolveGenerationReferenceImages(job),
+        dependencies.resolveGenerationMaskImage(job),
+      ]),
+    );
 
     logger.info("generation sources resolved", {
       jobId: job.jobId,
@@ -327,7 +369,9 @@ export const executeGeneratedImageJob = async (
 
     const inputMetadataSource = targetImage ?? referenceImages[0] ?? null;
     const inputMetadata = inputMetadataSource
-      ? await sharp(inputMetadataSource.buffer, { failOn: "none", limitInputPixels: 40_000_000 }).metadata()
+      ? await runGenerationStage("input_metadata", () =>
+          sharp(inputMetadataSource.buffer, { failOn: "none", limitInputPixels: 40_000_000 }).metadata(),
+        )
       : null;
     const generatorAspectRatio = job.targetType === "image-generator"
       ? resolveImageGeneratorAspectRatio({
@@ -337,22 +381,30 @@ export const executeGeneratedImageJob = async (
         })
       : null;
 
-    for (let outputIndex = 0; outputIndex < requestedOutputCount; outputIndex += 1) {
-      const providerImage = job.simulation
-        ? await generateSimulatedImage({
-            job,
-            prompt: state.finalPrompt,
-            currentAttempt: options?.currentAttempt ?? 1,
-          })
-        : await generateImageFromPrompt({
-            prompt: state.finalPrompt,
+    const providerImages = job.simulation
+      ? await Promise.all(
+          Array.from({ length: requestedOutputCount }, () =>
+            generateSimulatedImage({
+              job,
+              prompt: finalPrompt,
+              currentAttempt: options?.currentAttempt ?? 1,
+            }),
+          ),
+        )
+      : await runGenerationStage("provider_request", () =>
+          dependencies.generateImagesFromPrompt({
+            prompt: finalPrompt,
             mode: job.executionMode,
             model: job.model && job.model !== "auto" ? job.model : undefined,
             size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
+            outputCount: requestedOutputCount,
             targetImage,
             referenceImages,
             maskImage,
-          });
+          }),
+        );
+
+    for (const [outputIndex, providerImage] of providerImages.entries()) {
 
       logger.info("generation provider image received", {
         jobId: job.jobId,
@@ -366,26 +418,30 @@ export const executeGeneratedImageJob = async (
       });
 
       const normalizedImage = generatorAspectRatio
-        ? await cropGeneratedImageToAspectRatio({
-            buffer: providerImage.buffer,
-            mimeType: providerImage.mimeType,
-            ratio: generatorAspectRatio,
-          })
+        ? await runGenerationStage("output_normalization", () =>
+            cropGeneratedImageToAspectRatio({
+              buffer: providerImage.buffer,
+              mimeType: providerImage.mimeType,
+              ratio: generatorAspectRatio,
+            }),
+          )
         : providerImage;
 
-      const persisted = await persistGeneratedImageAsset({
-        jobId: job.jobId,
-        projectId: job.projectId,
-        ownerId: job.userId,
-        prompt: providerImage.revisedPrompt ?? state.finalPrompt,
-        title: requestedOutputCount > 1 ? `Generated concept ${outputIndex + 1}` : "Generated concept",
-        outputIndex,
-        buffer: normalizedImage.buffer,
-        mimeType: providerImage.mimeType,
-        width: normalizedImage.width,
-        height: normalizedImage.height,
-        provider: providerImage.provider,
-      });
+      const persisted = await runGenerationStage("asset_persistence", () =>
+        dependencies.persistGeneratedImageAsset({
+          jobId: job.jobId,
+          projectId: job.projectId,
+          ownerId: job.userId,
+          prompt: providerImage.revisedPrompt ?? finalPrompt,
+          title: requestedOutputCount > 1 ? `Generated concept ${outputIndex + 1}` : "Generated concept",
+          outputIndex,
+          buffer: normalizedImage.buffer,
+          mimeType: providerImage.mimeType,
+          width: normalizedImage.width,
+          height: normalizedImage.height,
+          provider: providerImage.provider,
+        }),
+      );
 
       persistedOutputs.push(persisted);
     }
@@ -415,13 +471,15 @@ export const executeGeneratedImageJob = async (
         : "Generated a concept image from the selected canvas target and connected references.";
 
   const assistantMessage = shouldPersistChatMessage
-    ? await persistGeneratedAssistantMessage({
-        jobId: job.jobId,
-        projectId: job.projectId,
-        threadId: job.threadId,
-        content: assistantContent,
-        generatedImages: persistedOutputs.map((output) => output.generatedImage),
-      })
+    ? await runGenerationStage("job_completion", () =>
+        dependencies.persistGeneratedAssistantMessage({
+          jobId: job.jobId,
+          projectId: job.projectId,
+          threadId: job.threadId,
+          content: assistantContent,
+          generatedImages: persistedOutputs.map((output) => output.generatedImage),
+        }),
+      )
     : null;
 
   if (assistantMessage) {
