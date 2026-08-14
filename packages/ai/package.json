@@ -28,7 +28,8 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -w",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:prompt-engine": "node ../../scripts/run-prompt-engine-tests.mjs"
   },
   "dependencies": {
     "@carver/shared": "*",

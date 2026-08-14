@@ -1,8 +1,10 @@
 import { readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve("packages/ai/src/prompt-engine");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.join(repositoryRoot, "packages/ai/src/prompt-engine");
 
 async function findTests(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

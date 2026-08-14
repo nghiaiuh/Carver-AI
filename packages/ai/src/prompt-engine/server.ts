@@ -7,6 +7,7 @@ import type {
   PromptInterpreterResult,
   PromptWarning,
 } from "@carver/shared";
+import type { OpenAIHttpTransport } from "@carver/shared";
 import { buildPromptPlanV2 } from "./buildPromptPlan";
 import { buildCompiledPromptV2, buildGenerationPromptResultV2 } from "./compileProviderPrompt";
 import { buildDegradedInterpreterResult } from "./fallback";
@@ -101,20 +102,21 @@ const callPromptInterpreter = async (params: {
   purpose: "enhance" | "generation";
   model?: string;
   repairHint?: string | null;
+  transport?: OpenAIHttpTransport;
 }): Promise<PromptInterpreterResult> => {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (!apiKey && !params.transport) {
     throw new PromptInterpreterError("OPENAI_API_KEY is missing.", {
       retryable: false,
       code: "MISSING_API_KEY",
     });
   }
 
-  const response = await fetch(OPENAI_RESPONSES_URL, {
+  const response = await (params.transport ?? fetch)(OPENAI_RESPONSES_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
       model: params.model ?? DEFAULT_PROMPT_ENGINE_MODEL,
@@ -140,7 +142,7 @@ const callPromptInterpreter = async (params: {
 
   const payload = (await response.json().catch(() => ({}))) as InterpreterTransportPayload;
   if (!response.ok) {
-    throw new PromptInterpreterError(payload.error?.message || "Prompt interpreter request failed.", {
+    throw new PromptInterpreterError("Prompt interpreter request failed.", {
       retryable: response.status >= 500 || response.status === 429,
       code: payload.error?.code ?? "INTERPRETER_HTTP_ERROR",
     });
@@ -154,7 +156,15 @@ const callPromptInterpreter = async (params: {
     });
   }
 
-  const parsed = JSON.parse(outputText) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(outputText) as unknown;
+  } catch {
+    throw new PromptInterpreterError("Prompt interpreter returned malformed structured output.", {
+      retryable: true,
+      code: "INVALID_INTERPRETER_JSON",
+    });
+  }
   const interpretation = validatePromptInterpreterResult(parsed);
   if (!interpretation) {
     throw new PromptInterpreterError("Prompt interpreter returned malformed structured output.", {
@@ -171,6 +181,7 @@ const interpretWithRetry = async (params: {
   trustedContext: PromptEngineTrustedContext;
   purpose: "enhance" | "generation";
   model?: string;
+  transport?: OpenAIHttpTransport;
 }): Promise<{
   interpretation: PromptInterpreterResult | null;
   interpreter: PromptInterpreterMeta;
@@ -190,6 +201,7 @@ const interpretWithRetry = async (params: {
         purpose: params.purpose,
         model: params.model,
         repairHint,
+        transport: params.transport,
       });
 
       return {
@@ -207,7 +219,7 @@ const interpretWithRetry = async (params: {
         error instanceof PromptInterpreterError
           ? error
           : new PromptInterpreterError(
-              error instanceof Error ? error.message : "Prompt interpreter failed.",
+            "Prompt interpreter failed.",
               {
                 retryable: false,
               },
@@ -249,6 +261,7 @@ const buildPlanFromRuntime = async (params: {
   parentEngineRunId?: string | null;
   useModel?: boolean;
   forceModel?: boolean;
+  transport?: OpenAIHttpTransport;
 }): Promise<{
   engineRunId: string;
   warnings: PromptWarning[];
@@ -263,6 +276,7 @@ const buildPlanFromRuntime = async (params: {
         rawPrompt: params.rawPrompt,
         trustedContext: params.trustedContext,
         purpose: params.purpose,
+        transport: params.transport,
       })
     : {
         interpretation: null,
@@ -319,6 +333,7 @@ export async function enhancePromptV2(params: {
   parentEngineRunId?: string | null;
   useModel?: boolean;
   forceModel?: boolean;
+  transport?: OpenAIHttpTransport;
 }): Promise<EnhancedPromptResultV2> {
   const runtime = await buildPlanFromRuntime({
     purpose: "enhance",
@@ -327,6 +342,7 @@ export async function enhancePromptV2(params: {
     parentEngineRunId: params.parentEngineRunId,
     useModel: params.useModel,
     forceModel: params.forceModel,
+    transport: params.transport,
   });
 
   return {
@@ -352,6 +368,7 @@ export async function compileGenerationPromptV2(params: {
   parentEngineRunId?: string | null;
   useModel?: boolean;
   forceModel?: boolean;
+  transport?: OpenAIHttpTransport;
 }): Promise<GenerationPromptResultV2> {
   const runtime = await buildPlanFromRuntime({
     purpose: "generation",
@@ -360,6 +377,7 @@ export async function compileGenerationPromptV2(params: {
     parentEngineRunId: params.parentEngineRunId,
     useModel: params.useModel,
     forceModel: params.forceModel,
+    transport: params.transport,
   });
 
   return buildGenerationPromptResultV2({

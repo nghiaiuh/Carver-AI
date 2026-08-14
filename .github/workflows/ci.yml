@@ -21,7 +21,6 @@ jobs:
       SUPABASE_URL: https://ci.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
       REDIS_URL: rediss://default:ci-password@localhost:6379
-      OPENAI_API_KEY: ci-openai-key
       ASSET_GATEWAY_SIGNING_SECRET: ci-signing-secret-at-least-32-characters
       CLOUDFLARE_R2_ACCOUNT_ID: ci-account
       CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
@@ -44,6 +43,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:prompt-engine
+      - run: npm run test:openai-contracts --workspace @carver/worker
+      - run: npm run test:image-generator --workspace @carver/worker
       - run: npm run test --workspace @carver/shared
       - run: npm run security:api-boundaries
       - run: npm run test --workspace @carver/queue
@@ -84,7 +85,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
           REDIS_URL: rediss://default:ci-password@localhost:6379
-          OPENAI_API_KEY: ci-openai-key
           ASSET_GATEWAY_SIGNING_SECRET: ci-signing-secret-at-least-32-characters
           CLOUDFLARE_R2_ACCOUNT_ID: ci-account
           CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
