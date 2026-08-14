@@ -1,56 +1,6 @@
--- Operation-first canvas draft persistence. The materialized draft remains the
--- fast read model while this log gives the API an idempotent, conflict-aware
--- history for tabs and future collaborators.
-
-create table if not exists public.project_canvas_draft_operations (
-  operation_id uuid primary key,
-  project_id uuid not null references public.projects(id) on delete cascade,
-  actor_user_id uuid not null references auth.users(id) on delete cascade,
-  client_id text not null,
-  client_sequence bigint not null,
-  batch_id uuid not null,
-  base_revision integer not null,
-  committed_revision integer not null,
-  entity_key text not null,
-  operation_type text not null,
-  payload jsonb not null,
-  created_at timestamptz not null default now()
-);
-
-create unique index if not exists project_canvas_draft_operations_batch_operation_idx
-  on public.project_canvas_draft_operations(batch_id, operation_id);
-create index if not exists project_canvas_draft_operations_project_revision_idx
-  on public.project_canvas_draft_operations(project_id, committed_revision, created_at);
-create index if not exists project_canvas_draft_operations_project_entity_idx
-  on public.project_canvas_draft_operations(project_id, entity_key, committed_revision);
-
-create table if not exists public.project_canvas_recoveries (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
-  created_by uuid not null references auth.users(id) on delete cascade,
-  client_id text not null,
-  base_revision integer not null,
-  cloud_revision integer not null,
-  document_hash text not null,
-  canvas_json jsonb not null,
-  conflicting_entity_keys text[] not null default '{}',
-  reason text not null,
-  created_at timestamptz not null default now(),
-  resolved_at timestamptz
-);
-
-create index if not exists project_canvas_recoveries_project_created_idx
-  on public.project_canvas_recoveries(project_id, created_at desc);
-
-alter table public.project_canvas_draft_operations enable row level security;
-alter table public.project_canvas_recoveries enable row level security;
-
--- Browser clients never call these tables/RPC directly. The Next.js BFF uses
--- the service role only after authenticating and checking project ownership.
-revoke all on table public.project_canvas_draft_operations from anon, authenticated;
-revoke all on table public.project_canvas_recoveries from anon, authenticated;
-grant select, insert, update, delete on table public.project_canvas_draft_operations to service_role;
-grant select, insert, update, delete on table public.project_canvas_recoveries to service_role;
+-- Forward-fix for environments that already applied 026. PL/pgSQL function
+-- output names are variables, so every queried column must be table-qualified
+-- to avoid `column reference ... is ambiguous` on a real operation batch.
 
 create or replace function public.commit_project_canvas_operation_batch(
   actor_user_id uuid,
@@ -102,8 +52,6 @@ begin
   into acknowledged_ids
   from jsonb_array_elements(batch_operations) as item;
 
-  -- Retrying exactly the same batch is idempotent. A partial duplicate is not
-  -- accepted because it could hide a client bug with a different document.
   if exists (
     select 1
     from public.project_canvas_draft_operations as operation_rows
@@ -117,7 +65,7 @@ begin
       raise exception 'DRAFT_BATCH_INCONSISTENT';
     end if;
 
-    select array_agg(operation_id order by operation_id)
+    select array_agg(operation_rows.operation_id order by operation_rows.operation_id)
     into acknowledged_ids
     from public.project_canvas_draft_operations as operation_rows
     where operation_rows.batch_id = target_batch_id;
@@ -158,7 +106,7 @@ begin
       raise exception 'DRAFT_CONFLICT';
     end if;
     next_revision := current_draft.revision + 1;
-    update public.project_canvas_drafts
+    update public.project_canvas_drafts as d
     set base_snapshot_id = coalesce(draft_base_snapshot_id, current_draft.base_snapshot_id),
         revision = next_revision,
         document_hash = resulting_document_hash,

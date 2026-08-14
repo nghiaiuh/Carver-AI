@@ -18,6 +18,7 @@ import {
   getProjectCanvasDraftErrorCode,
   getProjectCanvasDraftErrorMessage,
   getProjectCanvasDraftErrorStatus,
+  getProjectCanvasDraftFailureMetadata,
   listProjectCanvasDraftOperations,
   loadProjectCanvasDraft,
 } from "../../../../../lib/server/draftService";
@@ -223,6 +224,8 @@ export async function POST(
       requestId: context.requestId,
       projectId: projectResult.project.id,
       userId: context.user.id,
+      failureCode: getProjectCanvasDraftErrorCode(error, "DRAFT_SAVE_FAILED"),
+      ...getProjectCanvasDraftFailureMetadata(error),
       error,
     });
     if (error instanceof ProjectCanvasDraftEntityConflictError) {

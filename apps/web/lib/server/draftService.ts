@@ -87,10 +87,21 @@ type DraftRpcClient = {
   }>;
 };
 
-export class ProjectCanvasDraftConflictError extends Error {}
-export class ProjectCanvasDraftProjectNotFoundError extends Error {}
-export class ProjectCanvasDraftSchemaError extends Error {}
-export class ProjectCanvasDraftPermissionError extends Error {}
+type DraftDatabaseError = {
+  message: string;
+  code?: string;
+};
+
+class ProjectCanvasDraftDatabaseError extends Error {
+  constructor(message: string, readonly databaseCode?: string) {
+    super(message);
+  }
+}
+
+export class ProjectCanvasDraftConflictError extends ProjectCanvasDraftDatabaseError {}
+export class ProjectCanvasDraftProjectNotFoundError extends ProjectCanvasDraftDatabaseError {}
+export class ProjectCanvasDraftSchemaError extends ProjectCanvasDraftDatabaseError {}
+export class ProjectCanvasDraftPermissionError extends ProjectCanvasDraftDatabaseError {}
 export class ProjectCanvasDraftEntityConflictError extends Error {
   constructor(readonly entityKeys: string[]) {
     super("DRAFT_ENTITY_CONFLICT");
@@ -156,11 +167,13 @@ function isDraftSchemaMessage(message: string) {
   return (
     normalized.includes("function public.upsert_project_canvas_draft") ||
     normalized.includes("function public.finalize_project_canvas_draft") ||
+    normalized.includes("function public.commit_project_canvas_operation_batch") ||
     normalized.includes("function upsert_project_canvas_draft") ||
     normalized.includes("function finalize_project_canvas_draft") ||
     normalized.includes("could not find the function") ||
     normalized.includes("project_canvas_drafts") ||
     normalized.includes("schema cache") ||
+    (normalized.includes("column reference") && normalized.includes("ambiguous")) ||
     normalized.includes("does not exist")
   );
 }
@@ -170,8 +183,22 @@ function isDraftPermissionMessage(message: string) {
   return (
     normalized.includes("permission denied") ||
     normalized.includes("row-level security") ||
-    normalized.includes("violates row-level security")
+    normalized.includes("violates row-level security") ||
+    normalized.includes("draft_ownership_invalid") ||
+    normalized.includes("draft_owner_immutable") ||
+    normalized.includes("service_role_required")
   );
+}
+
+/**
+ * Codes are safe to log because they identify a database failure class, not
+ * user content, snapshot data, paths, or credentials.
+ */
+export function getProjectCanvasDraftFailureMetadata(error: unknown) {
+  const databaseCode = error instanceof ProjectCanvasDraftDatabaseError
+    ? error.databaseCode
+    : undefined;
+  return databaseCode ? { databaseCode } : {};
 }
 
 export function getProjectCanvasDraftErrorMessage(error: unknown, fallback: string) {
@@ -281,24 +308,26 @@ function createDocumentHash(document: CanvasSnapshotDocument) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-function throwIfConflict(message: string): never {
+function throwIfConflict(error: DraftDatabaseError | string): never {
+  const message = typeof error === "string" ? error : error.message;
+  const databaseCode = typeof error === "string" ? undefined : error.code;
   if (isDraftProjectNotFoundMessage(message)) {
-    throw new ProjectCanvasDraftProjectNotFoundError("PROJECT_NOT_FOUND");
+    throw new ProjectCanvasDraftProjectNotFoundError("PROJECT_NOT_FOUND", databaseCode);
   }
 
   if (isDraftConflictMessage(message)) {
-    throw new ProjectCanvasDraftConflictError("DRAFT_CONFLICT");
+    throw new ProjectCanvasDraftConflictError("DRAFT_CONFLICT", databaseCode);
   }
 
   if (isDraftSchemaMessage(message)) {
-    throw new ProjectCanvasDraftSchemaError(message);
+    throw new ProjectCanvasDraftSchemaError(message, databaseCode);
   }
 
   if (isDraftPermissionMessage(message)) {
-    throw new ProjectCanvasDraftPermissionError(message);
+    throw new ProjectCanvasDraftPermissionError(message, databaseCode);
   }
 
-  throw new Error(message);
+  throw new ProjectCanvasDraftDatabaseError(message, databaseCode);
 }
 
 export async function loadProjectCanvasDraft(
@@ -316,15 +345,7 @@ export async function loadProjectCanvasDraft(
   const row = data as ProjectCanvasDraftRow | null;
 
   if (error) {
-    if (isDraftSchemaMessage(error.message)) {
-      throw new ProjectCanvasDraftSchemaError(error.message);
-    }
-
-    if (isDraftPermissionMessage(error.message)) {
-      throw new ProjectCanvasDraftPermissionError(error.message);
-    }
-
-    throw new Error(error.message);
+    throwIfConflict(error);
   }
 
   if (!row) {
@@ -364,7 +385,7 @@ export async function saveProjectCanvasDraft(
   });
 
   if (error) {
-    throwIfConflict(error.message);
+    throwIfConflict(error);
   }
 
   const savedDraft = (data as ProjectCanvasDraftRpcRow[] | null)?.[0];
@@ -396,10 +417,7 @@ export async function listProjectCanvasDraftOperations(
     .order("created_at" as never, { ascending: true });
 
   if (error) {
-    if (isDraftSchemaMessage(error.message)) {
-      throw new ProjectCanvasDraftSchemaError(error.message);
-    }
-    throw new Error(error.message);
+    throwIfConflict(error);
   }
 
   return ((data ?? []) as ProjectCanvasDraftOperationRow[]).map(toOperationV2);
@@ -457,7 +475,7 @@ export async function commitProjectCanvasOperationBatch(
     draft_base_snapshot_id: params.baseSnapshotId,
   });
   if (error) {
-    throwIfConflict(error.message);
+    throwIfConflict(error);
   }
 
   const savedDraft = (data as CommitProjectCanvasOperationBatchRpcRow[] | null)?.[0];
@@ -505,7 +523,10 @@ export async function createProjectCanvasRecovery(
     .single();
 
   if (error || !data) {
-    throw new Error(error?.message ?? "Recovery save returned no row.");
+    if (error) {
+      throwIfConflict(error);
+    }
+    throw new Error("Recovery save returned no row.");
   }
   return toRecovery(data as ProjectCanvasRecoveryRow);
 }
@@ -521,7 +542,7 @@ export async function listProjectCanvasRecoveries(
     .is("resolved_at" as never, null)
     .order("created_at" as never, { ascending: false });
   if (error) {
-    throw new Error(error.message);
+    throwIfConflict(error);
   }
   return ((data ?? []) as ProjectCanvasRecoveryRow[]).map(toRecovery);
 }
@@ -536,7 +557,7 @@ export async function resolveProjectCanvasRecovery(
     .eq("id" as never, params.recoveryId)
     .eq("project_id" as never, params.projectId);
   if (error) {
-    throw new Error(error.message);
+    throwIfConflict(error);
   }
 }
 
@@ -558,7 +579,7 @@ export async function finalizeProjectCanvasDraft(
   });
 
   if (error) {
-    throwIfConflict(error.message);
+    throwIfConflict(error);
   }
 
   const snapshot = (data as FinalizeProjectCanvasDraftRpcRow[] | null)?.[0];
