@@ -39,9 +39,13 @@ import {
   type CanvasPresetGroupNode,
   DEFAULT_ASSISTANT_NODE_HEIGHT,
   DEFAULT_ASSISTANT_NODE_WIDTH,
+  DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+  DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
   DEFAULT_PEN_SETTINGS,
   IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
   IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
+  MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+  MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
   type PresetGroupCategory,
   inferObjectTypeFromTag,
 } from "../types/canvas";
@@ -1124,13 +1128,22 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         );
         if (!generator) return nextNodes;
 
+        const shouldRenderOutputGallery = generator.imageGenerator.outputs.length >= 2;
         const galleryId = `image-output-gallery-${generator.id}`;
         const existingGallery = nextNodes.find(
           (node) => node.kind === "image-output-gallery" && node.imageOutputGallery.generatorNodeId === generator.id,
         );
+        if (!shouldRenderOutputGallery) {
+          return existingGallery
+            ? nextNodes.filter((node) => node.id !== galleryId)
+            : nextNodes;
+        }
+
         const gallery: CanvasImageOutputGalleryNode = existingGallery && existingGallery.kind === "image-output-gallery"
           ? {
               ...existingGallery,
+              width: Math.max(existingGallery.width, MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH),
+              height: Math.max(existingGallery.height, MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT),
               imageOutputGallery: {
                 ...existingGallery.imageOutputGallery,
                 selectedOutputAssetId: generator.imageGenerator.selectedOutputAssetId,
@@ -1141,8 +1154,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
               kind: "image-output-gallery",
               x: generator.x + generator.width * getCanvasNodeVisualScale(generator) + 80,
               y: generator.y,
-              width: 260,
-              height: Math.max(240, Math.min(generator.height, 420)),
+              width: DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
+              height: Math.max(
+                DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+                Math.min(generator.height, 460),
+              ),
               scale: 1,
               imageUrl: "",
               title: `${generator.title} Outputs`,
@@ -1160,6 +1176,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       setEdges((current) => {
         const edgeId = `image-generator-gallery-edge-${params.targetNodeId}`;
+        const generatedOutputCount =
+          params.job.outputs?.filter((output) => output.kind === "image" && output.assetId).length ?? 0;
+        if (generatedOutputCount < 2) {
+          return current.filter((edge) => edge.id !== edgeId);
+        }
         return current.some((edge) => edge.id === edgeId)
           ? current
           : [
@@ -1315,7 +1336,11 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       }
 
       if (!response.ok || !payload.data?.draft) {
-        throw new Error(payload.error || "Unable to sync the project draft.");
+        const syncError = new Error(payload.error || "Unable to sync the project draft.") as Error & {
+          code?: string;
+        };
+        syncError.code = payload.code;
+        throw syncError;
       }
 
       const hasNewerLocalMutation =
@@ -1379,7 +1404,20 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       return true;
     } catch (error) {
-      const retryAttempt = cloudDraftRetryAttemptRef.current + 1;
+      const errorCode =
+        error instanceof Error && "code" in error && typeof error.code === "string"
+          ? error.code
+          : null;
+      // These failures require a deployment/configuration correction, so retrying
+      // the same batch only spams the API while IndexedDB safely keeps the work.
+      const canRetry = ![
+        "AUTH_REQUIRED",
+        "BAD_REQUEST",
+        "PAYLOAD_TOO_LARGE",
+        "DRAFT_PERMISSION_ERROR",
+        "DRAFT_SCHEMA_ERROR",
+      ].includes(errorCode ?? "");
+      const retryAttempt = canRetry ? cloudDraftRetryAttemptRef.current + 1 : 0;
       cloudDraftRetryAttemptRef.current = retryAttempt;
       if (!syncParams.quiet) {
         setDraftWarning(
@@ -1394,6 +1432,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       // after short network/token/provider interruptions. Conflicts return
       // before this catch and intentionally require user resolution instead.
       if (
+        canRetry &&
         retryAttempt <= CLOUD_DRAFT_SYNC_RETRY_LIMIT &&
         typeof window !== "undefined" &&
         cloudDraftRetryTimeoutRef.current === null

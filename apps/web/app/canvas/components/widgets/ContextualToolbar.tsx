@@ -12,15 +12,9 @@
 import { Play, ChevronDown, Link2, Crop, Trash2, MoreHorizontal, Paintbrush } from "lucide-react";
 import type { EditorTool } from "../../types/canvas";
 
-// These are screen-space measurements. The world layer scales with zoom, so
-// both values must be converted back into world units before positioning.
-const CONTEXTUAL_TOOLBAR_HEIGHT_PX = 42;
-const CONTEXTUAL_TOOLBAR_OBJECT_GAP_PX = 12;
-
 type ContextualToolbarProps = {
   itemLabel: "Image" | "Reference" | "Object" | "Assistant" | "Image Generator" | "Text note";
   viewportZoom?: number;
-  visualTopOffset?: number;
   onMultiAngle: () => void;
   onAddObject: () => void;
   onTool: (tool: EditorTool) => void;
@@ -31,25 +25,19 @@ type ContextualToolbarProps = {
 
 export default function ContextualToolbar({
   viewportZoom = 1,
-  visualTopOffset = 0,
   onTool,
   onToast,
   onDelete,
   onRun,
 }: ContextualToolbarProps) {
   const uiScale = 1 / Math.max(viewportZoom, 0.0001);
-  const toolbarOffset =
-    visualTopOffset +
-    (CONTEXTUAL_TOOLBAR_HEIGHT_PX + CONTEXTUAL_TOOLBAR_OBJECT_GAP_PX) * uiScale;
 
   return (
     <div
-      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-1 rounded-2xl border border-[#E5E3DC] bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-md"
+      data-canvas-ui="true"
+      className="contextual-toolbar absolute left-1/2 z-[100] flex items-center gap-1 rounded-2xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)]/95 p-1.5 shadow-[0_8px_24px_var(--canvas-theme-shadow)] backdrop-blur-md"
       style={{
-        // `visualTopOffset` includes content such as an Assistant title which
-        // scales with the canvas above the card frame. The remaining terms stay
-        // fixed in screen pixels, so the gap is stable at every zoom level.
-        top: `${-toolbarOffset}px`,
+        top: `${-86 * uiScale}px`,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
@@ -61,7 +49,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onRun ? onRun() : onToast("Running AI generation for selected node context...");
         }}
-        className="flex items-center gap-1.5 rounded-xl bg-[#1A1918] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#2C2A26] active:scale-95"
+        className="flex items-center gap-1.5 rounded-xl bg-[var(--canvas-theme-active)] px-3 py-1.5 text-xs font-semibold text-[var(--canvas-theme-active-text)] shadow-sm transition hover:bg-[var(--canvas-theme-selection-hover)] active:scale-95"
       >
         <Play className="h-3.5 w-3.5 fill-current" />
         <span>Run</span>
@@ -73,12 +61,12 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onToast("Run settings");
         }}
-        className="flex h-7 w-5 items-center justify-center rounded-lg text-[#827E75] hover:bg-[#F2F0E9]"
+        className="flex h-7 w-5 items-center justify-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
 
-      <div className="h-4 w-[1px] bg-[#E5E3DC] mx-0.5" />
+      <div className="mx-0.5 h-4 w-[1px] bg-[var(--canvas-theme-border)]" />
 
       {/* Region Brush */}
       <button
@@ -88,7 +76,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onTool("region");
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-xl text-[#4A4843] transition hover:bg-[#F2F0E9]"
+        className="flex h-7 w-7 items-center justify-center rounded-xl text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Paintbrush className="h-3.5 w-3.5" />
       </button>
@@ -101,7 +89,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onTool("edit-elements");
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-xl text-[#4A4843] transition hover:bg-[#F2F0E9]"
+        className="flex h-7 w-7 items-center justify-center rounded-xl text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Link2 className="h-3.5 w-3.5" />
       </button>
@@ -114,7 +102,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onToast("Crop action triggered");
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-xl text-[#4A4843] transition hover:bg-[#F2F0E9]"
+        className="flex h-7 w-7 items-center justify-center rounded-xl text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <Crop className="h-3.5 w-3.5" />
       </button>
@@ -127,7 +115,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onDelete ? onDelete() : onToast("Node deleted");
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-xl text-rose-600 transition hover:bg-rose-50"
+        className="flex h-7 w-7 items-center justify-center rounded-xl text-[var(--canvas-theme-danger)] transition hover:bg-[var(--canvas-theme-danger-soft)]"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
@@ -140,7 +128,7 @@ export default function ContextualToolbar({
           e.stopPropagation();
           onToast("More node actions");
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-xl text-[#4A4843] transition hover:bg-[#F2F0E9]"
+        className="flex h-7 w-7 items-center justify-center rounded-xl text-[var(--canvas-theme-icon)] transition hover:bg-[var(--canvas-theme-hover)]"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>

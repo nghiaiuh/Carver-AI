@@ -22,10 +22,14 @@ import {
   MAX_IMAGE_GENERATOR_NODE_WIDTH,
   MIN_ASSISTANT_NODE_HEIGHT,
   MIN_ASSISTANT_NODE_WIDTH,
+  MAX_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+  MAX_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
   MAX_ASSISTANT_NODE_HEIGHT,
   MAX_ASSISTANT_NODE_WIDTH,
   MIN_IMAGE_GENERATOR_NODE_HEIGHT,
   MIN_IMAGE_GENERATOR_NODE_WIDTH,
+  MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+  MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
 } from "../../types/canvas";
 import type {
   AddedObject,
@@ -44,17 +48,23 @@ import type {
 } from "../../types/canvas";
 import { isCanvasImageOutputGalleryNode } from "../../types/canvas";
 import {
+  ArrowUpRight,
   Box,
+  Check,
   ChevronDown,
+  Expand,
+  Grip,
   Image as ImageIcon,
   ImagePlus,
   List,
   MapPin,
   Minus,
+  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
   Settings,
+  Trash2,
   Type,
 } from "lucide-react";
 import Sparkles from "../../../components/icons/CarverSparklesIcon";
@@ -744,6 +754,7 @@ function ImageGeneratorNodeSurface({
 
   const isRunning = generator.status === "queued" || generator.status === "generating";
   const hasPromptInput = generator.prompt.trim().length > 0 || connectedReferences.textReferences.length > 0;
+  const hasGeneratedOutputs = outputCards.length > 0;
   const selectedOutput =
     outputCards.find((output) => output.assetId && output.assetId === activeOutputAssetId) ??
     outputCards[0] ??
@@ -850,7 +861,7 @@ function ImageGeneratorNodeSurface({
             className="pointer-events-none absolute inset-0 z-[2]"
             style={{
               background:
-                "linear-gradient(to bottom, rgba(0, 0, 0, 0.10) 0%, rgba(0, 0, 0, 0.20) 45%, rgba(0, 0, 0, 0.58) 100%)",
+                "linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.8) 22%, rgba(0, 0, 0, 0.3) 42%, rgba(0, 0, 0, 0) 58%)",
             }}
           />
         </>
@@ -971,64 +982,69 @@ function ImageGeneratorNodeSurface({
                 ? "Connected prompt. Use @ to add references or extra context"
                 : "Describe the image you want to generate..."
             }
-            className="min-h-12 max-h-[112px] w-full resize-none overflow-y-auto bg-transparent px-0 font-[var(--font-botanical-sans)] text-[15px] leading-7 text-[#A1A4A6] outline-none placeholder:text-white/62"
+            className={[
+              "min-h-12 max-h-[112px] w-full resize-none overflow-y-auto bg-transparent px-0 font-[var(--font-botanical-sans)] text-[15px] leading-7 outline-none transition-[color,font-weight] duration-200",
+              showInteractiveChrome ? "font-semibold text-[#C0C4C7] placeholder:font-semibold placeholder:text-white/82" : "font-medium text-[#A1A4A6] placeholder:font-medium placeholder:text-white/62",
+            ].join(" ")}
           />
         </motion.div>
 
         <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <div className="relative h-7 w-[76px] shrink-0">
-              <motion.div
-                initial={false}
-                animate={{ opacity: showInteractiveChrome ? 0 : 1, y: showInteractiveChrome ? 4 : 0 }}
-                transition={{ duration: showInteractiveChrome ? 0.15 : 0.16, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center pl-3 text-[13px] font-semibold text-white/78"
-                style={{ pointerEvents: showInteractiveChrome ? "none" : "auto" }}
-              >
-                x{generator.outputCount}
-              </motion.div>
+            <div className={`relative h-7 shrink-0 ${hasGeneratedOutputs ? "w-[44px]" : "w-[76px]"}`}>
               <motion.div
                 initial={false}
                 animate={{ opacity: showInteractiveChrome ? 1 : 0, y: showInteractiveChrome ? 0 : 4 }}
                 transition={revealTransition(0.07)}
-                className="absolute inset-0 inline-flex items-center justify-center gap-0.5 rounded-full border border-white/8 bg-black/26 px-1 text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md"
-                style={{ pointerEvents: showInteractiveChrome ? "auto" : "none" }}
+                className={[
+                  "absolute inset-0 inline-flex items-center justify-center rounded-full border border-white/8 text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)] backdrop-blur-md",
+                  hasGeneratedOutputs ? "bg-black/18 px-2 text-white/58" : "gap-0.5 bg-black/26 px-1",
+                ].join(" ")}
+                style={{ pointerEvents: showInteractiveChrome && !hasGeneratedOutputs ? "auto" : "none" }}
               >
-                <button
-                  type="button"
-                  className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={isRunning || generator.outputCount <= IMAGE_GENERATOR_MIN_OUTPUT_COUNT}
-                  onClick={() =>
-                    updateGenerator({
-                      outputCount: Math.max(
-                        IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
-                        generator.outputCount - 1,
-                      ),
-                    })
-                  }
-                  aria-label="Decrease output count"
-                >
-                  <Minus className="h-3 w-3" strokeWidth={2.1} />
-                </button>
-                <span className="min-w-[24px] text-center text-[11px] font-semibold text-white/90">
-                  x{generator.outputCount}
-                </span>
-                <button
-                  type="button"
-                  className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={isRunning || generator.outputCount >= IMAGE_GENERATOR_MAX_OUTPUT_COUNT}
-                  onClick={() =>
-                    updateGenerator({
-                      outputCount: Math.min(
-                        IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
-                        generator.outputCount + 1,
-                      ),
-                    })
-                  }
-                  aria-label="Increase output count"
-                >
-                  <Plus className="h-3 w-3" strokeWidth={2.1} />
-                </button>
+                {hasGeneratedOutputs ? (
+                  <span className="min-w-[20px] text-center text-[11px] font-semibold text-white/58">
+                    x{generator.outputCount}
+                  </span>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={isRunning || generator.outputCount <= IMAGE_GENERATOR_MIN_OUTPUT_COUNT}
+                      onClick={() =>
+                        updateGenerator({
+                          outputCount: Math.max(
+                            IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
+                            generator.outputCount - 1,
+                          ),
+                        })
+                      }
+                      aria-label="Decrease output count"
+                    >
+                      <Minus className="h-3 w-3" strokeWidth={2.1} />
+                    </button>
+                    <span className="min-w-[24px] text-center text-[11px] font-semibold text-white/90">
+                      x{generator.outputCount}
+                    </span>
+                    <button
+                      type="button"
+                      className="grid h-5 w-5 place-items-center rounded-full text-white/88 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={isRunning || generator.outputCount >= IMAGE_GENERATOR_MAX_OUTPUT_COUNT}
+                      onClick={() =>
+                        updateGenerator({
+                          outputCount: Math.min(
+                            IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
+                            generator.outputCount + 1,
+                          ),
+                        })
+                      }
+                      aria-label="Increase output count"
+                    >
+                      <Plus className="h-3 w-3" strokeWidth={2.1} />
+                    </button>
+                  </>
+                )}
               </motion.div>
             </div>
 
@@ -1244,7 +1260,33 @@ function ImageOutputGalleryNodeSurface({
     (candidate): candidate is CanvasImageGeneratorNode =>
       candidate.id === node.imageOutputGallery.generatorNodeId && candidate.kind === "image-generator",
   );
+  const [galleryViewMode, setGalleryViewMode] = useState<"grid" | "list">("grid");
   const outputs = generator?.imageGenerator.outputs ?? [];
+
+  useEffect(() => {
+    if (
+      node.width >= MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH &&
+      node.height >= MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT
+    ) {
+      return;
+    }
+
+    onUpdateNode(node.id, (current) =>
+      current.kind === "image-output-gallery"
+        ? {
+            ...current,
+            width: Math.min(
+              MAX_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
+              Math.max(current.width, MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH),
+            ),
+            height: Math.min(
+              MAX_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+              Math.max(current.height, MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT),
+            ),
+          }
+        : current,
+    );
+  }, [node.height, node.id, node.width, onUpdateNode]);
 
   const selectOutput = (assetId?: string) => {
     if (!assetId || !generator) return;
@@ -1279,7 +1321,7 @@ function ImageOutputGalleryNodeSurface({
 
   return (
     <div
-      className="flex h-full w-full flex-col bg-[var(--canvas-theme-surface)] p-3 text-[var(--canvas-theme-text)]"
+      className="content-list-node relative flex h-full w-full flex-col overflow-hidden rounded-xl bg-[var(--canvas-theme-surface)] text-[var(--canvas-theme-text)]"
       data-canvas-interactive="true"
       onPointerDown={(event) => {
         if (event.target instanceof Element && event.target.closest("button")) {
@@ -1287,40 +1329,147 @@ function ImageOutputGalleryNodeSurface({
         }
       }}
     >
-      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--canvas-theme-text-soft)]">
-        <span>Output Gallery</span>
-        <span>{outputs.length}</span>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto pr-0.5">
-        {outputs.map((output, index) => {
-          const assetId = output.assetId;
-          const urls = assetId ? generatorAssetUrls[assetId] : undefined;
-          const imageUrl = urls?.thumbUrl ?? urls?.previewUrl ?? urls?.originalUrl ?? output.imageUrl;
-          const selected = assetId && assetId === (node.imageOutputGallery.selectedOutputAssetId ?? generator?.imageGenerator.selectedOutputAssetId);
-          return imageUrl ? (
+      <div className="list-content pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-hidden bg-inherit px-2">
+        <div className="relative z-0 flex min-h-0 flex-1 flex-col">
+          <div
+            className={[
+              "scroll-boards relative w-full min-h-0 flex-1 overflow-y-auto px-1 pb-10 pt-3 transition-[gap] duration-200 ease-out",
+              galleryViewMode === "grid"
+                ? "grid grid-cols-3 content-start gap-1.5"
+                : "flex flex-col gap-1.5",
+            ].join(" ")}
+          >
+            {outputs.map((output, index) => {
+              const assetId = output.assetId;
+              const urls = assetId ? generatorAssetUrls[assetId] : undefined;
+              const imageUrl = urls?.thumbUrl ?? urls?.previewUrl ?? urls?.originalUrl ?? output.imageUrl;
+              const selected = assetId && assetId === (node.imageOutputGallery.selectedOutputAssetId ?? generator?.imageGenerator.selectedOutputAssetId);
+              return imageUrl ? (
+                <button
+                  key={assetId ?? `${node.id}-${index}`}
+                  type="button"
+                  aria-pressed={selected || undefined}
+                  onClick={() => selectOutput(assetId)}
+                  className={[
+                    "group relative overflow-visible text-left",
+                    galleryViewMode === "grid" ? "aspect-square" : "aspect-[3.25/1]",
+                  ].join(" ")}
+                  title={`Use output ${index + 1}`}
+                >
+                  <div className="absolute inset-0 overflow-hidden rounded-lg bg-[var(--canvas-theme-surface-soft)]">
+                    <div className="size-full overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imageUrl}
+                        alt={output.title || `Output ${index + 1}`}
+                        className="pointer-events-none h-full max-h-full w-full max-w-full select-none object-contain"
+                        draggable={false}
+                        decoding="async"
+                      />
+                    </div>
+                  </div>
+                  <div className="pointer-events-none absolute inset-0 z-10 rounded-lg [transform:translateZ(0)]">
+                    <div className="absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                      <Grip className="h-3 w-3 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" strokeWidth={2.2} />
+                    </div>
+                    <div
+                      className={[
+                        "absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm transition-[transform,opacity,background-color] duration-200 ease-out",
+                        selected
+                          ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-selection)] text-white opacity-100"
+                          : "translate-x-2 border-white/14 bg-black/40 text-white opacity-0 group-hover:translate-x-0 group-hover:opacity-100",
+                      ].join(" ")}
+                    >
+                      <Check className="h-3 w-3" strokeWidth={2.4} />
+                    </div>
+                    <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/45 p-0.5 opacity-0 shadow-md backdrop-blur-md transition-opacity group-hover:opacity-100">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full text-white/88 transition-colors hover:bg-white/10">
+                        <Expand className="h-2.5 w-2.5" strokeWidth={2.2} />
+                      </div>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full text-white/88 transition-colors hover:bg-white/10">
+                        <ArrowUpRight className="h-2.5 w-2.5" strokeWidth={2.2} />
+                      </div>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full text-white/88 transition-colors hover:bg-white/10">
+                        <Trash2 className="h-2.5 w-2.5" strokeWidth={2.2} />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ) : null;
+            })}
+            {outputs.length === 0 ? (
+              <div className="col-span-3 flex h-full min-h-[180px] items-center justify-center">
+                <p className="max-w-[220px] text-center text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
+                  Run the connected generator to add outputs here.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 flex items-center justify-between gap-2 px-3 py-2">
+          <div className="pointer-events-auto flex items-center gap-1.5">
             <button
-              key={assetId ?? `${node.id}-${index}`}
               type="button"
-              aria-pressed={selected || undefined}
-              onClick={() => selectOutput(assetId)}
-              className={[
-                "relative aspect-square overflow-hidden rounded-xl border transition",
-                selected
-                  ? "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]"
-                  : "border-[var(--canvas-theme-border)] hover:border-[var(--canvas-theme-border-strong)]",
-              ].join(" ")}
-              title={`Use output ${index + 1}`}
+              aria-label="Add output action"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/36 text-white/88 backdrop-blur-[100px] transition-[opacity,transform] duration-150 hover:-translate-y-[1px] hover:bg-black/46"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt={output.title || `Output ${index + 1}`} className="h-full w-full object-cover" draggable={false} />
+              <Plus className="h-3 w-3" strokeWidth={2.2} />
             </button>
-          ) : null;
-        })}
-        {outputs.length === 0 ? (
-          <p className="col-span-2 self-center text-center text-xs leading-5 text-[var(--canvas-theme-text-muted)]">
-            Run the connected generator to add outputs here.
-          </p>
-        ) : null}
+            <button
+              type="button"
+              className="inline-flex h-6 items-center gap-1 rounded-full border border-white/10 bg-black/36 px-3 text-xs font-medium text-white/88 backdrop-blur-[100px] transition-[opacity,transform] duration-150 hover:-translate-y-[1px] hover:bg-black/46"
+            >
+              <span className="whitespace-nowrap">Keep items</span>
+              <ChevronDown className="h-3 w-3 text-white/58" strokeWidth={2} />
+            </button>
+          </div>
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              className="flex h-6 items-center gap-1.5 rounded-full border border-white/10 bg-black/36 pl-2.5 pr-1 text-[9px] text-white/84 backdrop-blur-[100px] transition-[opacity,transform] duration-150 hover:-translate-y-[1px] hover:bg-black/46"
+            >
+              <span className="flex items-center whitespace-nowrap">{outputs.length} images</span>
+              <span className="relative grid h-4 w-4 place-items-center text-white/90">
+                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              </span>
+            </button>
+            <div className="relative flex items-center rounded-full border border-white/10 bg-black/36 p-[2px] backdrop-blur-[100px] transition-transform duration-150 hover:-translate-y-[1px]">
+              <div
+                className="absolute rounded-full bg-white/12 transition-all duration-300 ease-out"
+                style={{
+                  height: "20px",
+                  width: "20px",
+                  left: galleryViewMode === "list" ? "2px" : "24px",
+                }}
+              />
+              <button
+                type="button"
+                aria-label="List view"
+                aria-pressed={galleryViewMode === "list" || undefined}
+                onClick={() => setGalleryViewMode("list")}
+                className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full text-white/60 transition-[color] duration-200"
+              >
+                <List className={`h-[10px] w-[10px] ${galleryViewMode === "list" ? "text-white" : ""}`} strokeWidth={2.2} />
+              </button>
+              <button
+                type="button"
+                aria-label="Grid view"
+                aria-pressed={galleryViewMode === "grid" || undefined}
+                onClick={() => setGalleryViewMode("grid")}
+                className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full text-white/60 transition-[color] duration-200"
+              >
+                <Box className={`h-[10px] w-[10px] ${galleryViewMode === "grid" ? "text-white" : ""}`} strokeWidth={2.2} />
+              </button>
+            </div>
+            <button
+              type="button"
+              aria-label="Media fit action"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-black/36 text-white/88 backdrop-blur-[100px] transition-[opacity,transform] duration-150 hover:-translate-y-[1px] hover:bg-black/46"
+            >
+              <MoreHorizontal className="h-3 w-3" strokeWidth={2.2} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1509,7 +1658,7 @@ export default function CanvasNodeCard({
         maxHeight: MAX_ASSISTANT_NODE_HEIGHT,
         label: "assistant",
       }
-    : isImageGenerator
+      : isImageGenerator
       ? {
           minWidth: MIN_IMAGE_GENERATOR_NODE_WIDTH,
           minHeight: MIN_IMAGE_GENERATOR_NODE_HEIGHT,
@@ -1517,6 +1666,14 @@ export default function CanvasNodeCard({
           maxHeight: MAX_IMAGE_GENERATOR_NODE_HEIGHT,
           label: "image generator",
         }
+      : isImageOutputGallery
+        ? {
+            minWidth: MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
+            minHeight: MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+            maxWidth: MAX_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
+            maxHeight: MAX_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
+            label: "output gallery",
+          }
       : null;
 
   useEffect(() => {
@@ -1886,7 +2043,6 @@ export default function CanvasNodeCard({
             <ContextualToolbar
               itemLabel={getNodeKindLabel(node.role)}
               viewportZoom={viewportZoom}
-              visualTopOffset={isAssistant || isImageGenerator ? 36 : 0}
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
               onTool={onTool}
