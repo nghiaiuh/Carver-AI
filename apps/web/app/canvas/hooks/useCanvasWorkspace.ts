@@ -23,7 +23,11 @@ import {
   type CanvasSnapshotDocument,
   type CarverAiJobRecord,
 } from "@carver/shared";
-import { getImageGeneratorCardSize, resolveImageGeneratorAspectRatio } from "@carver/shared";
+import {
+  getImageGeneratorCardSize,
+  resolveImageGeneratorAspectRatio,
+  shouldCreateImageOutputGallery,
+} from "@carver/shared";
 import {
   buildCanvasThemeStyle,
   CANVAS_THEME_STORAGE_KEY,
@@ -74,7 +78,6 @@ import {
 } from "../utils/canvasGenerationHelpers";
 import {
   buildImageGeneratorGraphContext,
-  composeImageGeneratorPrompt,
 } from "../utils/imageGeneratorGraphContext";
 import {
   buildAssistantCardContext,
@@ -1128,7 +1131,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         );
         if (!generator) return nextNodes;
 
-        const shouldRenderOutputGallery = generator.imageGenerator.outputs.length >= 2;
+        const shouldRenderOutputGallery = shouldCreateImageOutputGallery(generator.imageGenerator.outputAssetIds);
         const galleryId = `image-output-gallery-${generator.id}`;
         const existingGallery = nextNodes.find(
           (node) => node.kind === "image-output-gallery" && node.imageOutputGallery.generatorNodeId === generator.id,
@@ -1176,9 +1179,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       setEdges((current) => {
         const edgeId = `image-generator-gallery-edge-${params.targetNodeId}`;
-        const generatedOutputCount =
-          params.job.outputs?.filter((output) => output.kind === "image" && output.assetId).length ?? 0;
-        if (generatedOutputCount < 2) {
+        if (!shouldCreateImageOutputGallery(generatedImages.map((output) => output.assetId))) {
           return current.filter((edge) => edge.id !== edgeId);
         }
         return current.some((edge) => edge.id === edgeId)
@@ -2781,11 +2782,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       return;
     }
 
-    const composedPrompt = composeImageGeneratorPrompt({
-      prompt,
-      textReferences: graphContext.generatorContext.textReferences,
-    });
-
     updateImageGeneratorNode(nodeId, {
       status: "queued",
       errorMessage: undefined,
@@ -2808,9 +2804,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         penSettings,
         viewportZoom,
       });
+      // Freeze the selected count into this job so later UI changes cannot alter an in-flight request.
+      const outputCount = Math.min(
+        IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
+        Math.max(IMAGE_GENERATOR_MIN_OUTPUT_COUNT, generatorNode.imageGenerator.outputCount),
+      );
       const payload = {
         projectId: params.projectId,
-        prompt: composedPrompt,
+        // The worker owns prompt compilation. Keep the user's direction separate
+        // from graph references so it can assign each one a deterministic role.
+        prompt,
         targetType: "image-generator" as const,
         canvasId: "canvas-main",
         targetNodeId: generatorNode.id,
@@ -2820,10 +2823,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         jobType: "generate_concept" as const,
         model: generatorNode.imageGenerator.model,
         aspectRatio: generatorNode.imageGenerator.aspectRatio,
-        outputCount: Math.min(
-          IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
-          Math.max(IMAGE_GENERATOR_MIN_OUTPUT_COUNT, generatorNode.imageGenerator.outputCount),
-        ),
+        outputCount,
         canvasGraphContext: resolvedExecutionContext ?? undefined,
         imageGeneratorContext: graphContext.generatorContext,
       };

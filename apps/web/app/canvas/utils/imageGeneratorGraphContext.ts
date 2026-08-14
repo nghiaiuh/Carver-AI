@@ -133,28 +133,6 @@ function buildConnectionSummary(params: {
   return [imageSummary, presetSummary, textSummary].join(" ");
 }
 
-export function composeImageGeneratorPrompt(params: {
-  prompt: string;
-  textReferences: ImageGeneratorTextReference[];
-}) {
-  const trimmedPrompt = params.prompt.trim();
-  const textReferences = params.textReferences
-    .map((reference, index) => `${index + 1}. ${reference.title}: ${reference.content}`)
-    .join("\n");
-
-  if (!textReferences) {
-    return trimmedPrompt;
-  }
-
-  return [
-    "IMAGE GENERATOR TASK",
-    trimmedPrompt,
-    "",
-    "CONNECTED TEXT REFERENCES",
-    textReferences,
-  ].join("\n");
-}
-
 export function buildImageGeneratorGraphContext(
   generatorNodeId: string,
   nodes: CanvasNode[],

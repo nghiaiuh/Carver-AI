@@ -5,6 +5,7 @@ import {
   getImageGeneratorProviderSize,
   getImageGeneratorRatioLockedSize,
   resolveImageGeneratorAspectRatio,
+  shouldCreateImageOutputGallery,
 } from "./image-generator";
 
 test("image generator ratios resolve Auto from input dimensions with a square fallback", () => {
@@ -12,6 +13,12 @@ test("image generator ratios resolve Auto from input dimensions with a square fa
   assert.equal(resolveImageGeneratorAspectRatio({ requested: "auto", inputWidth: 0, inputHeight: 0 }), "1:1");
   assert.equal(getImageGeneratorProviderSize("21:9"), "1536x1024");
   assert.equal(getImageGeneratorProviderSize("9:16"), "1024x1536");
+});
+
+test("an output gallery is created only when at least two persisted assets exist", () => {
+  assert.equal(shouldCreateImageOutputGallery([]), false);
+  assert.equal(shouldCreateImageOutputGallery(["asset-1"]), false);
+  assert.equal(shouldCreateImageOutputGallery(["asset-1", null, "asset-2"]), true);
 });
 
 test("ratio-locked card geometry keeps the short side bounded and the requested ratio exact", () => {

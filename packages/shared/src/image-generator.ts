@@ -119,3 +119,7 @@ export function getImageGeneratorRatioLockedSize(params: {
   const requestedShortSide = startingShortSide * scale;
   return getImageGeneratorCardSize({ ratio: params.ratio, shortSide: requestedShortSide });
 }
+
+export function shouldCreateImageOutputGallery(assetIds: readonly (string | null | undefined)[]) {
+  return assetIds.filter((assetId) => typeof assetId === "string" && assetId.trim().length > 0).length >= 2;
+}
