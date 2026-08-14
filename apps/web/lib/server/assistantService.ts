@@ -1,6 +1,14 @@
 import "server-only";
 
-import { formatZodError, assistantCardRequestBodySchema, type AssistantCardRequestBody } from "@carver/shared";
+import {
+  ASSISTANT_CARD_OUTPUT_JSON_SCHEMA,
+  formatZodError,
+  assistantCardRequestBodySchema,
+  getAssistantCardOutputInstruction,
+  renderAssistantCardOutput,
+  type AssistantCardOutputFormat,
+  type AssistantCardRequestBody,
+} from "@carver/shared";
 import { createSafeLogger } from "@carver/shared";
 import type { RequestContext } from "../../app/api/_lib/authz";
 import { requireProjectOwner } from "../../app/api/_lib/authz";
@@ -18,20 +26,18 @@ type AssistantServiceResult<T> =
   | { ok: true; data: T }
   | { ok: false; response: Response };
 
-function buildAssistantCardSystemPrompt(outputFormat: AssistantCardRequestBody["outputFormat"]) {
+function buildAssistantCardSystemPrompt(outputFormat: AssistantCardOutputFormat) {
   return [
     "You are Carver AI, an AI landscape architect co-pilot embedded inside a canvas assistant card.",
     "Help with landscape, garden, and outdoor design workflows.",
     "Use connected text and image references as supporting context only.",
     "Do not invent hidden site facts or claim certainty beyond the provided prompt and references.",
     "If image references imply layout, camera, or preserved objects, respect those constraints in your advice.",
-    outputFormat === "list"
-      ? "Return a concise structured list when helpful."
-      : "Return concise prose unless the user clearly asks for a list.",
+    getAssistantCardOutputInstruction(outputFormat),
   ].join(" ");
 }
 
-function buildAssistantCardUserText(body: AssistantCardRequestBody) {
+function buildAssistantCardUserText(body: AssistantCardRequestBody, outputFormat: AssistantCardOutputFormat) {
   const textReferenceSection =
     body.context.textReferences.length > 0
       ? body.context.textReferences
@@ -50,7 +56,7 @@ function buildAssistantCardUserText(body: AssistantCardRequestBody) {
     textReferenceSection,
     "",
     "OUTPUT FORMAT",
-    body.outputFormat === "list" ? "Structured list" : "Text",
+    outputFormat === "list" ? "Numbered list" : "Concise text",
   ].join("\n");
 }
 
@@ -145,6 +151,7 @@ export async function runAssistantCard(params: {
   }
 
   const body = parsedBody.data;
+  const outputFormat: AssistantCardOutputFormat = body.outputFormat ?? "text";
   if (body.projectId && body.projectId !== params.projectId) {
     return {
       ok: false,
@@ -206,7 +213,7 @@ export async function runAssistantCard(params: {
           content: [
             {
               type: "input_text",
-              text: buildAssistantCardSystemPrompt(body.outputFormat),
+              text: buildAssistantCardSystemPrompt(outputFormat),
             },
           ],
         },
@@ -215,7 +222,7 @@ export async function runAssistantCard(params: {
           content: [
             {
               type: "input_text",
-              text: buildAssistantCardUserText(body),
+              text: buildAssistantCardUserText(body, outputFormat),
             },
             ...assistantImages.flatMap((image) => [
               {
@@ -230,13 +237,25 @@ export async function runAssistantCard(params: {
           ],
         },
       ],
+      responseFormat: {
+        type: "json_schema",
+        name: "assistant_card_output",
+        description: "A validated Assistant card output for the selected export mode.",
+        schema: ASSISTANT_CARD_OUTPUT_JSON_SCHEMA,
+        strict: true,
+      },
+    });
+
+    const renderedResponse = renderAssistantCardOutput({
+      raw: assistantText,
+      expectedFormat: outputFormat,
     });
 
     const lastRunAt = new Date().toISOString();
     return {
       ok: true,
       data: {
-        response: assistantText,
+        response: renderedResponse,
         model: normalizeOpenAIChatModel(body.model),
         nodeId: body.nodeId,
         lastRunAt,

@@ -26,6 +26,14 @@ type OpenAIResponse = {
   };
 };
 
+export type OpenAIResponseTextFormat = {
+  type: "json_schema";
+  name: string;
+  description: string;
+  schema: Record<string, unknown>;
+  strict: true;
+};
+
 type OpenAIInputTextBlock = {
   type: "input_text";
   text: string;
@@ -72,6 +80,7 @@ function getAssistantText(payload: OpenAIResponse) {
 
 export async function createOpenAITextResponse(params: {
   model?: string;
+  responseFormat?: OpenAIResponseTextFormat;
   input: Array<{
     role: "system" | "user" | "assistant";
     content: OpenAIInputBlock[] | OpenAIAssistantBlock[];
@@ -96,6 +105,9 @@ export async function createOpenAITextResponse(params: {
       body: JSON.stringify({
         model: params.model ?? DEFAULT_OPENAI_CHAT_MODEL,
         input: params.input,
+        text: params.responseFormat
+          ? { format: params.responseFormat }
+          : { format: { type: "text" } },
       }),
       signal: controller.signal,
     });
