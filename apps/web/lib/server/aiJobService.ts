@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   createAiJobBodySchema,
   createSafeLogger,
@@ -222,6 +222,11 @@ const buildIdempotencyKey = (params: {
     )
     .digest("hex")
     .slice(0, 48);
+
+const createRetryIdempotencyKey = (baseKey: string) => `${baseKey}-retry-${randomUUID()}`;
+
+const isRetryableTerminalJobStatus = (status: string) =>
+  status === "failed" || status === "cancelled" || status === "enqueue_failed";
 
 function imageSourceValue(
   value: unknown,
@@ -675,8 +680,9 @@ export async function createProjectAiJob(params: {
     ]),
   );
 
-  const idempotencyKey =
-    body.idempotencyKey ??
+  const clientIdempotencyKey = body.idempotencyKey;
+  let idempotencyKey =
+    clientIdempotencyKey ??
     buildIdempotencyKey({
       userId: user.id,
       projectId,
@@ -735,7 +741,7 @@ export async function createProjectAiJob(params: {
     };
   }
 
-  if (existingJob) {
+  if (existingJob && (!isRetryableTerminalJobStatus(existingJob.status) || clientIdempotencyKey)) {
     await deletePersistedProjectImageAssets({
       supabase,
       projectId,
@@ -928,6 +934,20 @@ export async function createProjectAiJob(params: {
         creditsRemaining: aiJob.credits_remaining ?? undefined,
       },
     };
+  }
+
+  if (existingJob) {
+    // Canvas requests use a deterministic key to collapse accidental duplicate
+    // clicks. A terminal failure is a completed attempt, not a successful run,
+    // so a later user-initiated Run needs a new job and credit reservation.
+    idempotencyKey = createRetryIdempotencyKey(idempotencyKey);
+    logger.info("creating AI job retry after terminal failure", {
+      requestId: context.requestId,
+      projectId,
+      userId: user.id,
+      previousJobId: existingJob.id,
+      previousStatus: existingJob.status,
+    });
   }
 
   return {

@@ -102,7 +102,7 @@ export const registerAiJobWorkerEvents = (worker: Worker<QueuedCarverAiJobPayloa
     });
 
     await reconcileExhaustedFailure(event.jobId, event.jobId, {
-      errorCode: "worker_processing_failed",
+      errorCode: "worker_retry_exhausted",
       errorMessage: "BullMQ exhausted all retry attempts before the job reached a terminal DB state.",
     }).catch((error) => {
       logger.error("job retries exhausted reconciliation failed", {

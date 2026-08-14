@@ -17,6 +17,7 @@ import {
 } from "../services/job-status-service";
 import { buildJobError, toWorkerError } from "../mappers/build-job-error";
 import { aiJobRepository } from "../repositories/ai-job-repository";
+import { runGenerationStage } from "../errors/generation-stage-error";
 
 const logger = createSafeLogger("worker.process-ai-job");
 
@@ -80,6 +81,9 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
       currentAttempt: attemptContext.currentAttempt,
       maxAttempts: attemptContext.maxAttempts,
       error: mappedError.errorMessage,
+      failureStage: mappedError.failureStage,
+      providerStatus: mappedError.providerStatus,
+      providerCode: mappedError.providerCode,
     });
 
     if (mappedError.permanent || attemptContext.isFinalAttempt) {
@@ -169,7 +173,7 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
         throw new Error(`Unsupported AI job type: ${dbJob.payload.jobType}`);
     }
 
-    await succeedJob(job.data.jobId, bullJobId, completedResult);
+    await runGenerationStage("job_completion", () => succeedJob(job.data.jobId, bullJobId, completedResult));
   } catch (error) {
     const mappedError = buildJobError(error);
     logger.error("job attempt failed", {
@@ -182,6 +186,9 @@ export const processAiJob = async (job: Job<QueuedCarverAiJobPayload>) => {
       permanent: mappedError.permanent,
       errorCode: mappedError.errorCode,
       errorMessage: mappedError.errorMessage,
+      failureStage: mappedError.failureStage,
+      providerStatus: mappedError.providerStatus,
+      providerCode: mappedError.providerCode,
     });
 
     if (mappedError.permanent || attemptContext.isFinalAttempt) {

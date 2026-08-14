@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildJobError, toWorkerError } from "./build-job-error";
+import { GenerationStageError } from "../errors/generation-stage-error";
 
 test("classifies transient provider and storage failures as retryable", () => {
   for (const message of [
@@ -38,4 +39,27 @@ test("does not expose raw provider or user input text in persisted error message
   assert.equal(result.errorCode, "provider_invalid_request");
   assert.equal(result.errorMessage, "The image provider could not process this generation request.");
   assert.equal(result.errorMessage.includes("Example Street"), false);
+});
+
+test("preserves a safe provider rejection stage without exposing the provider message", () => {
+  const result = buildJobError(
+    new GenerationStageError("provider_request", "OpenAI rejected: private garden at 12 Example Street", {
+      providerStatus: 400,
+      providerCode: "invalid_request_error",
+    }),
+  );
+
+  assert.equal(result.errorCode, "provider_bad_request");
+  assert.equal(result.permanent, true);
+  assert.equal(result.failureStage, "provider_request");
+  assert.equal(result.providerStatus, 400);
+  assert.equal(result.errorMessage.includes("Example Street"), false);
+});
+
+test("identifies input resolution and R2 persistence failures by stage", () => {
+  const input = buildJobError(new GenerationStageError("input_resolution", "r2 object failed"));
+  const persistence = buildJobError(new GenerationStageError("asset_persistence", "storage failed"));
+
+  assert.equal(input.errorCode, "generation_input_unavailable");
+  assert.equal(persistence.errorCode, "storage_upload_failed");
 });
