@@ -46,12 +46,18 @@ import {
   DEFAULT_ASSISTANT_NODE_WIDTH,
   DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
   DEFAULT_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
+  DEFAULT_CONTEXT_GROUP_NODE_HEIGHT,
+  DEFAULT_CONTEXT_GROUP_NODE_WIDTH,
+  DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT,
+  DEFAULT_CAMERA_SHOT_SET_NODE_WIDTH,
   DEFAULT_PEN_SETTINGS,
   IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
   IMAGE_GENERATOR_MIN_OUTPUT_COUNT,
   MIN_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT,
   MIN_IMAGE_OUTPUT_GALLERY_NODE_WIDTH,
   type PresetGroupCategory,
+  type CanvasContextGroupKind,
+  type CanvasCameraShotPreset,
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import {
@@ -59,7 +65,14 @@ import {
   getCanvasNodeVisualScale,
   getImageGeneratorInputPorts,
   getImageOutputGalleryInputPorts,
+  getContextGroupInputPorts,
+  getCameraShotSetInputPorts,
 } from "../utils/canvasNodePorts";
+import {
+  CONTEXT_GROUP_LABELS,
+  createContextGroupItems,
+} from "../utils/contextGroupHelpers";
+import { createCameraShotSet } from "../utils/cameraShotHelpers";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import {
   buildCanvasGenerationContext,
@@ -105,6 +118,7 @@ import {
   isCanvasImageGeneratorNode,
   isCanvasImageOutputGalleryNode,
   isCanvasTextNode,
+  isCanvasCameraShotSetNode,
 } from "../types/canvas";
 import {
   isAssistantNode,
@@ -659,6 +673,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             !isAssistantNode(node) &&
             !isCanvasImageGeneratorNode(node) &&
             !isCanvasImageOutputGalleryNode(node) &&
+            !isCanvasCameraShotSetNode(node) &&
             !isCanvasTextNode(node),
         ) ?? null
       : null;
@@ -2634,6 +2649,104 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     showToast("Assistant object added to canvas");
   };
 
+  const addContextGroupNode = (kind: CanvasContextGroupKind, sourceNodeIds?: string[]) => {
+    const selectedNodeId =
+      selectedItem.type === "node" || selectedItem.type === "image"
+        ? selectedItem.id
+        : null;
+    const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
+    const selectedNodes = sourceNodeIds?.length
+      ? nodes.filter((node) => sourceNodeIds.includes(node.id))
+      : selectedNode
+        ? [selectedNode]
+        : [];
+    const items = createContextGroupItems(selectedNodes, kind);
+    const anchorNode = selectedNode ?? nodes.at(-1) ?? null;
+    const id = `context-group-${kind}-${Date.now()}`;
+    const label = CONTEXT_GROUP_LABELS[kind];
+
+    const newNode: CanvasNode = {
+      id,
+      kind: "context-group",
+      x: anchorNode ? anchorNode.x + anchorNode.width + 88 : 220 + nodes.length * 24,
+      y: anchorNode ? anchorNode.y : 200 + nodes.length * 18,
+      width: DEFAULT_CONTEXT_GROUP_NODE_WIDTH,
+      height: DEFAULT_CONTEXT_GROUP_NODE_HEIGHT,
+      scale: 1,
+      imageUrl: "",
+      title: label,
+      prompt: null,
+      role: "reference",
+      inputPorts: getContextGroupInputPorts(),
+      contextGroup: {
+        kind,
+        items,
+        description: items.length > 0
+          ? `${label} built from ${items.length} selected canvas reference${items.length === 1 ? "" : "s"}.`
+          : `Select a canvas image, then recreate this ${label} to attach its reference.`,
+      },
+    };
+
+    setNodes((current) => [...current, newNode]);
+    setSelectedItem({ type: "node", id });
+    setActiveTool("select");
+    showToast(
+      items.length > 0
+        ? `${label} added with ${items.length} context reference.`
+        : `${label} added empty. Select an image first to create a populated group.`,
+    );
+  };
+
+  const addCameraShotSetNode = (selectedShotIds: CanvasCameraShotPreset[] = ["eye-level"]) => {
+    const selectedNode =
+      selectedItem.type === "node" || selectedItem.type === "image"
+        ? nodes.find((node) => node.id === selectedItem.id)
+        : null;
+    const anchorNode = selectedNode ?? nodes.at(-1) ?? null;
+    const id = `camera-shot-set-${Date.now()}`;
+
+    setNodes((current) => [
+      ...current,
+      {
+        id,
+        kind: "camera-shot-set",
+        x: anchorNode ? anchorNode.x + anchorNode.width + 88 : 260 + nodes.length * 24,
+        y: anchorNode ? anchorNode.y : 220 + nodes.length * 18,
+        width: DEFAULT_CAMERA_SHOT_SET_NODE_WIDTH,
+        height: DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT,
+        scale: 1,
+        imageUrl: "",
+        title: `Camera Shot Set #${current.filter(isCanvasCameraShotSetNode).length + 1}`,
+        prompt: null,
+        role: "reference",
+        inputPorts: getCameraShotSetInputPorts(),
+        cameraShotSet: createCameraShotSet(selectedShotIds),
+      },
+    ]);
+    setSelectedItem({ type: "node", id });
+    setActiveTool("select");
+    showToast("Camera Shot Set added. Connect it to an Assistant or Image Generator.");
+  };
+
+  const toggleCameraShot = (nodeId: string, shotId: CanvasCameraShotPreset) => {
+    setNodes((current) => current.map((node) => {
+      if (!isCanvasCameraShotSetNode(node) || node.id !== nodeId) return node;
+      const target = node.cameraShotSet.shots.find((shot) => shot.id === shotId);
+      if (!target) return node;
+      const selectedCount = node.cameraShotSet.shots.filter((shot) => shot.selected).length;
+      if (target.selected && selectedCount === 1) return node;
+
+      return {
+        ...node,
+        cameraShotSet: {
+          shots: node.cameraShotSet.shots.map((shot) =>
+            shot.id === shotId ? { ...shot, selected: !shot.selected } : shot,
+          ),
+        },
+      };
+    }));
+  };
+
   const addImageGeneratorNode = () => {
     const selectedNode =
       selectedItem.type === "node" || selectedItem.type === "image"
@@ -2863,7 +2976,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       const snapshot = buildCanvasSnapshotWithGraph({
         nodes,
         edges,
-        activeGenerationTargetId,
+        activeGenerationTargetId: graphContext.executionContext?.target.nodeId ?? activeGenerationTargetId,
         markers,
         addedObjects,
         sketchLines,
@@ -3544,6 +3657,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       addObject,
       addAssistantNode,
       addImageGeneratorNode,
+      addContextGroupNode,
+      addCameraShotSetNode,
+      toggleCameraShot,
       runAssistantNode,
       runImageGeneratorNode,
       uploadAssetsToFolder,

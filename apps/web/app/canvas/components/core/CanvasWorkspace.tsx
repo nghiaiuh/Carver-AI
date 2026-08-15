@@ -89,6 +89,20 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     state.isSnapshotLoading,
     state.isSnapshotSaving,
   ]);
+  const selectedContextSourceId =
+    state.selectedItem.type === "image" || state.selectedItem.type === "node"
+      ? state.selectedItem.id
+      : null;
+  const initialContextSourceIds =
+    selectedContextSourceId &&
+    state.nodes.some(
+      (node) =>
+        node.id === selectedContextSourceId &&
+        (node.kind === "image" || node.kind === undefined) &&
+        Boolean(node.sourceImage?.assetId || node.imageUrl),
+    )
+      ? [selectedContextSourceId]
+      : [];
 
   const projectName = state.nodes[0]?.title || "Living Landscape Studio";
   const addLibraryAssetsFromRecipe = (assets: LibraryAsset[]) => {
@@ -243,16 +257,30 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           />
         </div>
 
-        <QuickAddMenu
-          open={quickAddOpen}
-          onClose={() => setQuickAddOpen(false)}
-          onSelectType={(nodeType) => {
+        {quickAddOpen ? (
+          <QuickAddMenu
+            open
+            onClose={() => setQuickAddOpen(false)}
+            contextSourceOptions={state.nodes
+              .filter((node) => node.kind === "image" || node.kind === undefined)
+              .filter((node) => Boolean(node.sourceImage?.assetId || node.imageUrl))
+              .map((node) => ({ id: node.id, title: node.title }))}
+            initialContextSourceIds={initialContextSourceIds}
+            onSelectType={(nodeType, sourceNodeIds) => {
             switch (nodeType) {
               case "carver-generate":
                 actions.addImageGeneratorNode();
                 return;
               case "ai-brief":
                 actions.addAssistantNode();
+                return;
+              case "site-set":
+              case "sketch-layer":
+              case "material-board":
+                actions.addContextGroupNode(nodeType, sourceNodeIds);
+                return;
+              case "camera-shot-set":
+                actions.addCameraShotSetNode();
                 return;
               case "upload-image":
                 setActiveRecipeModal("site");
@@ -262,8 +290,9 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
                 actions.showToast(`Added ${nodeType} node to canvas`);
                 return;
             }
-          }}
-        />
+            }}
+          />
+        ) : null}
 
         <div data-enter className="relative flex min-h-0 flex-1 bg-[#FAF9F6]">
           {/* Canvas board */}
@@ -333,6 +362,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
               onRunAssistantNode={actions.runAssistantNode}
               onRunImageGeneratorNode={actions.runImageGeneratorNode}
+              onToggleCameraShot={actions.toggleCameraShot}
               generatorAssetUrls={state.resolvedGeneratorAssetUrls}
               onHistoryActionsChange={handleHistoryActionsChange}
             />
@@ -388,7 +418,10 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           <MultiAngleModal
             open={modals.showMultiAngleModal}
             onClose={() => actions.setShowMultiAngleModal(false)}
-            onGenerate={actions.generateAngles}
+            onGenerate={(shotIds) => {
+              actions.addCameraShotSetNode(shotIds);
+              actions.setShowMultiAngleModal(false);
+            }}
           />
           <AddObjectMenu
             open={modals.showAddObjectMenu}

@@ -26,6 +26,7 @@ import type {
   CanvasNode,
   CanvasPresetChild,
   CanvasPresetGroupNode,
+  CanvasCameraShotPreset,
   CanvasTextNode,
   EditorTool,
   Marker,
@@ -39,9 +40,12 @@ import type {
   SketchLine,
 } from "../../types/canvas";
 import { getDefaultInputPorts } from "../../types/canvas";
+import { isCanvasCameraShotSetNode, isCanvasContextGroupNode } from "../../types/canvas";
 import type { LibraryAsset } from "../../types/library";
 import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
+import CanvasContextGroupNodeCard from "./CanvasContextGroupNodeCard";
+import CanvasCameraShotSetNodeCard from "./CanvasCameraShotSetNodeCard";
 import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
 import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
@@ -183,6 +187,7 @@ type CanvasBoardProps = {
     nodeId: string,
     options?: { simulation?: CarverAiJobSimulationConfig },
   ) => void | Promise<void>;
+  onToggleCameraShot: (nodeId: string, shotId: CanvasCameraShotPreset) => void;
   generatorAssetUrls: Record<string, {
     thumbUrl: string;
     previewUrl: string;
@@ -362,6 +367,7 @@ export default function CanvasBoard({
   onPersistCanvasNodeImageAsset,
   onRunAssistantNode,
   onRunImageGeneratorNode,
+  onToggleCameraShot,
   generatorAssetUrls,
   onHistoryActionsChange,
 }: CanvasBoardProps) {
@@ -2351,6 +2357,42 @@ export default function CanvasBoard({
               }}
               onDelete={deleteNode}
               onPresetChildHover={setHoveredPresetChildId}
+            />
+          ) : isCanvasContextGroupNode(node) ? (
+            <CanvasContextGroupNodeCard
+              key={node.id}
+              node={node}
+              allNodes={nodes}
+              selected={selectedNodeIds.includes(node.id)}
+              isConnectionTarget={hoveredConnectionTargetId === node.id}
+              onSelect={(id) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id });
+              }}
+              onDragStart={handleNodePointerDown}
+              onStartConnection={handleConnectionHandlePointerDown}
+              onSelectContextMenu={(id, x, y) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id, menu: { x, y } });
+              }}
+            />
+          ) : isCanvasCameraShotSetNode(node) ? (
+            <CanvasCameraShotSetNodeCard
+              key={node.id}
+              node={node}
+              selected={selectedNodeIds.includes(node.id)}
+              isConnectionTarget={hoveredConnectionTargetId === node.id}
+              onSelect={(id) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id });
+              }}
+              onDragStart={handleNodePointerDown}
+              onToggleShot={onToggleCameraShot}
+              onStartConnection={handleConnectionHandlePointerDown}
+              onSelectContextMenu={(id, x, y) => {
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id, menu: { x, y } });
+              }}
             />
           ) : (
             <CanvasNodeCard

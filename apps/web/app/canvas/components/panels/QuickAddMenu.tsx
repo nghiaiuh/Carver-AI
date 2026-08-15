@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Search,
   Image as ImageIcon,
@@ -8,9 +8,10 @@ import {
   Lock,
   Grid,
   Square,
-  Type,
   UploadCloud,
   Compass,
+  Camera,
+  Map as MapIcon,
   Layers,
   X,
 } from "lucide-react";
@@ -19,19 +20,23 @@ import Sparkles from "../../../components/icons/CarverSparklesIcon";
 type QuickAddMenuProps = {
   open: boolean;
   onClose: () => void;
-  onSelectType: (type: string) => void;
+  onSelectType: (type: string, sourceNodeIds?: string[]) => void;
+  contextSourceOptions?: Array<{ id: string; title: string }>;
+  initialContextSourceIds?: string[];
 };
 
-export default function QuickAddMenu({ open, onClose, onSelectType }: QuickAddMenuProps) {
+const CONTEXT_GROUP_TYPES = new Set(["site-set", "sketch-layer", "material-board"]);
+
+export default function QuickAddMenu({
+  open,
+  onClose,
+  onSelectType,
+  contextSourceOptions = [],
+  initialContextSourceIds = [],
+}: QuickAddMenuProps) {
   const [query, setQuery] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [open]);
-
+  const [pendingContextGroupType, setPendingContextGroupType] = useState<string | null>(null);
+  const [selectedContextSourceIds, setSelectedContextSourceIds] = useState<string[]>([]);
   if (!open) return null;
 
   const nodeTypes = [
@@ -41,6 +46,34 @@ export default function QuickAddMenu({ open, onClose, onSelectType }: QuickAddMe
       category: "Media",
       icon: <ImageIcon className="h-4 w-4 text-blue-500" />,
       desc: "Upload site photos or courtyard layout references",
+    },
+    {
+      id: "site-set",
+      title: "Site Set",
+      category: "Context",
+      icon: <MapIcon className="h-4 w-4 text-sky-600" />,
+      desc: "Group selected site photos into one layout-aware input",
+    },
+    {
+      id: "sketch-layer",
+      title: "Sketch Layer",
+      category: "Context",
+      icon: <Layers className="h-4 w-4 text-violet-600" />,
+      desc: "Group selected plan or sketch references into one input",
+    },
+    {
+      id: "material-board",
+      title: "Material Board",
+      category: "Context",
+      icon: <Grid className="h-4 w-4 text-amber-600" />,
+      desc: "Group selected planting and material references into one input",
+    },
+    {
+      id: "camera-shot-set",
+      title: "Camera Shot Set",
+      category: "Camera",
+      icon: <Camera className="h-4 w-4 text-rose-500" />,
+      desc: "Plan selected camera viewpoints and connect them as AI text context",
     },
     {
       id: "text-note",
@@ -114,8 +147,8 @@ export default function QuickAddMenu({ open, onClose, onSelectType }: QuickAddMe
         <div className="flex items-center gap-3 rounded-2xl border border-[#E5E3DC] bg-[#F8F7F3] px-3.5 py-2.5">
           <Search className="h-4 w-4 text-[#827E75]" />
           <input
-            ref={inputRef}
             type="text"
+            autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search node types (e.g., Site Images, Brief, Spatial Locks)..."
@@ -130,13 +163,60 @@ export default function QuickAddMenu({ open, onClose, onSelectType }: QuickAddMe
           </button>
         </div>
 
-        {/* Node Types List */}
-        <div className="mt-3 max-h-96 overflow-y-auto space-y-1 pr-1">
+        {pendingContextGroupType ? (
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-[#1A1918]">Choose context images</p>
+                <p className="mt-0.5 text-xs text-[#827E75]">The group stores stable references and exposes one shared output port.</p>
+              </div>
+              <button type="button" onClick={() => setPendingContextGroupType(null)} className="text-xs font-semibold text-[#827E75] hover:text-[#1A1918]">Back</button>
+            </div>
+            <div className="mt-3 max-h-72 space-y-1 overflow-y-auto pr-1">
+              {contextSourceOptions.map((source) => {
+                const selected = selectedContextSourceIds.includes(source.id);
+                return (
+                  <label key={source.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-[#F8F7F3]">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => setSelectedContextSourceIds((current) =>
+                        selected ? current.filter((id) => id !== source.id) : [...current, source.id],
+                      )}
+                      className="h-4 w-4 accent-[#EA7542]"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#1A1918]">{source.title}</span>
+                  </label>
+                );
+              })}
+              {contextSourceOptions.length === 0 ? (
+                <p className="rounded-xl bg-[#F8F7F3] px-3 py-4 text-center text-xs text-[#827E75]">Add site images to the canvas before creating a context group.</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              disabled={selectedContextSourceIds.length === 0}
+              onClick={() => {
+                onSelectType(pendingContextGroupType, selectedContextSourceIds);
+                onClose();
+              }}
+              className="mt-4 w-full rounded-xl bg-[#1A1918] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2C2A26] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Create group with {selectedContextSourceIds.length} image{selectedContextSourceIds.length === 1 ? "" : "s"}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 max-h-96 overflow-y-auto space-y-1 pr-1">
           {filtered.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => {
+                if (CONTEXT_GROUP_TYPES.has(item.id)) {
+                  setPendingContextGroupType(item.id);
+                  setSelectedContextSourceIds(initialContextSourceIds);
+                  return;
+                }
                 onSelectType(item.id);
                 onClose();
               }}
@@ -161,7 +241,8 @@ export default function QuickAddMenu({ open, onClose, onSelectType }: QuickAddMe
               No node types found for &ldquo;{query}&rdquo;
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
