@@ -1,21 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
-  Search,
-  Image as ImageIcon,
-  FileText,
-  Lock,
-  Grid,
-  Square,
-  UploadCloud,
-  Compass,
+  Bot,
   Camera,
+  Grid2X2,
+  Image as ImageIcon,
+  Layers3,
   Map as MapIcon,
-  Layers,
+  Palette,
+  Search,
+  Sparkles,
+  UploadCloud,
   X,
 } from "lucide-react";
-import Sparkles from "../../../components/icons/CarverSparklesIcon";
+
+type QuickAddCategory = "all" | "media" | "context" | "ai" | "camera";
 
 type QuickAddMenuProps = {
   open: boolean;
@@ -25,7 +26,36 @@ type QuickAddMenuProps = {
   initialContextSourceIds?: string[];
 };
 
+type QuickAddItem = {
+  id: string;
+  title: string;
+  section: "Basics" | "Media" | "Context" | "Camera";
+  category: Exclude<QuickAddCategory, "all">;
+  icon: LucideIcon;
+  iconClassName: string;
+  description: string;
+};
+
 const CONTEXT_GROUP_TYPES = new Set(["site-set", "sketch-layer", "material-board"]);
+const SECTION_ORDER: QuickAddItem["section"][] = ["Basics", "Media", "Context", "Camera"];
+
+const QUICK_ADD_ITEMS: QuickAddItem[] = [
+  { id: "carver-generate", title: "Image Generator", section: "Basics", category: "ai", icon: ImageIcon, iconClassName: "bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]", description: "Create an image generation node with graph-aware context." },
+  { id: "ai-brief", title: "Assistant", section: "Basics", category: "ai", icon: Bot, iconClassName: "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-icon)]", description: "Add a landscape assistant prompt and result card." },
+  { id: "upload-image", title: "Project Site Images", section: "Media", category: "media", icon: UploadCloud, iconClassName: "bg-sky-50 text-sky-600", description: "Choose a site photo or reference from the project library." },
+  { id: "site-set", title: "Site Set", section: "Context", category: "context", icon: MapIcon, iconClassName: "bg-sky-50 text-sky-600", description: "Group site photos as one layout-aware image input." },
+  { id: "sketch-layer", title: "Sketch Layer", section: "Context", category: "context", icon: Layers3, iconClassName: "bg-violet-50 text-violet-600", description: "Group plans and sketches as controlled spatial context." },
+  { id: "material-board", title: "Material Board", section: "Context", category: "context", icon: Palette, iconClassName: "bg-amber-50 text-amber-600", description: "Group planting, stone, paving, and finish references." },
+  { id: "camera-shot-set", title: "Camera Shot Set", section: "Camera", category: "camera", icon: Camera, iconClassName: "bg-rose-50 text-rose-600", description: "Plan camera viewpoints and connect them as text context." },
+];
+
+const CATEGORY_TABS: Array<{ id: QuickAddCategory; label: string; icon: QuickAddItem["icon"] }> = [
+  { id: "all", label: "All tools", icon: Grid2X2 },
+  { id: "media", label: "Media", icon: ImageIcon },
+  { id: "context", label: "Context", icon: Layers3 },
+  { id: "ai", label: "AI", icon: Sparkles },
+  { id: "camera", label: "Camera", icon: Camera },
+];
 
 export default function QuickAddMenu({
   open,
@@ -34,216 +64,133 @@ export default function QuickAddMenu({
   contextSourceOptions = [],
   initialContextSourceIds = [],
 }: QuickAddMenuProps) {
+  const flyoutRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<QuickAddCategory>("all");
   const [pendingContextGroupType, setPendingContextGroupType] = useState<string | null>(null);
   const [selectedContextSourceIds, setSelectedContextSourceIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!flyoutRef.current?.contains(event.target as Node)) onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
   if (!open) return null;
 
-  const nodeTypes = [
-    {
-      id: "upload-image",
-      title: "Project Site Images",
-      category: "Media",
-      icon: <ImageIcon className="h-4 w-4 text-blue-500" />,
-      desc: "Upload site photos or courtyard layout references",
-    },
-    {
-      id: "site-set",
-      title: "Site Set",
-      category: "Context",
-      icon: <MapIcon className="h-4 w-4 text-sky-600" />,
-      desc: "Group selected site photos into one layout-aware input",
-    },
-    {
-      id: "sketch-layer",
-      title: "Sketch Layer",
-      category: "Context",
-      icon: <Layers className="h-4 w-4 text-violet-600" />,
-      desc: "Group selected plan or sketch references into one input",
-    },
-    {
-      id: "material-board",
-      title: "Material Board",
-      category: "Context",
-      icon: <Grid className="h-4 w-4 text-amber-600" />,
-      desc: "Group selected planting and material references into one input",
-    },
-    {
-      id: "camera-shot-set",
-      title: "Camera Shot Set",
-      category: "Camera",
-      icon: <Camera className="h-4 w-4 text-rose-500" />,
-      desc: "Plan selected camera viewpoints and connect them as AI text context",
-    },
-    {
-      id: "text-note",
-      title: "Site Notes / Constraints",
-      category: "Context",
-      icon: <FileText className="h-4 w-4 text-emerald-500" />,
-      desc: "Add site notes, priorities, and physical requirements",
-    },
-    {
-      id: "ai-brief",
-      title: "AI Landscape Brief",
-      category: "AI Workflow",
-      icon: <Sparkles className="h-4 w-4 text-[#EA7542]" />,
-      desc: "Define concept direction, style, materials, and atmosphere",
-    },
-    {
-      id: "spatial-locks",
-      title: "Spatial Locks Node",
-      category: "Constraints",
-      icon: <Lock className="h-4 w-4 text-amber-500" />,
-      desc: "Lock house position, pond shape, paths, and mature trees",
-    },
-    {
-      id: "carver-generate",
-      title: "Carver Generate Node",
-      category: "AI Workflow",
-      icon: <Sparkles className="h-4 w-4 text-purple-500" />,
-      desc: "AI generation engine node with image input context",
-    },
-    {
-      id: "concept-set",
-      title: "Concept Variations Set",
-      category: "Output",
-      icon: <Grid className="h-4 w-4 text-indigo-500" />,
-      desc: "Compare multi-option AI concept variations in a 2x2 grid",
-    },
-    {
-      id: "mood-study",
-      title: "Alternate Mood Study",
-      category: "Style",
-      icon: <Compass className="h-4 w-4 text-pink-500" />,
-      desc: "Reference images for atmosphere, lighting, and planting style",
-    },
-    {
-      id: "drop-zone",
-      title: "Upload Drop Zone",
-      category: "Media",
-      icon: <UploadCloud className="h-4 w-4 text-[#EA7542]" />,
-      desc: "Canvas drop target for dragging external image files",
-    },
-    {
-      id: "workflow-frame",
-      title: "Workflow Section Frame",
-      category: "Structure",
-      icon: <Square className="h-4 w-4 text-slate-600" />,
-      desc: "Group related nodes into an architectural workflow frame",
-    },
-  ];
-
-  const filtered = nodeTypes.filter(
-    (n) =>
-      n.title.toLowerCase().includes(query.toLowerCase()) ||
-      n.desc.toLowerCase().includes(query.toLowerCase()) ||
-      n.category.toLowerCase().includes(query.toLowerCase())
-  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredItems = QUICK_ADD_ITEMS.filter((item) => {
+    if (activeCategory !== "all" && item.category !== activeCategory) return false;
+    return !normalizedQuery || [item.title, item.description, item.section].some((value) =>
+      value.toLowerCase().includes(normalizedQuery),
+    );
+  });
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="w-full max-w-lg rounded-3xl border border-[#E5E3DC] bg-white p-4 shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
-        {/* Header Search */}
-        <div className="flex items-center gap-3 rounded-2xl border border-[#E5E3DC] bg-[#F8F7F3] px-3.5 py-2.5">
-          <Search className="h-4 w-4 text-[#827E75]" />
-          <input
-            type="text"
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search node types (e.g., Site Images, Brief, Spatial Locks)..."
-            className="w-full bg-transparent text-sm font-medium text-[#1A1918] placeholder-[#827E75] outline-none"
-          />
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl p-1 text-[#827E75] hover:bg-[#E5E3DC] hover:text-[#1A1918]"
-          >
-            <X className="h-4 w-4" />
+    <div
+      ref={flyoutRef}
+      role="dialog"
+      aria-label="Add canvas tools"
+      className="absolute left-[84px] top-1/2 z-[110] w-[300px] -translate-y-1/2 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl transition-[opacity,transform] duration-200 ease-out"
+      data-canvas-ui="true"
+      data-quick-add-flyout="true"
+    >
+      <div className="quick-add-search relative bg-[var(--canvas-theme-surface-panel)]">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--canvas-theme-text-muted)]" aria-hidden="true" />
+        <input
+          type="search"
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search"
+          className="h-10 w-full appearance-none bg-transparent py-1.5 pl-10 pr-9 text-sm font-medium text-[var(--canvas-theme-text)] outline-none placeholder:text-[var(--canvas-theme-text-muted)]"
+        />
+        <button type="button" onClick={onClose} aria-label="Close add tools" className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-lg text-[var(--canvas-theme-icon-muted)] transition hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]">
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+
+      {pendingContextGroupType ? (
+        <div className="p-2">
+          <div className="flex items-start justify-between gap-3 px-2 py-2">
+            <div>
+              <p className="text-[13px] font-semibold text-[var(--canvas-theme-text)]">Choose context images</p>
+              <p className="mt-0.5 text-[11px] leading-4 text-[var(--canvas-theme-text-muted)]">The group stores stable references and exposes one shared image port.</p>
+            </div>
+            <button type="button" onClick={() => setPendingContextGroupType(null)} className="text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] hover:text-[var(--canvas-theme-text)]">Back</button>
+          </div>
+          <div className="quick-add-scroll max-h-[280px] space-y-0.5 overflow-y-auto px-1 pb-1">
+            {contextSourceOptions.map((source) => {
+              const selected = selectedContextSourceIds.includes(source.id);
+              return (
+                <label key={source.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition hover:bg-[var(--canvas-theme-hover)]">
+                  <input type="checkbox" checked={selected} onChange={() => setSelectedContextSourceIds((current) => selected ? current.filter((id) => id !== source.id) : [...current, source.id])} className="h-3.5 w-3.5 accent-[var(--canvas-theme-selection)]" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--canvas-theme-text)]">{source.title}</span>
+                </label>
+              );
+            })}
+            {contextSourceOptions.length === 0 ? <p className="rounded-lg bg-[var(--canvas-theme-surface-soft)] px-3 py-4 text-center text-xs text-[var(--canvas-theme-text-muted)]">Add site images to the canvas first.</p> : null}
+          </div>
+          <button type="button" disabled={selectedContextSourceIds.length === 0} onClick={() => { onSelectType(pendingContextGroupType, selectedContextSourceIds); onClose(); }} className="mx-1 mb-1 mt-2 w-[calc(100%-8px)] rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-semibold text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+            Create group with {selectedContextSourceIds.length} image{selectedContextSourceIds.length === 1 ? "" : "s"}
           </button>
         </div>
-
-        {pendingContextGroupType ? (
-          <div className="mt-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-bold text-[#1A1918]">Choose context images</p>
-                <p className="mt-0.5 text-xs text-[#827E75]">The group stores stable references and exposes one shared output port.</p>
-              </div>
-              <button type="button" onClick={() => setPendingContextGroupType(null)} className="text-xs font-semibold text-[#827E75] hover:text-[#1A1918]">Back</button>
-            </div>
-            <div className="mt-3 max-h-72 space-y-1 overflow-y-auto pr-1">
-              {contextSourceOptions.map((source) => {
-                const selected = selectedContextSourceIds.includes(source.id);
-                return (
-                  <label key={source.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-[#F8F7F3]">
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => setSelectedContextSourceIds((current) =>
-                        selected ? current.filter((id) => id !== source.id) : [...current, source.id],
-                      )}
-                      className="h-4 w-4 accent-[#EA7542]"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#1A1918]">{source.title}</span>
-                  </label>
-                );
-              })}
-              {contextSourceOptions.length === 0 ? (
-                <p className="rounded-xl bg-[#F8F7F3] px-3 py-4 text-center text-xs text-[#827E75]">Add site images to the canvas before creating a context group.</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              disabled={selectedContextSourceIds.length === 0}
-              onClick={() => {
-                onSelectType(pendingContextGroupType, selectedContextSourceIds);
-                onClose();
-              }}
-              className="mt-4 w-full rounded-xl bg-[#1A1918] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2C2A26] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Create group with {selectedContextSourceIds.length} image{selectedContextSourceIds.length === 1 ? "" : "s"}
-            </button>
+      ) : (
+        <>
+          <div className="flex items-center gap-1 border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1.5">
+            {CATEGORY_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeCategory === tab.id;
+              return (
+                <button key={tab.id} type="button" title={tab.label} aria-label={tab.label} aria-pressed={active} onClick={() => setActiveCategory(tab.id)} className={`grid h-6 w-6 place-items-center rounded-full transition ${active ? "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-icon)]" : "text-[var(--canvas-theme-icon-muted)] hover:bg-[var(--canvas-theme-hover)] hover:text-[var(--canvas-theme-icon)]"}`}>
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              );
+            })}
           </div>
-        ) : (
-          <div className="mt-3 max-h-96 overflow-y-auto space-y-1 pr-1">
-          {filtered.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                if (CONTEXT_GROUP_TYPES.has(item.id)) {
-                  setPendingContextGroupType(item.id);
-                  setSelectedContextSourceIds(initialContextSourceIds);
-                  return;
-                }
-                onSelectType(item.id);
-                onClose();
-              }}
-              className="flex w-full items-start gap-3 rounded-2xl p-3 text-left transition hover:bg-[#F8F7F3] active:scale-[0.99]"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F0E9] shrink-0">
-                {item.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#1A1918]">{item.title}</span>
-                  <span className="rounded-md bg-[#F2F0E9] px-2 py-0.5 text-[10px] font-semibold text-[#827E75]">
-                    {item.category}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-[#827E75]">{item.desc}</p>
-              </div>
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <div className="p-8 text-center text-xs font-medium text-[#827E75]">
-              No node types found for &ldquo;{query}&rdquo;
-            </div>
-          )}
+          <div className="quick-add-scroll max-h-[420px] overflow-y-auto p-2">
+            {SECTION_ORDER.map((section) => {
+              const sectionItems = filteredItems.filter((item) => item.section === section);
+              if (sectionItems.length === 0) return null;
+              return (
+                <section key={section} className="mb-3 last:mb-0">
+                  <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.11em] text-[var(--canvas-theme-text-muted)]">{section}</p>
+                  <div className="space-y-0.5">
+                    {sectionItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button key={item.id} type="button" onClick={() => {
+                          if (CONTEXT_GROUP_TYPES.has(item.id)) {
+                            setPendingContextGroupType(item.id);
+                            setSelectedContextSourceIds(initialContextSourceIds);
+                            return;
+                          }
+                          onSelectType(item.id);
+                          onClose();
+                        }} className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left transition hover:bg-[var(--canvas-theme-hover)]">
+                          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${item.iconClassName}`}><Icon className="h-3.5 w-3.5" aria-hidden="true" /></span>
+                          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--canvas-theme-text)]">{item.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+            {filteredItems.length === 0 ? <p className="px-3 py-8 text-center text-xs text-[var(--canvas-theme-text-muted)]">No available tools found.</p> : null}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
