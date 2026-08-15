@@ -84,10 +84,6 @@ function openDraftDatabase() {
     request.onupgradeneeded = () => {
       const database = request.result;
 
-      if (database.objectStoreNames.contains("drafts")) {
-        database.deleteObjectStore("drafts");
-      }
-
       if (!database.objectStoreNames.contains(DRAFT_META_STORE_NAME)) {
         database.createObjectStore(DRAFT_META_STORE_NAME, { keyPath: "key" });
       }
@@ -335,6 +331,70 @@ export async function initializeCanvasDraftBranch(
   });
 }
 
+/**
+ * Repairs an empty local branch only when it has no unacknowledged work. This
+ * prevents a failed bootstrap from later materializing an empty checkpoint over
+ * a valid cloud document, while never discarding recoverable operations.
+ */
+export async function replaceEmptyCanvasDraftCheckpoint(
+  userId: string,
+  projectId: string,
+  params: {
+    clientId: string;
+    document: CanvasSnapshotDocument;
+    documentHash: string;
+    basedOnSnapshotId: string | null;
+    basedOnVersion: number | null;
+    basedOnHash: string | null;
+    cloudDraftRevision: number | null;
+    cloudDraftHash: string | null;
+  },
+) {
+  const draftKey = getDraftKey(userId, projectId, params.clientId);
+  return withDatabase("readwrite", async (stores) => {
+    const currentRecord = await readDraftRecord(stores, draftKey);
+    if (!currentRecord.meta.projectId || currentRecord.pendingOperations.length > 0) {
+      return currentRecord.meta.projectId ? currentRecord : null;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const meta: LocalCanvasDraftMeta = {
+      ...currentRecord.meta,
+      tabId: params.clientId,
+      clientId: params.clientId,
+      updatedAt,
+      expiresAt: new Date(Date.now() + LOCAL_DRAFT_TTL_MS).toISOString(),
+      basedOnSnapshotId: params.basedOnSnapshotId,
+      basedOnVersion: params.basedOnVersion,
+      basedOnHash: params.basedOnHash,
+      documentHash: params.documentHash,
+      cloudDraftRevision: params.cloudDraftRevision,
+      cloudDraftHash: params.cloudDraftHash,
+      operationCount: 0,
+    };
+
+    await requestToPromise(stores.checkpointStore.put({
+      key: draftKey,
+      checkpoint: {
+        document: params.document,
+        documentHash: params.documentHash,
+        createdAt: updatedAt,
+      },
+    } satisfies LocalCanvasDraftCheckpointStoreRecord));
+    await requestToPromise(stores.metaStore.put({
+      key: draftKey,
+      meta,
+    } satisfies LocalCanvasDraftMetaStoreRecord));
+
+    return {
+      key: draftKey,
+      meta,
+      document: params.document,
+      pendingOperations: [],
+    } satisfies LocalCanvasDraftRecord;
+  });
+}
+
 export async function saveCanvasDraft(
   userId: string,
   projectId: string,
@@ -386,25 +446,12 @@ export async function saveCanvasDraft(
       lastMutationId: meta.lastMutationId ?? currentRecord.meta.lastMutationId ?? null,
     };
 
-    // Pending operations must remain individually addressable until the server
-    // acknowledges their IDs. Compaction is performed by acknowledge below,
-    // never while a local operation could still be lost in transit.
-    const shouldCompact = false;
-
-    if (shouldCompact || !currentRecord.meta.projectId) {
-      await deleteDraftOperationRecords(stores.operationStore, draftKey);
-      await requestToPromise(
-        stores.checkpointStore.put({
-          key: draftKey,
-          checkpoint: {
-            document,
-            documentHash: meta.documentHash,
-            createdAt: meta.updatedAt,
-          },
-        } satisfies LocalCanvasDraftCheckpointStoreRecord),
-      );
-      nextMeta.operationCount = 0;
-    } else if (!currentRecord.meta.projectId) {
+    // A first local write may happen before bootstrap has initialized the
+    // branch. Its checkpoint must remain the pre-edit document, otherwise the
+    // first operations are compacted away before the server can acknowledge
+    // them. Every new operation stays in the journal until an ACK advances the
+    // checkpoint.
+    if (!currentRecord.meta.projectId) {
       await requestToPromise(
         stores.checkpointStore.put({
           key: draftKey,
@@ -413,7 +460,7 @@ export async function saveCanvasDraft(
             documentHash: currentRecord.meta.documentHash || meta.basedOnHash || meta.documentHash,
             createdAt: meta.updatedAt,
           },
-        } satisfies LocalCanvasDraftCheckpointStoreRecord),
+      } satisfies LocalCanvasDraftCheckpointStoreRecord),
       );
     }
 
@@ -430,21 +477,10 @@ export async function saveCanvasDraft(
         key: draftKey,
         meta: nextMeta,
       },
-      checkpointRecord: shouldCompact
-        ? {
-            key: draftKey,
-            checkpoint: {
-              document,
-              documentHash: meta.documentHash,
-              createdAt: meta.updatedAt,
-            },
-          }
-        : (await requestToPromise(
-            stores.checkpointStore.get(draftKey),
-          )) as LocalCanvasDraftCheckpointStoreRecord | undefined,
-      operationRecords: shouldCompact
-        ? []
-        : await getOperationRecordsForDraft(stores.operationStore, draftKey),
+      checkpointRecord: (await requestToPromise(
+        stores.checkpointStore.get(draftKey),
+      )) as LocalCanvasDraftCheckpointStoreRecord | undefined,
+      operationRecords: await getOperationRecordsForDraft(stores.operationStore, draftKey),
     });
   });
 }
