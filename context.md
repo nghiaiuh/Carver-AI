@@ -83,6 +83,14 @@ Important canvas types:
   - `SelectedItem`
   - connection roles
 
+Context and camera nodes:
+- `context-group` represents Site Set, Sketch Layer, or Material Board. It stores
+  stable source node/asset IDs, exposes one typed image output, and expands to
+  individual references only when an AI context is built.
+- `camera-shot-set` persists selected 2.5D shot instructions. It exposes one
+  typed text output for Assistant/Image Generator; it is planning context, not
+  a completed multi-angle generation family yet.
+
 ## 4. Preset system: current mental model
 
 The library preset flow has already been changed away from "drop preset image directly on canvas".
@@ -246,6 +254,10 @@ Current direction:
   using the same corner inset as an assistant output.
   Assistant and text cards retain their typed input/output ports; legacy edges
   that formerly targeted an image card resolve to its single right-side port.
+- Context groups are now first-class source-only nodes. `Site Set`, `Sketch Layer`,
+  and `Material Board` store stable references to selected canvas images and expose
+  one typed image output. The group resolver expands those references only when
+  connected to Assistant or Image Generator; it never copies signed URLs or image data.
 - canvas generation is job-backed:
   - web creates an `ai_job`
   - worker executes the generation
