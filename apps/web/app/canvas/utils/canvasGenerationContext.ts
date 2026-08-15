@@ -17,6 +17,8 @@ import {
   isCanvasImageGeneratorNode,
   isCanvasImageOutputGalleryNode,
   isCanvasTextNode,
+  isCanvasContextGroupNode,
+  isCanvasCameraShotSetNode,
 } from "../types/canvas";
 import type {
   CanvasGenerationContext,
@@ -26,6 +28,7 @@ import type {
 } from "@carver/shared";
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
+import { resolveContextGroupItems } from "./contextGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 import {
   sanitizePersistedSnapshotImageUrl,
@@ -34,6 +37,12 @@ import {
 
 function normalizeRole(role?: string | null): ImageConnectionRole {
   return (role as ImageConnectionRole) ?? "generic_reference";
+}
+
+function toSnapshotReferenceRole(role: ImageConnectionRole) {
+  if (role === "structure_reference") return "architecture_reference" as const;
+  if (role === "output_result") return "generic_reference" as const;
+  return role;
 }
 
 function sanitizePersistedNodeImageUrl(node: CanvasNode) {
@@ -117,6 +126,22 @@ export function resolveConnectedImageReferences(
 
     const sourceNode = nodes.find((node) => node.id === edge.sourceId);
     if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasTextNode(sourceNode)) continue;
+
+    if (isCanvasContextGroupNode(sourceNode)) {
+      for (const item of resolveContextGroupItems(sourceNode, nodes)) {
+        const key = `${sourceNode.id}:${item.id}`;
+        if (references.has(key)) continue;
+        references.set(key, {
+          nodeId: sourceNode.id,
+          title: item.title,
+          imageUrl: item.imageUrl,
+          assetId: item.assetId,
+          role: normalizeRole(edge.role ?? item.role),
+          sourcePresetChildId: null,
+        });
+      }
+      continue;
+    }
 
     const galleryGeneratorNodeId = isCanvasImageOutputGalleryNode(sourceNode)
       ? sourceNode.imageOutputGallery.generatorNodeId
@@ -225,10 +250,12 @@ export function buildCanvasGenerationContext(
   if (
     !target ||
     isPresetGroupNode(target) ||
+    isCanvasContextGroupNode(target) ||
     isAssistantNode(target) ||
     isCanvasTextNode(target) ||
     isCanvasImageGeneratorNode(target) ||
-    isCanvasImageOutputGalleryNode(target)
+    isCanvasImageOutputGalleryNode(target) ||
+    isCanvasCameraShotSetNode(target)
   ) {
     return null;
   }
@@ -275,6 +302,88 @@ export function buildCanvasSnapshotWithGraph(params: {
   viewportZoom?: number;
 }): CanvasSnapshotDocument {
   const snapshot = createEmptyCanvasSnapshotDocument();
+  const addedObjects = params.addedObjects ?? [];
+  const sketchGroups = params.sketchGroups ?? [];
+  const markers = params.markers ?? [];
+  const contextGroups = params.nodes.filter(isCanvasContextGroupNode);
+
+  // Scene Graph Lite is deterministic: user-created objects, marks, and sketch
+  // groups become trusted scene evidence without an extra vision-model charge.
+  const semanticObjects = addedObjects.map((object) => ({
+    id: object.id,
+    assetId: object.selectedAssetIds?.[0],
+    kind: object.label,
+    label: object.label,
+    bounds: { x: object.x, y: object.y, width: object.w, height: object.h },
+    rotation: object.rotation,
+    metadata: { coordinateSpace: "target-image-percent", source: "canvas-object" },
+  }));
+  const semanticRegions = [
+    ...sketchGroups.map((group) => ({
+      id: group.id,
+      label: group.nameTag,
+      bounds: {
+        x: group.bounds.x,
+        y: group.bounds.y,
+        width: group.bounds.w,
+        height: group.bounds.h,
+      },
+      editable: false,
+      metadata: { objectType: group.objectType, source: "sketch-group" },
+    })),
+    ...markers.map((marker) => ({
+      id: marker.id,
+      label: marker.label,
+      bounds: { x: marker.x, y: marker.y, width: 1, height: 1 },
+      editable: true,
+      metadata: { coordinateSpace: "target-image-percent", source: "canvas-marker" },
+    })),
+  ];
+  const semanticLocks = [
+    ...(params.activeGenerationTargetId
+      ? [
+          {
+            id: `layout-${params.activeGenerationTargetId}`,
+            targetType: "global" as const,
+            type: "layout" as const,
+            strength: "hard" as const,
+            reason: "Preserve the selected site image layout by default.",
+          },
+          {
+            id: `camera-${params.activeGenerationTargetId}`,
+            targetType: "camera" as const,
+            type: "camera" as const,
+            strength: "hard" as const,
+            reason: "Preserve the selected site image camera and perspective by default.",
+          },
+        ]
+      : []),
+    ...semanticObjects.map((object) => ({
+      id: `object-position-${object.id}`,
+      targetType: "object" as const,
+      targetId: object.id,
+      type: "position" as const,
+      strength: "hard" as const,
+      reason: "Preserve this user-placed landscape object unless it is explicitly targeted.",
+    })),
+    ...sketchGroups.map((group) => ({
+      id: `sketch-shape-${group.id}`,
+      targetType: "region" as const,
+      targetId: group.id,
+      type: "shape" as const,
+      strength: "soft" as const,
+      reason: "Keep the user sketch as a spatial design cue.",
+    })),
+  ];
+  const contextReferences = contextGroups.flatMap((group) =>
+    resolveContextGroupItems(group, params.nodes).map((item) => ({
+      assetId: item.assetId,
+      label: item.title,
+      role: toSnapshotReferenceRole(item.role),
+      objectId: group.id,
+      notes: group.contextGroup.kind,
+    })),
+  );
 
   return {
     ...snapshot,
@@ -282,12 +391,18 @@ export function buildCanvasSnapshotWithGraph(params: {
       ...snapshot.camera,
       zoom: normalizeCanvasViewportZoom(params.viewportZoom),
     },
+    objects: semanticObjects,
+    regions: semanticRegions,
+    locks: semanticLocks,
+    references: contextReferences,
     graph: {
       activeGenerationTargetId: params.activeGenerationTargetId,
       nodes: params.nodes.map((node) => ({
         id: node.id,
         kind: isPresetGroupNode(node)
           ? "presetGroup"
+          : isCanvasContextGroupNode(node)
+            ? "context-group"
           : isAssistantNode(node)
             ? "assistant"
             : isCanvasTextNode(node)
@@ -296,7 +411,9 @@ export function buildCanvasSnapshotWithGraph(params: {
                 ? "image-generator"
                 : isCanvasImageOutputGalleryNode(node)
                   ? "image-output-gallery"
-                : "image",
+                  : isCanvasCameraShotSetNode(node)
+                    ? "camera-shot-set"
+                  : "image",
         title: node.title,
         role: node.role,
         imageUrl: sanitizePersistedNodeImageUrl(node),
@@ -328,6 +445,21 @@ export function buildCanvasSnapshotWithGraph(params: {
               })),
             }
           : undefined,
+        contextGroup: isCanvasContextGroupNode(node)
+          ? {
+              kind: node.contextGroup.kind,
+              description: node.contextGroup.description,
+              items: node.contextGroup.items.map((item) => ({
+                ...item,
+                imageUrl: sanitizePersistedSnapshotImageUrl(item.imageUrl),
+              })),
+            }
+          : undefined,
+        cameraShotSet: isCanvasCameraShotSetNode(node)
+          ? {
+              shots: node.cameraShotSet.shots.map((shot) => ({ ...shot })),
+            }
+          : undefined,
         assistant: isAssistantNode(node) ? node.assistant : undefined,
         imageGenerator: isCanvasImageGeneratorNode(node)
           ? {
@@ -356,14 +488,14 @@ export function buildCanvasSnapshotWithGraph(params: {
         createdAt: edge.createdAt,
       })),
     },
-    markers: (params.markers ?? []).map((marker) => ({
+    markers: markers.map((marker) => ({
       id: marker.id,
       x: marker.x,
       y: marker.y,
       label: marker.label,
       targetNodeId: marker.targetNodeId,
     })),
-    addedObjects: (params.addedObjects ?? []).map((object) => ({
+    addedObjects: addedObjects.map((object) => ({
       id: object.id,
       x: object.x,
       y: object.y,
@@ -381,7 +513,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       width: line.width,
       groupId: line.groupId,
     })),
-    sketchGroups: (params.sketchGroups ?? []).map((group) => ({
+    sketchGroups: sketchGroups.map((group) => ({
       id: group.id,
       nameTag: group.nameTag,
       objectType: group.objectType,

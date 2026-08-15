@@ -136,7 +136,15 @@ export type CanvasGraphPresetChild = {
 
 export type CanvasGraphNodeSnapshot = {
   id: string;
-  kind: "image" | "presetGroup" | "assistant" | "text" | "image-generator" | "image-output-gallery";
+  kind:
+    | "image"
+    | "presetGroup"
+    | "assistant"
+    | "text"
+    | "image-generator"
+    | "image-output-gallery"
+    | "context-group"
+    | "camera-shot-set";
   title: string;
   role: string;
   imageUrl: string;
@@ -191,6 +199,26 @@ export type CanvasGraphNodeSnapshot = {
   imageOutputGallery?: {
     generatorNodeId: string;
     selectedOutputAssetId?: string;
+  };
+  contextGroup?: {
+    kind: "site-set" | "sketch-layer" | "material-board";
+    description?: string;
+    items: Array<{
+      id: string;
+      title: string;
+      nodeId?: string;
+      assetId?: string;
+      imageUrl?: string;
+      role?: CanvasReferenceRole | string;
+    }>;
+  };
+  cameraShotSet?: {
+    shots: Array<{
+      id: string;
+      label: string;
+      instruction: string;
+      selected: boolean;
+    }>;
   };
   text?: {
     content: string;

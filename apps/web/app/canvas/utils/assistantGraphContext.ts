@@ -1,7 +1,15 @@
 import type { AssistantCardContext } from "@carver/shared";
 import type { CanvasAssistantNode, CanvasNode, CanvasPresetGroupNode } from "../types/canvas";
-import { isCanvasImageGeneratorNode, isCanvasImageOutputGalleryNode, isCanvasTextNode } from "../types/canvas";
+import {
+  isCanvasContextGroupNode,
+  isCanvasImageGeneratorNode,
+  isCanvasImageOutputGalleryNode,
+  isCanvasTextNode,
+  isCanvasCameraShotSetNode,
+} from "../types/canvas";
 import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
+import { resolveContextGroupItems } from "./contextGroupHelpers";
+import { getCameraShotSetPrompt } from "./cameraShotHelpers";
 
 function getInboundEdgesForAssistant(nodeId: string, edges: Array<{
   sourceId: string;
@@ -20,6 +28,10 @@ function getAssistantTextSourceContent(node: CanvasNode) {
 
   if (isAssistantNode(node)) {
     return (node.assistant.response || node.assistant.prompt).trim();
+  }
+
+  if (isCanvasCameraShotSetNode(node)) {
+    return getCameraShotSetPrompt(node);
   }
 
   return "";
@@ -101,7 +113,7 @@ export function buildAssistantCardContext(
       continue;
     }
 
-    if (isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode)) {
+    if (isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasCameraShotSetNode(sourceNode)) {
       const content = getAssistantTextSourceContent(sourceNode);
       const key = `${sourceNode.id}:${edge.sourcePortId ?? "text"}`;
       if (!content || seenTextKeys.has(key)) {
@@ -120,6 +132,25 @@ export function buildAssistantCardContext(
 
     if (isPresetGroupNode(sourceNode)) {
       appendPresetImageReferences(imageReferences, seenImageKeys, sourceNode, edge);
+      continue;
+    }
+
+    if (isCanvasContextGroupNode(sourceNode)) {
+      for (const item of resolveContextGroupItems(sourceNode, nodes)) {
+        const key = `${sourceNode.id}:${item.id}`;
+        if ((!item.imageUrl && !item.assetId) || seenImageKeys.has(key)) continue;
+        seenImageKeys.add(key);
+        imageReferences.push({
+          nodeId: item.sourceNodeId ?? sourceNode.id,
+          title: item.title,
+          imageUrl: item.imageUrl,
+          assetId: item.assetId,
+          role: edge.role ?? item.role,
+          sourceKind: "image",
+          childId: item.id,
+          childLabel: item.title,
+        });
+      }
       continue;
     }
 

@@ -327,6 +327,53 @@ export type CanvasImageOutputGalleryState = {
   selectedOutputAssetId?: string;
 };
 
+/**
+ * A context group is a lightweight, reusable input set. It references existing
+ * canvas assets by stable node/asset IDs instead of copying image payloads.
+ */
+export type CanvasContextGroupKind = "site-set" | "sketch-layer" | "material-board";
+
+export type CanvasContextGroupItem = {
+  id: string;
+  title: string;
+  /** Existing canvas node. This keeps a Site Set live when that node is refreshed. */
+  nodeId?: string;
+  /** Stable asset fallback when the source node is later removed from the canvas. */
+  assetId?: string;
+  imageUrl?: string;
+  role?: ImageConnectionRole;
+};
+
+export type CanvasContextGroupState = {
+  kind: CanvasContextGroupKind;
+  items: CanvasContextGroupItem[];
+  description?: string;
+};
+
+/**
+ * A camera plan is an explicit, editable shot instruction. It is text context
+ * for now; the future multi-angle worker will fan these stable shot IDs into a
+ * generation family rather than inferring viewpoints from a loose prompt.
+ */
+export type CanvasCameraShotPreset =
+  | "front"
+  | "eye-level"
+  | "top-down"
+  | "left-corner"
+  | "right-corner"
+  | "night-lighting";
+
+export type CanvasCameraShot = {
+  id: CanvasCameraShotPreset;
+  label: string;
+  instruction: string;
+  selected: boolean;
+};
+
+export type CanvasCameraShotSetState = {
+  shots: CanvasCameraShot[];
+};
+
 export type CanvasImageNode = CanvasNodeBase & {
   kind?: "image";
   presetGroup?: never;
@@ -372,13 +419,33 @@ export type CanvasImageOutputGalleryNode = CanvasNodeBase & {
   imageGenerator?: never;
 };
 
+export type CanvasContextGroupNode = CanvasNodeBase & {
+  kind: "context-group";
+  contextGroup: CanvasContextGroupState;
+  presetGroup?: never;
+  assistant?: never;
+  text?: never;
+  imageGenerator?: never;
+};
+
+export type CanvasCameraShotSetNode = CanvasNodeBase & {
+  kind: "camera-shot-set";
+  cameraShotSet: CanvasCameraShotSetState;
+  presetGroup?: never;
+  assistant?: never;
+  text?: never;
+  imageGenerator?: never;
+};
+
 export type CanvasNode =
   | CanvasImageNode
   | CanvasPresetGroupNode
   | CanvasAssistantNode
   | CanvasTextNode
   | CanvasImageGeneratorNode
-  | CanvasImageOutputGalleryNode;
+  | CanvasImageOutputGalleryNode
+  | CanvasContextGroupNode
+  | CanvasCameraShotSetNode;
 
 export function isCanvasTextNode(node: CanvasNode): node is CanvasTextNode {
   return node.kind === "text";
@@ -390,6 +457,14 @@ export function isCanvasImageGeneratorNode(node: CanvasNode): node is CanvasImag
 
 export function isCanvasImageOutputGalleryNode(node: CanvasNode): node is CanvasImageOutputGalleryNode {
   return node.kind === "image-output-gallery";
+}
+
+export function isCanvasContextGroupNode(node: CanvasNode): node is CanvasContextGroupNode {
+  return node.kind === "context-group";
+}
+
+export function isCanvasCameraShotSetNode(node: CanvasNode): node is CanvasCameraShotSetNode {
+  return node.kind === "camera-shot-set";
 }
 
 export type CanvasEdge = {
@@ -475,6 +550,10 @@ export const MAX_IMAGE_OUTPUT_GALLERY_NODE_WIDTH = 720;
 export const MAX_IMAGE_OUTPUT_GALLERY_NODE_HEIGHT = 560;
 export const IMAGE_GENERATOR_MIN_OUTPUT_COUNT = 1;
 export const IMAGE_GENERATOR_MAX_OUTPUT_COUNT = 4;
+export const DEFAULT_CONTEXT_GROUP_NODE_WIDTH = 340;
+export const DEFAULT_CONTEXT_GROUP_NODE_HEIGHT = 260;
+export const DEFAULT_CAMERA_SHOT_SET_NODE_WIDTH = 320;
+export const DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT = 260;
 
 export const DEFAULT_PEN_SETTINGS: PenSettings = {
   color: "#000000",

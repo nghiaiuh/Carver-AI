@@ -10,8 +10,12 @@ import {
   isCanvasImageGeneratorNode,
   isCanvasImageOutputGalleryNode,
   isCanvasTextNode,
+  isCanvasContextGroupNode,
+  isCanvasCameraShotSetNode,
 } from "../types/canvas";
 import { isAssistantNode, isImageGeneratorNode, isPresetGroupNode } from "./presetGroupHelpers";
+import { resolveContextGroupItems } from "./contextGroupHelpers";
+import { getCameraShotSetPrompt } from "./cameraShotHelpers";
 
 type InboundEdge = {
   id: string;
@@ -73,6 +77,10 @@ function getConnectedTextContent(node: CanvasNode) {
 
   if (isAssistantNode(node)) {
     return (node.assistant.response || node.assistant.prompt).trim();
+  }
+
+  if (isCanvasCameraShotSetNode(node)) {
+    return getCameraShotSetPrompt(node);
   }
 
   return "";
@@ -162,7 +170,7 @@ export function buildImageGeneratorGraphContext(
       continue;
     }
 
-    if (isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode)) {
+    if (isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasCameraShotSetNode(sourceNode)) {
       const content = getConnectedTextContent(sourceNode);
       const key = `${sourceNode.id}:${edge.sourcePortId ?? "text"}`;
       if (!content || seenTextKeys.has(key)) {
@@ -181,6 +189,23 @@ export function buildImageGeneratorGraphContext(
 
     if (isPresetGroupNode(sourceNode)) {
       appendPresetReferences(presetReferences, sourceNode, edge, seenPresetKeys);
+      continue;
+    }
+
+    if (isCanvasContextGroupNode(sourceNode)) {
+      for (const item of resolveContextGroupItems(sourceNode, nodes)) {
+        const key = `${sourceNode.id}:${item.id}`;
+        if ((!item.imageUrl && !item.assetId) || seenImageKeys.has(key)) continue;
+        seenImageKeys.add(key);
+        imageReferences.push({
+          nodeId: item.sourceNodeId ?? sourceNode.id,
+          title: item.title,
+          imageUrl: item.imageUrl,
+          assetId: item.assetId,
+          role: edge.role ?? item.role,
+          sourcePresetChildId: null,
+        });
+      }
       continue;
     }
 

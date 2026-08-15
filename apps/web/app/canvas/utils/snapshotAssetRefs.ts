@@ -57,6 +57,11 @@ export function collectSnapshotAssetIds(document: CanvasSnapshotDocument) {
       add(extractAssetIdFromGatewayUrl(output.imageUrl));
     }
 
+    for (const item of node.contextGroup?.items ?? []) {
+      add(item.assetId);
+      add(extractAssetIdFromGatewayUrl(item.imageUrl));
+    }
+
     if (!node.presetGroup) {
       continue;
     }
@@ -120,8 +125,27 @@ export function applyResolvedAssetUrlsToSnapshot(
             }
           : undefined;
 
+        const resolvedContextGroup = node.contextGroup
+          ? {
+              ...node.contextGroup,
+              items: node.contextGroup.items.map((item) => {
+                const itemAssetId = item.assetId ?? extractAssetIdFromGatewayUrl(item.imageUrl);
+                const resolvedItemUrl = itemAssetId ? assets[itemAssetId]?.originalUrl : undefined;
+                return {
+                  ...item,
+                  assetId: itemAssetId,
+                  imageUrl: resolvedItemUrl ?? (itemAssetId ? "" : item.imageUrl),
+                };
+              }),
+            }
+          : undefined;
+
         if (!node.presetGroup) {
-          return resolvedGenerator ? { ...nextNode, imageGenerator: resolvedGenerator } : nextNode;
+          return {
+            ...nextNode,
+            ...(resolvedGenerator ? { imageGenerator: resolvedGenerator } : {}),
+            ...(resolvedContextGroup ? { contextGroup: resolvedContextGroup } : {}),
+          };
         }
 
         return {

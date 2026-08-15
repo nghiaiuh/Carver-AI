@@ -178,12 +178,50 @@ const IMAGE_OUTPUT_GALLERY_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
   ],
 };
 
+/**
+ * Context groups are source-only aggregators. The group port represents all
+ * registered child references, never a transient signed URL or copied bitmap.
+ */
+const CONTEXT_GROUP_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "context-group",
+  ports: [
+    {
+      id: "context-group-output-image",
+      direction: "output",
+      kind: "image",
+      side: "right",
+      order: 0,
+      label: "Context image set output",
+      acceptedKinds: ["image"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
+
+const CAMERA_SHOT_SET_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
+  nodeKind: "camera-shot-set",
+  ports: [
+    {
+      id: "camera-shot-set-output-text",
+      direction: "output",
+      kind: "text",
+      side: "right",
+      order: 0,
+      label: "Camera plan output",
+      acceptedKinds: ["text"],
+      maxConnections: MANY_CONNECTIONS,
+    },
+  ],
+};
+
 const NODE_PORT_SCHEMAS: Partial<Record<NonNullable<CanvasNode["kind"]>, CanvasNodePortSchema>> = {
   image: IMAGE_NODE_PORT_SCHEMA,
   assistant: ASSISTANT_NODE_PORT_SCHEMA,
   text: TEXT_NODE_PORT_SCHEMA,
   "image-generator": IMAGE_GENERATOR_NODE_PORT_SCHEMA,
   "image-output-gallery": IMAGE_OUTPUT_GALLERY_NODE_PORT_SCHEMA,
+  "context-group": CONTEXT_GROUP_NODE_PORT_SCHEMA,
+  "camera-shot-set": CAMERA_SHOT_SET_NODE_PORT_SCHEMA,
 };
 
 function getSchemaNodeKind(node: CanvasNode): NonNullable<CanvasNode["kind"]> | null {
@@ -267,6 +305,14 @@ export function getImageGeneratorInputPorts() {
 
 export function getImageOutputGalleryInputPorts() {
   return getInputPortAdaptersForNodeKind("image-output-gallery");
+}
+
+export function getContextGroupInputPorts() {
+  return getInputPortAdaptersForNodeKind("context-group");
+}
+
+export function getCameraShotSetInputPorts() {
+  return getInputPortAdaptersForNodeKind("camera-shot-set");
 }
 
 export function getCanvasNodeVisualScale(node: CanvasNode) {

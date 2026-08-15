@@ -17,6 +17,9 @@ import type {
   PenSettings,
   CanvasPresetChild,
   CanvasAssistantState,
+  CanvasCameraShotSetState,
+  CanvasCameraShotPreset,
+  CanvasContextGroupState,
   CanvasPresetGroupNode,
   CanvasSourceImage,
   PresetGroupCategory,
@@ -28,6 +31,8 @@ import {
   getAssistantInputPorts,
   getImageGeneratorInputPorts,
   getImageOutputGalleryInputPorts,
+  getContextGroupInputPorts,
+  getCameraShotSetInputPorts,
   getTextNodeInputPorts,
 } from "./canvasNodePorts";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
@@ -73,6 +78,15 @@ const PRESET_GROUP_CATEGORIES = new Set<PresetGroupCategory>([
   "decor",
   "lighting",
   "planting-zones",
+]);
+
+const CAMERA_SHOT_PRESETS = new Set<CanvasCameraShotPreset>([
+  "front",
+  "eye-level",
+  "top-down",
+  "left-corner",
+  "right-corner",
+  "night-lighting",
 ]);
 
 type HydratedCanvasSnapshotState = {
@@ -359,6 +373,58 @@ function sanitizeImageOutputGalleryState(value: unknown) {
     : null;
 }
 
+function sanitizeContextGroupState(value: unknown): CanvasContextGroupState | null {
+  const source = objectValue(value);
+  const kind = source?.kind;
+  if (kind !== "site-set" && kind !== "sketch-layer" && kind !== "material-board") {
+    return null;
+  }
+
+  const items = Array.isArray(source?.items)
+    ? source.items.flatMap((item, index) => {
+        const entry = objectValue(item);
+        const id = stringValue(entry?.id) ?? `context-item-${index}`;
+        const title = stringValue(entry?.title) ?? "Reference";
+        const imageUrl = sanitizeRuntimeSnapshotImageUrl(stringValue(entry?.imageUrl));
+        const assetId = stringValue(entry?.assetId) ?? undefined;
+        const nodeId = stringValue(entry?.nodeId) ?? undefined;
+        if (!nodeId && !assetId && !imageUrl) return [];
+        return [{
+          id,
+          title,
+          nodeId,
+          assetId,
+          imageUrl: imageUrl || undefined,
+          role: sanitizeEdgeRole(entry?.role),
+        }];
+      })
+    : [];
+
+  return {
+    kind,
+    items,
+    description: stringValue(source?.description) ?? undefined,
+  };
+}
+
+function sanitizeCameraShotSetState(value: unknown): CanvasCameraShotSetState | null {
+  const source = objectValue(value);
+  if (!Array.isArray(source?.shots)) {
+    return null;
+  }
+
+  const shots = source.shots.flatMap((shot) => {
+    const entry = objectValue(shot);
+    const id = stringValue(entry?.id);
+    const label = stringValue(entry?.label);
+    const instruction = stringValue(entry?.instruction);
+    if (!id || !CAMERA_SHOT_PRESETS.has(id as CanvasCameraShotPreset) || !label || !instruction) return [];
+    return [{ id: id as CanvasCameraShotPreset, label, instruction, selected: entry?.selected === true }];
+  });
+
+  return shots.length > 0 ? { shots } : null;
+}
+
 function sanitizeTextNodeState(value: unknown) {
   const source = objectValue(value);
   return { content: stringValue(source?.content) ?? "" };
@@ -380,6 +446,10 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
           ? "image-generator"
           : source?.kind === "image-output-gallery"
             ? "image-output-gallery"
+            : source?.kind === "context-group"
+              ? "context-group"
+              : source?.kind === "camera-shot-set"
+                ? "camera-shot-set"
           : source?.kind === "text"
           ? "text"
           : "image";
@@ -393,6 +463,10 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
           ? "Image Generator"
           : kind === "image-output-gallery"
             ? "Output Gallery"
+          : kind === "context-group"
+            ? "Context Group"
+            : kind === "camera-shot-set"
+              ? "Camera Shot Set"
           : kind === "text"
             ? "Text note"
             : "Untitled image");
@@ -529,6 +603,64 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       maskHistory: undefined,
       inputPorts: getImageOutputGalleryInputPorts(),
       imageOutputGallery,
+    };
+  }
+
+  if (kind === "context-group") {
+    const contextGroup = sanitizeContextGroupState(source?.contextGroup);
+    if (!contextGroup) {
+      return null;
+    }
+
+    return {
+      id,
+      kind: "context-group",
+      title,
+      role: "reference",
+      imageUrl: "",
+      prompt: nullableStringValue(source?.prompt),
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 340)),
+      height: Math.max(1, numberValue(source?.height, 260)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage: undefined,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getContextGroupInputPorts(),
+      contextGroup,
+    };
+  }
+
+  if (kind === "camera-shot-set") {
+    const cameraShotSet = sanitizeCameraShotSetState(source?.cameraShotSet);
+    if (!cameraShotSet) {
+      return null;
+    }
+
+    return {
+      id,
+      kind: "camera-shot-set",
+      title,
+      role: "reference",
+      imageUrl: "",
+      prompt: nullableStringValue(source?.prompt),
+      x: numberValue(source?.x, index * 32),
+      y: numberValue(source?.y, index * 24),
+      width: Math.max(1, numberValue(source?.width, 320)),
+      height: Math.max(1, numberValue(source?.height, 260)),
+      scale:
+        typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
+          ? source.scale
+          : 1,
+      sourceImage: undefined,
+      regionMask: undefined,
+      maskHistory: undefined,
+      inputPorts: getCameraShotSetInputPorts(),
+      cameraShotSet,
     };
   }
 
