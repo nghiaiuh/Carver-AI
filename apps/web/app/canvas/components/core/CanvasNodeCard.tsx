@@ -975,7 +975,7 @@ function ImageGeneratorNodeSurface({
             y: showInteractiveChrome ? 0 : 52,
           }}
           transition={{ duration: showInteractiveChrome ? 0.21 : 0.18, ease: hoverMotionEase }}
-          className="absolute bottom-[88px] left-4 right-20 z-20"
+          className="absolute bottom-[72px] left-4 right-4 z-20"
         >
           <textarea
             ref={textareaRef}
@@ -1225,15 +1225,26 @@ function ImageGeneratorNodeSurface({
             type="button"
             disabled={isRunning || !hasPromptInput}
             className={[
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#1A1A1A] shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition",
+              "flex shrink-0 items-center justify-center rounded-full transition",
+              hasGeneratedOutputs
+                ? "h-9 w-9 bg-white text-[#1A1A1A] shadow-[0_10px_22px_rgba(0,0,0,0.18)]"
+                : "h-7 w-7 bg-[var(--canvas-theme-active)] text-[var(--canvas-theme-active-text)]",
               isRunning || !hasPromptInput
                 ? "cursor-not-allowed opacity-45"
-                : "hover:scale-[1.03] hover:bg-white/92",
+                : hasGeneratedOutputs
+                  ? "hover:scale-[1.03] hover:bg-white/92"
+                  : "hover:bg-[var(--canvas-theme-selection-hover)]",
             ].join(" ")}
             title="Run image generator"
             onClick={runGenerator}
           >
-            <RefreshCw className={isRunning ? "h-3.5 w-3.5 animate-spin" : "h-4 w-4"} strokeWidth={2.1} />
+            {isRunning ? (
+              <RefreshCw className={hasGeneratedOutputs ? "h-3.5 w-3.5 animate-spin" : "h-3 w-3 animate-spin"} strokeWidth={2.1} />
+            ) : hasGeneratedOutputs ? (
+              <RefreshCw className="h-4 w-4" strokeWidth={2.1} />
+            ) : (
+              <Play className="h-3 w-3 fill-current" strokeWidth={1.9} />
+            )}
           </button>
         </div>
       </div>

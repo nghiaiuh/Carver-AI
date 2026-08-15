@@ -122,6 +122,7 @@ import {
   markCanvasDraftClean,
   pruneExpiredCanvasDrafts,
   recordCanvasDraftCloudSync,
+  replaceEmptyCanvasDraftCheckpoint,
   saveCanvasDraft,
   type LocalCanvasDraftRecord,
   LOCAL_DRAFT_TTL_MS,
@@ -363,6 +364,22 @@ function createSnapshotFingerprint(document: CanvasSnapshotDocument) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+function hasCanvasDocumentContent(document: CanvasSnapshotDocument) {
+  return Boolean(
+    document.graph.nodes.length ||
+      document.graph.edges.length ||
+      document.markers.length ||
+      document.addedObjects.length ||
+      document.sketchLines.length ||
+      document.sketchGroups.length ||
+      document.penStrokes.length ||
+      document.objects.length ||
+      document.regions.length ||
+      document.locks.length ||
+      document.references.length,
+  );
+}
+
 // Local draft is the crash/reload recovery path, so it must land quickly after
 // semantic canvas changes. Cloud draft stays lightly debounced to batch bursts.
 const LOCAL_DRAFT_SAVE_DEBOUNCE_MS = 50;
@@ -571,6 +588,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const handledGenerationJobIdsRef = useRef<Set<string>>(new Set());
   const savedSnapshotFingerprintRef = useRef<string | null>(null);
   const snapshotLoadRequestRef = useRef(0);
+  const canvasPersistenceReadyRef = useRef(false);
   const snapshotSaveInFlightRef = useRef(false);
   const draftSaveTimeoutRef = useRef<number | null>(null);
   const lastPersistedLocalDraftFingerprintRef = useRef<string | null>(null);
@@ -955,6 +973,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       !currentUserId ||
       !projectId ||
       isSnapshotLoading ||
+      !canvasPersistenceReadyRef.current ||
       !snapshotBaselineRef.current.documentHash
     ) {
       recordCanvasPersistenceBenchmarkEvent({
@@ -1238,7 +1257,8 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     const payloadBytes = estimateCanvasPayloadBytes(latestSnapshotDocumentRef.current);
     if (
       !projectId ||
-      !currentUserId
+      !currentUserId ||
+      !canvasPersistenceReadyRef.current
     ) {
       recordCanvasPersistenceBenchmarkEvent({
         operation: "cloud-draft-sync",
@@ -1508,6 +1528,13 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         result: "skipped",
         skipReason: "missing-project",
       });
+      return false;
+    }
+
+    if (!canvasPersistenceReadyRef.current) {
+      if (!saveParams.quiet) {
+        showToast("Canvas data is still loading. Please wait before saving a version.");
+      }
       return false;
     }
 
@@ -1835,6 +1862,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
   useEffect(() => {
     const projectId = params.projectId;
+    canvasPersistenceReadyRef.current = false;
     if (!projectId) {
       savedSnapshotFingerprintRef.current = null;
       applyCloudDraftMeta(null);
@@ -1905,30 +1933,37 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         const snapshotPayload = (await snapshotResponse.json().catch(() => ({}))) as SnapshotRouteResponse;
         const draftPayload = (await draftResponse.json().catch(() => ({}))) as DraftRouteResponse;
 
-        if (!snapshotResponse.ok || !snapshotPayload.data?.document) {
-          throw new Error(snapshotPayload.error || "Unable to load the current canvas snapshot.");
-        }
-
-        const snapshotDocument = coerceCanvasSnapshotDocument(snapshotPayload.data.document);
+        const snapshotDocument = snapshotResponse.ok && snapshotPayload.data?.document
+          ? coerceCanvasSnapshotDocument(snapshotPayload.data.document)
+          : null;
         const cloudDraftDocument = draftResponse.ok && draftPayload.data?.document
           ? coerceCanvasSnapshotDocument(draftPayload.data.document)
           : null;
         const cloudDraftMeta = draftResponse.ok ? draftPayload.data?.draft ?? null : null;
+        // A draft is a valid current canvas source. A transient/missing
+        // immutable snapshot must never cause the client to hydrate an empty
+        // document and overwrite that draft on the next autosave.
         const baseDocument = cloudDraftDocument ?? snapshotDocument;
+        if (!baseDocument) {
+          throw new Error(
+            snapshotPayload.error || draftPayload.error || "Unable to load the current canvas document.",
+          );
+        }
+        const snapshotMeta = snapshotDocument ? snapshotPayload.data?.snapshot ?? null : null;
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }
 
-        applySnapshotBaseline(snapshotDocument, snapshotPayload.data.snapshot ?? null);
+        applySnapshotBaseline(snapshotDocument ?? baseDocument, snapshotMeta);
         applyCloudDraftMeta(cloudDraftMeta);
         setDraftConflict(null);
         setDraftWarning(
           draftPayload.data?.assetDeliveryWarning ??
           snapshotPayload.data?.assetDeliveryWarning ??
           (cloudDraftMeta &&
-            snapshotPayload.data.snapshot?.snapshotId &&
+            snapshotMeta?.snapshotId &&
             cloudDraftMeta.baseSnapshotId &&
-            cloudDraftMeta.baseSnapshotId !== snapshotPayload.data.snapshot.snapshotId
+            cloudDraftMeta.baseSnapshotId !== snapshotMeta.snapshotId
             ? "A cloud draft based on a different saved version was restored."
             : null),
         );
@@ -1945,29 +1980,55 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
               clientId: tabIdRef.current,
               document: baseDocument,
               documentHash: createSnapshotFingerprint(baseDocument),
-              basedOnSnapshotId: snapshotPayload.data.snapshot?.snapshotId ?? null,
-              basedOnVersion: snapshotPayload.data.snapshot?.version ?? null,
-              basedOnHash: snapshotPayload.data.snapshot?.documentHash ?? null,
+              basedOnSnapshotId: snapshotMeta?.snapshotId ?? null,
+              basedOnVersion: snapshotMeta?.version ?? null,
+              basedOnHash: snapshotMeta?.documentHash ?? null,
               cloudDraftRevision: cloudDraftMeta?.revision ?? null,
               cloudDraftHash: cloudDraftMeta?.documentHash ?? null,
             });
           }
           applyHydratedSnapshotState(baseDocument);
+          canvasPersistenceReadyRef.current = true;
+          return;
+        }
+
+        if (
+          cloudDraftDocument &&
+          hasCanvasDocumentContent(cloudDraftDocument) &&
+          !hasCanvasDocumentContent(draftRecord.document) &&
+          draftRecord.pendingOperations.length === 0
+        ) {
+          // This branch was created from an empty pre-hydration canvas. It has
+          // no user operations to recover, so safely repair it from cloud.
+          await replaceEmptyCanvasDraftCheckpoint(currentUserId!, projectId, {
+            clientId: tabIdRef.current,
+            document: baseDocument,
+            documentHash: createSnapshotFingerprint(baseDocument),
+            basedOnSnapshotId: snapshotMeta?.snapshotId ?? null,
+            basedOnVersion: snapshotMeta?.version ?? null,
+            basedOnHash: snapshotMeta?.documentHash ?? null,
+            cloudDraftRevision: cloudDraftMeta?.revision ?? null,
+            cloudDraftHash: cloudDraftMeta?.documentHash ?? null,
+          });
+          applyHydratedSnapshotState(baseDocument);
+          canvasPersistenceReadyRef.current = true;
+          setDraftWarning("Recovered the cloud canvas after an incomplete local load.");
           return;
         }
 
         if (draftRecord.meta.documentHash === draftRecord.meta.basedOnHash) {
           applyHydratedSnapshotState(baseDocument);
+          canvasPersistenceReadyRef.current = true;
           return;
         }
 
-        const dbVersion = snapshotPayload.data.snapshot?.version ?? 0;
+        const dbVersion = snapshotMeta?.version ?? 0;
         const hasSnapshotConflict =
           (typeof draftRecord.meta.basedOnVersion === "number" && draftRecord.meta.basedOnVersion < dbVersion) ||
           Boolean(
             draftRecord.meta.basedOnSnapshotId &&
-            snapshotPayload.data.snapshot?.snapshotId &&
-            draftRecord.meta.basedOnSnapshotId !== snapshotPayload.data.snapshot.snapshotId,
+            snapshotMeta?.snapshotId &&
+            draftRecord.meta.basedOnSnapshotId !== snapshotMeta.snapshotId,
           );
         const hasCloudConflict =
           typeof draftRecord.meta.cloudDraftRevision === "number" &&
@@ -1980,6 +2041,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           // operations are the only lossless input for a later rebase/recovery.
           setDraftConflict(draftRecord);
           setDraftWarning("A newer cloud draft exists. Local changes remain safe and can be recovered.");
+          canvasPersistenceReadyRef.current = true;
           return;
         }
 
@@ -1995,12 +2057,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
         applyHydratedSnapshotState(resolvedDraft);
         snapshotBaselineRef.current = {
-          snapshotId: draftRecord.meta.basedOnSnapshotId ?? snapshotPayload.data.snapshot?.snapshotId ?? null,
-          version: draftRecord.meta.basedOnVersion ?? snapshotPayload.data.snapshot?.version ?? null,
-          documentHash: draftRecord.meta.basedOnHash ?? snapshotPayload.data.snapshot?.documentHash ?? null,
+          snapshotId: draftRecord.meta.basedOnSnapshotId ?? snapshotMeta?.snapshotId ?? null,
+          version: draftRecord.meta.basedOnVersion ?? snapshotMeta?.version ?? null,
+          documentHash: draftRecord.meta.basedOnHash ?? snapshotMeta?.documentHash ?? null,
         };
         savedSnapshotFingerprintRef.current =
-          draftRecord.meta.basedOnHash ?? snapshotPayload.data.snapshot?.documentHash ?? null;
+          draftRecord.meta.basedOnHash ?? snapshotMeta?.documentHash ?? null;
         setHasUnsavedSnapshotChanges(
           Boolean(draftRecord.meta.documentHash && draftRecord.meta.documentHash !== draftRecord.meta.basedOnHash),
         );
@@ -2014,14 +2076,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           requestSent: true,
           result: "succeeded",
         });
+        canvasPersistenceReadyRef.current = true;
       } catch (error) {
         if (cancelled || requestId !== snapshotLoadRequestRef.current) {
           return;
         }
 
-        const emptyDocument = coerceCanvasSnapshotDocument(undefined);
-        applySnapshotBaseline(emptyDocument, null);
-        applyHydratedSnapshotState(emptyDocument);
+        // Keep the current state intact and pause persistence. Writing an empty
+        // fallback here is how a temporary load failure can erase a valid draft.
+        canvasPersistenceReadyRef.current = false;
+        setDraftWarning("Canvas data could not be loaded. Autosave is paused until reload succeeds.");
         showToast(
           error instanceof Error
             ? error.message
