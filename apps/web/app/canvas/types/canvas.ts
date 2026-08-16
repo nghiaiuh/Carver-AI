@@ -1,4 +1,4 @@
-import type { ImageGeneratorAspectRatio } from "@carver/shared";
+import type { CanvasGroupColor, ImageGeneratorAspectRatio } from "@carver/shared";
 
 /*
  * Shared canvas domain types.
@@ -247,6 +247,10 @@ type CanvasNodeBase = {
   width: number;
   height: number;
   groupId?: string;
+  /** Optional display label shared by all members of a lightweight canvas group. */
+  groupLabel?: string;
+  /** Optional fill color shared by all members of a lightweight canvas group. */
+  groupColor?: CanvasGroupColor;
   scale?: number;
   imageUrl: string;
   sourceImage?: CanvasSourceImage;
@@ -470,6 +474,8 @@ export function isCanvasCameraShotSetNode(node: CanvasNode): node is CanvasCamer
 export type CanvasEdge = {
   id: string;
   sourceId: string;
+  /** A group edge expands its source members when building AI context. */
+  sourceGroupId?: string;
   targetId: string;
   kind?: CanvasConnectionKind;
   /** Stable semantic output port on the source node, when the node defines one. */

@@ -24,6 +24,8 @@ export type CanvasReferenceRole =
   | "architecture_reference"
   | "generic_reference";
 
+export type CanvasGroupColor = "neutral" | "sage" | "sky" | "amber" | "rose";
+
 export type SpatialLockStrength = "hard" | "soft";
 
 export type SpatialLockType =
@@ -153,6 +155,9 @@ export type CanvasGraphNodeSnapshot = {
   y: number;
   width: number;
   height: number;
+  groupId?: string;
+  groupLabel?: string;
+  groupColor?: CanvasGroupColor;
   scale?: number;
   sourceImage?: CanvasGraphSourceImage;
   regionMask?: CanvasMaskDataSnapshot;
@@ -228,6 +233,7 @@ export type CanvasGraphNodeSnapshot = {
 export type CanvasGraphEdgeSnapshot = {
   id: string;
   sourceId: string;
+  sourceGroupId?: string;
   targetId: string;
   kind?: "text" | "image";
   sourcePortId?: string;

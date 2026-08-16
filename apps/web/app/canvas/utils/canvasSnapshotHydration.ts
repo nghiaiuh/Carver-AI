@@ -474,6 +474,16 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
     sanitizeRuntimeSnapshotImageUrl(source?.imageUrl) ||
     sanitizeRuntimeSnapshotImageUrl(objectValue(source?.sourceImage)?.url);
   const sourceImage = sanitizeSourceImage(source?.sourceImage);
+  const groupId = stringValue(source?.groupId) ?? undefined;
+  const groupLabel = stringValue(source?.groupLabel) ?? undefined;
+  const groupColor =
+    source?.groupColor === "sage" ||
+    source?.groupColor === "sky" ||
+    source?.groupColor === "amber" ||
+    source?.groupColor === "rose" ||
+    source?.groupColor === "neutral"
+      ? source.groupColor
+      : undefined;
 
   if (kind === "presetGroup") {
     const presetGroupSource = objectValue(source?.presetGroup);
@@ -494,6 +504,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, DEFAULT_IMAGE_NODE_WIDTH)),
       height: Math.max(1, numberValue(source?.height, DEFAULT_IMAGE_NODE_HEIGHT)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -525,6 +538,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 620)),
       height: Math.max(1, numberValue(source?.height, 540)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -555,6 +571,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 540)),
       height: Math.max(1, numberValue(source?.height, 500)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -594,6 +613,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 260)),
       height: Math.max(1, numberValue(source?.height, 300)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -623,6 +645,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 340)),
       height: Math.max(1, numberValue(source?.height, 260)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -652,6 +677,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 320)),
       height: Math.max(1, numberValue(source?.height, 260)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -676,6 +704,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       y: numberValue(source?.y, index * 24),
       width: Math.max(1, numberValue(source?.width, 280)),
       height: Math.max(1, numberValue(source?.height, 180)),
+      groupId,
+      groupLabel,
+      groupColor,
       scale:
         typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
           ? source.scale
@@ -699,6 +730,9 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
     y: numberValue(source?.y, index * 24),
     width: Math.max(1, numberValue(source?.width, DEFAULT_IMAGE_NODE_WIDTH)),
     height: Math.max(1, numberValue(source?.height, DEFAULT_IMAGE_NODE_HEIGHT)),
+    groupId,
+    groupLabel,
+    groupColor,
     scale:
       typeof source?.scale === "number" && Number.isFinite(source.scale) && source.scale > 0
         ? source.scale
@@ -725,6 +759,7 @@ function sanitizeGraphEdge(edge: unknown): CanvasEdge | null {
   return {
     id,
     sourceId,
+    sourceGroupId: stringValue(source?.sourceGroupId) ?? undefined,
     targetId,
     kind: source?.kind === "text" || source?.kind === "image" ? source.kind : undefined,
     sourcePortId: stringValue(source?.sourcePortId) ?? undefined,
