@@ -89,21 +89,6 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
     state.isSnapshotLoading,
     state.isSnapshotSaving,
   ]);
-  const selectedContextSourceId =
-    state.selectedItem.type === "image" || state.selectedItem.type === "node"
-      ? state.selectedItem.id
-      : null;
-  const initialContextSourceIds =
-    selectedContextSourceId &&
-    state.nodes.some(
-      (node) =>
-        node.id === selectedContextSourceId &&
-        (node.kind === "image" || node.kind === undefined) &&
-        Boolean(node.sourceImage?.assetId || node.imageUrl),
-    )
-      ? [selectedContextSourceId]
-      : [];
-
   const projectName = state.nodes[0]?.title || "Living Landscape Studio";
   const addLibraryAssetsFromRecipe = (assets: LibraryAsset[]) => {
     if (assets.length === 0) return;
@@ -261,23 +246,13 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           <QuickAddMenu
             open
             onClose={() => setQuickAddOpen(false)}
-            contextSourceOptions={state.nodes
-              .filter((node) => node.kind === "image" || node.kind === undefined)
-              .filter((node) => Boolean(node.sourceImage?.assetId || node.imageUrl))
-              .map((node) => ({ id: node.id, title: node.title }))}
-            initialContextSourceIds={initialContextSourceIds}
-            onSelectType={(nodeType, sourceNodeIds) => {
+            onSelectType={(nodeType) => {
             switch (nodeType) {
               case "carver-generate":
                 actions.addImageGeneratorNode();
                 return;
               case "ai-brief":
                 actions.addAssistantNode();
-                return;
-              case "site-set":
-              case "sketch-layer":
-              case "material-board":
-                actions.addContextGroupNode(nodeType, sourceNodeIds);
                 return;
               case "camera-shot-set":
                 actions.addCameraShotSetNode();

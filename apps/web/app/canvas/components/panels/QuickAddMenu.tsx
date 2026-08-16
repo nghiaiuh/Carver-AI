@@ -7,52 +7,42 @@ import {
   Camera,
   Grid2X2,
   Image as ImageIcon,
-  Layers3,
-  Map as MapIcon,
-  Palette,
   Search,
   Sparkles,
   UploadCloud,
   X,
 } from "lucide-react";
 
-type QuickAddCategory = "all" | "media" | "context" | "ai" | "camera";
+type QuickAddCategory = "all" | "media" | "ai" | "camera";
 
 type QuickAddMenuProps = {
   open: boolean;
   onClose: () => void;
-  onSelectType: (type: string, sourceNodeIds?: string[]) => void;
-  contextSourceOptions?: Array<{ id: string; title: string }>;
-  initialContextSourceIds?: string[];
+  onSelectType: (type: string) => void;
 };
 
 type QuickAddItem = {
   id: string;
   title: string;
-  section: "Basics" | "Media" | "Context" | "Camera";
+  section: "Basics" | "Media" | "Camera";
   category: Exclude<QuickAddCategory, "all">;
   icon: LucideIcon;
   iconClassName: string;
   description: string;
 };
 
-const CONTEXT_GROUP_TYPES = new Set(["site-set", "sketch-layer", "material-board"]);
-const SECTION_ORDER: QuickAddItem["section"][] = ["Basics", "Media", "Context", "Camera"];
+const SECTION_ORDER: QuickAddItem["section"][] = ["Basics", "Media", "Camera"];
 
 const QUICK_ADD_ITEMS: QuickAddItem[] = [
   { id: "carver-generate", title: "Image Generator", section: "Basics", category: "ai", icon: ImageIcon, iconClassName: "bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]", description: "Create an image generation node with graph-aware context." },
   { id: "ai-brief", title: "Assistant", section: "Basics", category: "ai", icon: Bot, iconClassName: "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-icon)]", description: "Add a landscape assistant prompt and result card." },
   { id: "upload-image", title: "Project Site Images", section: "Media", category: "media", icon: UploadCloud, iconClassName: "bg-sky-50 text-sky-600", description: "Choose a site photo or reference from the project library." },
-  { id: "site-set", title: "Site Set", section: "Context", category: "context", icon: MapIcon, iconClassName: "bg-sky-50 text-sky-600", description: "Group site photos as one layout-aware image input." },
-  { id: "sketch-layer", title: "Sketch Layer", section: "Context", category: "context", icon: Layers3, iconClassName: "bg-violet-50 text-violet-600", description: "Group plans and sketches as controlled spatial context." },
-  { id: "material-board", title: "Material Board", section: "Context", category: "context", icon: Palette, iconClassName: "bg-amber-50 text-amber-600", description: "Group planting, stone, paving, and finish references." },
   { id: "camera-shot-set", title: "Camera Shot Set", section: "Camera", category: "camera", icon: Camera, iconClassName: "bg-rose-50 text-rose-600", description: "Plan camera viewpoints and connect them as text context." },
 ];
 
 const CATEGORY_TABS: Array<{ id: QuickAddCategory; label: string; icon: QuickAddItem["icon"] }> = [
   { id: "all", label: "All tools", icon: Grid2X2 },
   { id: "media", label: "Media", icon: ImageIcon },
-  { id: "context", label: "Context", icon: Layers3 },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "camera", label: "Camera", icon: Camera },
 ];
@@ -61,14 +51,10 @@ export default function QuickAddMenu({
   open,
   onClose,
   onSelectType,
-  contextSourceOptions = [],
-  initialContextSourceIds = [],
 }: QuickAddMenuProps) {
   const flyoutRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<QuickAddCategory>("all");
-  const [pendingContextGroupType, setPendingContextGroupType] = useState<string | null>(null);
-  const [selectedContextSourceIds, setSelectedContextSourceIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -101,7 +87,7 @@ export default function QuickAddMenu({
       ref={flyoutRef}
       role="dialog"
       aria-label="Add canvas tools"
-      className="absolute left-[84px] top-1/2 z-[110] w-[300px] -translate-y-1/2 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl transition-[opacity,transform] duration-200 ease-out"
+      className="absolute left-[90px] top-1/2 z-[110] w-[300px] -translate-y-1/2 overflow-hidden rounded-2xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_18px_40px_var(--canvas-theme-shadow)] backdrop-blur-xl transition-[opacity,transform] duration-200 ease-out"
       data-canvas-ui="true"
       data-quick-add-flyout="true"
     >
@@ -120,33 +106,7 @@ export default function QuickAddMenu({
         </button>
       </div>
 
-      {pendingContextGroupType ? (
-        <div className="p-2">
-          <div className="flex items-start justify-between gap-3 px-2 py-2">
-            <div>
-              <p className="text-[13px] font-semibold text-[var(--canvas-theme-text)]">Choose context images</p>
-              <p className="mt-0.5 text-[11px] leading-4 text-[var(--canvas-theme-text-muted)]">The group stores stable references and exposes one shared image port.</p>
-            </div>
-            <button type="button" onClick={() => setPendingContextGroupType(null)} className="text-[11px] font-semibold text-[var(--canvas-theme-text-muted)] hover:text-[var(--canvas-theme-text)]">Back</button>
-          </div>
-          <div className="quick-add-scroll max-h-[280px] space-y-0.5 overflow-y-auto px-1 pb-1">
-            {contextSourceOptions.map((source) => {
-              const selected = selectedContextSourceIds.includes(source.id);
-              return (
-                <label key={source.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition hover:bg-[var(--canvas-theme-hover)]">
-                  <input type="checkbox" checked={selected} onChange={() => setSelectedContextSourceIds((current) => selected ? current.filter((id) => id !== source.id) : [...current, source.id])} className="h-3.5 w-3.5 accent-[var(--canvas-theme-selection)]" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--canvas-theme-text)]">{source.title}</span>
-                </label>
-              );
-            })}
-            {contextSourceOptions.length === 0 ? <p className="rounded-lg bg-[var(--canvas-theme-surface-soft)] px-3 py-4 text-center text-xs text-[var(--canvas-theme-text-muted)]">Add site images to the canvas first.</p> : null}
-          </div>
-          <button type="button" disabled={selectedContextSourceIds.length === 0} onClick={() => { onSelectType(pendingContextGroupType, selectedContextSourceIds); onClose(); }} className="mx-1 mb-1 mt-2 w-[calc(100%-8px)] rounded-xl bg-[var(--canvas-theme-active)] px-3 py-2 text-xs font-semibold text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)] disabled:cursor-not-allowed disabled:opacity-45">
-            Create group with {selectedContextSourceIds.length} image{selectedContextSourceIds.length === 1 ? "" : "s"}
-          </button>
-        </div>
-      ) : (
-        <>
+      <>
           <div className="flex items-center gap-1 border-b border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1.5">
             {CATEGORY_TABS.map((tab) => {
               const Icon = tab.icon;
@@ -170,11 +130,6 @@ export default function QuickAddMenu({
                       const Icon = item.icon;
                       return (
                         <button key={item.id} type="button" onClick={() => {
-                          if (CONTEXT_GROUP_TYPES.has(item.id)) {
-                            setPendingContextGroupType(item.id);
-                            setSelectedContextSourceIds(initialContextSourceIds);
-                            return;
-                          }
                           onSelectType(item.id);
                           onClose();
                         }} className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left transition hover:bg-[var(--canvas-theme-hover)]">
@@ -189,8 +144,7 @@ export default function QuickAddMenu({
             })}
             {filteredItems.length === 0 ? <p className="px-3 py-8 text-center text-xs text-[var(--canvas-theme-text-muted)]">No available tools found.</p> : null}
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 }
