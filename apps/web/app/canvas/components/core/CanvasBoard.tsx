@@ -8,11 +8,15 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CarverAiJobSimulationConfig } from "@carver/shared";
+import type { CanvasGroupColor, CarverAiJobSimulationConfig } from "@carver/shared";
 import {
-  ChevronDown,
+  Columns3,
   Download,
+  Grid3X3,
   Group,
+  Palette,
+  Pencil,
+  Rows3,
   Scissors,
   Spline,
   Ungroup,
@@ -22,6 +26,7 @@ import type {
   AddedObject,
   CanvasConnectionKind,
   CanvasEdge,
+  ImageConnectionRole,
   MaskData,
   CanvasNode,
   CanvasPresetChild,
@@ -46,6 +51,7 @@ import CanvasNodeCard from "./CanvasNodeCard";
 import CanvasPresetGroupNodeCard from "./CanvasPresetGroupNodeCard";
 import CanvasContextGroupNodeCard from "./CanvasContextGroupNodeCard";
 import CanvasCameraShotSetNodeCard from "./CanvasCameraShotSetNodeCard";
+import CanvasNodeGroupFrame from "./CanvasNodeGroupFrame";
 import CanvasEdges from "./CanvasEdges";
 import PenStrokeLayer from "../widgets/PenStrokeLayer";
 import RegionMaskLightbox from "../widgets/RegionMaskLightbox";
@@ -93,6 +99,18 @@ import {
   getPastedCanvasImageSize as getPastedImageNodeSize,
   loadCanvasImageDimensions as loadImageDimensions,
 } from "../../utils/canvasClipboard";
+import {
+  CANVAS_GROUP_COLOR_OPTIONS,
+  getCanvasNodeGroups,
+  getNextCanvasGroupLabel,
+  arrangeCanvasNodeGroup,
+  type CanvasGroupArrangeMode,
+  type CanvasNodeGroup,
+} from "../../utils/canvasNodeGroups";
+import {
+  getGroupSemanticPortPoint,
+  GROUP_OUTPUT_IMAGE_PORT_ID,
+} from "../../utils/canvasGroupPorts";
 
 type CanvasBoardProps = {
   projectId?: string;
@@ -406,6 +424,7 @@ export default function CanvasBoard({
   const marqueePointerId = useRef<number | null>(null);
   const suppressCanvasBackgroundClickRef = useRef(false);
   const [marqueeSelectedNodeIds, setMarqueeSelectedNodeIds] = useState<string[] | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [marqueeSelection, setMarqueeSelection] = useState<MarqueeSelectionState>({
     isSelecting: false,
     startPoint: null,
@@ -457,6 +476,11 @@ export default function CanvasBoard({
   );
   const canGroupSelectedNodes = isMultiNodeSelection && selectedGroupingUnitCount > 1;
   const canUngroupSelectedNodes = isMultiNodeSelection && selectedGroupIds.length > 0;
+  const canvasNodeGroups = useMemo(() => getCanvasNodeGroups(nodes), [nodes]);
+  const selectedCanvasNodeGroup = useMemo(() => {
+    if (!selectedGroupId) return null;
+    return canvasNodeGroups.find((candidate) => candidate.id === selectedGroupId) ?? null;
+  }, [canvasNodeGroups, selectedGroupId]);
   const multiSelectBounds = useMemo(() => {
     if (!isMultiNodeSelection) return null;
 
@@ -648,6 +672,7 @@ export default function CanvasBoard({
   // -- Edge Creation State
   const [draftEdge, setDraftEdge] = useState<{
     sourceId: string;
+    sourceGroupId?: string;
     sourceHandle: ImageHandlePosition;
     sourcePortId?: string;
     connectionKind: CanvasConnectionKind;
@@ -657,6 +682,11 @@ export default function CanvasBoard({
     sourcePresetChildId?: string;
   } | null>(null);
   const [hoveredConnectionTargetId, setHoveredConnectionTargetId] = useState<string | null>(null);
+  const [pendingGroupConnectionRole, setPendingGroupConnectionRole] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [hoveredPresetChildId, setHoveredPresetChildId] = useState<string | null>(null);
 
   const clearMarqueeSelection = useCallback(() => {
@@ -1251,21 +1281,44 @@ export default function CanvasBoard({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
+  const handleGroupPointerDown = (groupId: string, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || isResizingPanel) return;
+    const group = canvasNodeGroups.find((candidate) => candidate.id === groupId);
+    const representativeNodeId = group?.nodeIds[0];
+    if (!representativeNodeId) return;
+
+    event.stopPropagation();
+    if (selectedGroupId !== groupId) {
+      // The first click only selects the group. A subsequent drag uses the
+      // established node-drag lifecycle below, which keeps edges and history stable.
+      event.preventDefault();
+      clearMarqueeSelection();
+      setMarqueeSelectedNodeIds(group.nodeIds);
+      setSelectedGroupId(groupId);
+      onSelect({ type: "none" });
+      return;
+    }
+
+    handleNodePointerDown(representativeNodeId, event);
+  };
+
   const handleGroupSelectedNodes = useCallback(() => {
     if (!canGroupSelectedNodes) return;
 
     const nextGroupId = `node-group-${Date.now()}`;
+    const nextGroupLabel = getNextCanvasGroupLabel(nodes);
     onNodesChange((previousNodes) =>
       previousNodes.map((node) =>
         selectedNodeIds.includes(node.id)
-          ? { ...node, groupId: nextGroupId }
+          ? { ...node, groupId: nextGroupId, groupLabel: nextGroupLabel, groupColor: "neutral" }
           : node,
       ),
     );
     setMarqueeSelectedNodeIds(selectedNodeIds);
+    setSelectedGroupId(nextGroupId);
     onSelect({ type: "node", id: selectedNodeIds[0] });
     onToast("Grouped selected images");
-  }, [canGroupSelectedNodes, onNodesChange, onSelect, onToast, selectedNodeIds]);
+  }, [canGroupSelectedNodes, nodes, onNodesChange, onSelect, onToast, selectedNodeIds]);
 
   const handleUngroupSelectedNodes = useCallback(() => {
     if (!canUngroupSelectedNodes) return;
@@ -1280,14 +1333,60 @@ export default function CanvasBoard({
     onNodesChange((previousNodes) =>
       previousNodes.map((node) =>
         selectedGroupedNodeIdSet.has(node.id)
-          ? { ...node, groupId: undefined }
+          ? { ...node, groupId: undefined, groupLabel: undefined, groupColor: undefined }
           : node,
       ),
     );
     setMarqueeSelectedNodeIds(selectedGroupedNodeIds);
+    setSelectedGroupId(null);
     onSelect({ type: "node", id: selectedGroupedNodeIds[0] });
     onToast("Ungrouped selected images");
   }, [canUngroupSelectedNodes, onNodesChange, onSelect, onToast, selectedNodes]);
+
+  const handleRenameSelectedGroup = useCallback(() => {
+    if (selectedGroupIds.length !== 1) return;
+    const group = canvasNodeGroups.find((candidate) => candidate.id === selectedGroupIds[0]);
+    if (!group) return;
+    const nextLabel = window.prompt("Name this image group", group.label)?.trim();
+    if (!nextLabel || nextLabel === group.label) return;
+
+    onNodesChange((previousNodes) => previousNodes.map((node) =>
+      node.groupId === group.id ? { ...node, groupLabel: nextLabel } : node,
+    ));
+    onToast("Group renamed");
+  }, [canvasNodeGroups, onNodesChange, onToast, selectedGroupIds]);
+
+  const handleGroupColorChange = useCallback((groupId: string, color: CanvasGroupColor) => {
+    onNodesChange((previousNodes) => previousNodes.map((node) =>
+      node.groupId === groupId ? { ...node, groupColor: color } : node,
+    ));
+  }, [onNodesChange]);
+
+  const handleArrangeGroup = useCallback((groupId: string, mode: CanvasGroupArrangeMode) => {
+    onNodesChange((previousNodes) => arrangeCanvasNodeGroup(previousNodes, groupId, mode));
+    onToast(`Group arranged as ${mode}`);
+  }, [onNodesChange, onToast]);
+
+  const handleGroupConnectionStart = useCallback((groupId: string, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (isResizingPanel) return;
+    const group = canvasNodeGroups.find((candidate) => candidate.id === groupId);
+    if (!group) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const sourcePortId = GROUP_OUTPUT_IMAGE_PORT_ID;
+    const startPoint = getGroupSemanticPortPoint(group, sourcePortId);
+    if (!startPoint) return;
+    setDraftEdge({
+      sourceId: group.nodeIds[0],
+      sourceGroupId: group.id,
+      sourceHandle: "right",
+      sourcePortId,
+      connectionKind: "image",
+      targetX: startPoint.x,
+      targetY: startPoint.y,
+    });
+    setHoveredConnectionTargetId(null);
+  }, [canvasNodeGroups, isResizingPanel]);
 
   const handleConnectionHandlePointerDown = useCallback(
     (
@@ -1482,9 +1581,10 @@ export default function CanvasBoard({
 
       setDraftEdge(prev => prev ? { ...prev, targetX: target.x, targetY: target.y } : null);
       const hoveredNode = nodes.find((node) => {
-        if (node.id === draftEdge.sourceId) return false;
+        if (draftEdge.sourceGroupId ? node.groupId === draftEdge.sourceGroupId : node.id === draftEdge.sourceId) return false;
         const alreadyConnected = edges.some(
           (e) =>
+            (e.sourceGroupId === draftEdge.sourceGroupId && e.targetId === node.id) ||
             (e.sourceId === draftEdge.sourceId && e.targetId === node.id) ||
             (e.sourceId === node.id && e.targetId === draftEdge.sourceId),
         );
@@ -1613,7 +1713,7 @@ export default function CanvasBoard({
         const targetNode = nodes.find((node) => {
           const bounds = getNodeDisplayBounds(node);
           return (
-            node.id !== draftEdge.sourceId &&
+            (draftEdge.sourceGroupId ? node.groupId !== draftEdge.sourceGroupId : node.id !== draftEdge.sourceId) &&
             drop.x >= bounds.x &&
             drop.x <= bounds.x + bounds.width &&
             drop.y >= bounds.y &&
@@ -1624,14 +1724,16 @@ export default function CanvasBoard({
         if (targetNode) {
           const sourceNode = nodes.find((node) => node.id === draftEdge.sourceId);
           const role =
-            draftEdge.connectionKind === "text"
+            draftEdge.sourceGroupId || draftEdge.connectionKind === "text"
               ? "generic_reference"
               : sourceNode
                 ? inferConnectionRoleFromNode(sourceNode)
                 : "generic_reference";
           const sourceIsPresetGroup = sourceNode ? isPresetGroupNode(sourceNode) : false;
 
-          const edgeExists = draftEdge.sourcePresetChildId
+          const edgeExists = draftEdge.sourceGroupId
+            ? edges.some((edge) => edge.sourceGroupId === draftEdge.sourceGroupId && edge.targetId === targetNode.id)
+            : draftEdge.sourcePresetChildId
             ? edges.some(
               (edge) =>
                 edge.sourceId === draftEdge.sourceId &&
@@ -1682,6 +1784,7 @@ export default function CanvasBoard({
                   ? "prompt"
                   : role.replace("_reference", "").replaceAll("_", " "),
               createdAt: new Date().toISOString(),
+              ...(draftEdge.sourceGroupId ? { sourceGroupId: draftEdge.sourceGroupId } : {}),
               ...(draftEdge.sourcePresetChildId ? { sourcePresetChildId: draftEdge.sourcePresetChildId } : {}),
             };
             onEdgesChange(prev => [...prev, newEdge]);
@@ -1689,7 +1792,12 @@ export default function CanvasBoard({
             setCreatedEdgeRedoStack([]);
             setMarqueeSelectedNodeIds(null);
             onSelect({ type: "edge", id: newEdge.id });
-            onToast("Connection created");
+            if (draftEdge.sourceGroupId) {
+              setPendingGroupConnectionRole({ edgeId: newEdge.id, x: drop.x, y: drop.y });
+              onToast("Choose how AI should use this image group");
+            } else {
+              onToast("Connection created");
+            }
           }
         }
       }
@@ -1999,6 +2107,12 @@ export default function CanvasBoard({
       const target = event.target as HTMLElement | null;
       if (target?.closest("textarea,input,[contenteditable='true']")) return;
 
+      if (event.key === "Escape" && pendingGroupConnectionRole) {
+        event.preventDefault();
+        setPendingGroupConnectionRole(null);
+        return;
+      }
+
       if (event.key === "Escape" && marqueeSelection.isSelecting) {
         event.preventDefault();
         clearMarqueeSelection();
@@ -2069,7 +2183,7 @@ export default function CanvasBoard({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftEdge, draftPenStroke, eraserPreview.visible, handleRedoAction, handleUndoAction, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, onTool, selectedItem]);
+  }, [activeTool, cancelDraftPenStroke, clearEraserSession, clearMarqueeSelection, deleteNode, draftEdge, draftPenStroke, eraserPreview.visible, handleRedoAction, handleUndoAction, marqueeSelection.isSelecting, onDeletePenStroke, onSelect, onToast, onTool, pendingGroupConnectionRole, selectedItem]);
 
   const snapshotStatusText = useMemo(() => {
     if (!projectId) {
@@ -2255,6 +2369,7 @@ export default function CanvasBoard({
 
         if (isCanvasInteractiveTarget(event.target)) return;
         setMarqueeSelectedNodeIds(null);
+        setSelectedGroupId(null);
         onSelect({ type: "none" });
       }}
       onPointerDownCapture={(event) => {
@@ -2292,12 +2407,26 @@ export default function CanvasBoard({
             viewportZoom={zoom}
             canGroup={canGroupSelectedNodes}
             canUngroup={canUngroupSelectedNodes}
+            group={selectedCanvasNodeGroup}
             onGroup={handleGroupSelectedNodes}
             onUngroup={handleUngroupSelectedNodes}
+            onRenameGroup={handleRenameSelectedGroup}
+            onChangeGroupColor={handleGroupColorChange}
+            onArrangeGroup={handleArrangeGroup}
             onMerge={() => onToast("Merge action coming soon")}
             onDownload={() => onToast("Download selection mock")}
           />
         ) : null}
+
+        {canvasNodeGroups.map((group) => (
+          <CanvasNodeGroupFrame
+            key={group.id}
+            group={group}
+            selected={selectedGroupId === group.id}
+            onPointerDown={handleGroupPointerDown}
+            onStartConnection={handleGroupConnectionStart}
+          />
+        ))}
 
         {marqueeSelection.rect ? (
           <div
@@ -2320,11 +2449,27 @@ export default function CanvasBoard({
           onEdgeClick={(id, e) => {
             e.stopPropagation();
             setMarqueeSelectedNodeIds(null);
+            setSelectedGroupId(null);
             onSelect({ type: "edge", id });
           }}
           onEdgeCut={cutConnection}
           draftEdge={draftEdge}
         />
+
+        {pendingGroupConnectionRole ? (
+          <GroupConnectionRolePicker
+            x={pendingGroupConnectionRole.x}
+            y={pendingGroupConnectionRole.y}
+            viewportZoom={zoom}
+            onSelect={(role, label) => {
+              onEdgesChange((previousEdges) => previousEdges.map((edge) =>
+                edge.id === pendingGroupConnectionRole.edgeId ? { ...edge, role, label } : edge,
+              ));
+              setPendingGroupConnectionRole(null);
+              onToast(`Group connected as ${label.toLowerCase()}`);
+            }}
+          />
+        ) : null}
 
         {nodes.map(node =>
           isPresetGroupNode(node) ? (
@@ -2332,26 +2477,32 @@ export default function CanvasBoard({
               key={node.id}
               node={node}
               edges={edges}
-              selected={selectedNodeIds.includes(node.id)}
+              selected={selectedNodeIds.includes(node.id) && selectedGroupId !== node.groupId}
               selectedItem={selectedItem}
               viewportZoom={zoom}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               hoveredPresetChildId={hoveredPresetChildId}
               onSelect={(id) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id });
               }}
               onSelectPresetChild={(nodeId, childId) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "presetChild", nodeId, childId });
               }}
               onSetActivePresetChild={onSetActivePresetChild}
               onRemovePresetChild={onRemovePresetChild}
               onMovePresetChild={onMovePresetChild}
-              onDragStart={handleNodePointerDown}
+              onDragStart={(id, event) => {
+                setSelectedGroupId(null);
+                handleNodePointerDown(id, event);
+              }}
               onStartConnection={handleConnectionHandlePointerDown}
               onStartChildConnection={handlePresetChildConnectionStart}
               onSelectContextMenu={(id, x, y) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
@@ -2363,15 +2514,20 @@ export default function CanvasBoard({
               key={node.id}
               node={node}
               allNodes={nodes}
-              selected={selectedNodeIds.includes(node.id)}
+              selected={selectedNodeIds.includes(node.id) && selectedGroupId !== node.groupId}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id });
               }}
-              onDragStart={handleNodePointerDown}
+              onDragStart={(id, event) => {
+                setSelectedGroupId(null);
+                handleNodePointerDown(id, event);
+              }}
               onStartConnection={handleConnectionHandlePointerDown}
               onSelectContextMenu={(id, x, y) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
@@ -2380,16 +2536,21 @@ export default function CanvasBoard({
             <CanvasCameraShotSetNodeCard
               key={node.id}
               node={node}
-              selected={selectedNodeIds.includes(node.id)}
+              selected={selectedNodeIds.includes(node.id) && selectedGroupId !== node.groupId}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id });
               }}
-              onDragStart={handleNodePointerDown}
+              onDragStart={(id, event) => {
+                setSelectedGroupId(null);
+                handleNodePointerDown(id, event);
+              }}
               onToggleShot={onToggleCameraShot}
               onStartConnection={handleConnectionHandlePointerDown}
               onSelectContextMenu={(id, x, y) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
@@ -2399,9 +2560,9 @@ export default function CanvasBoard({
               key={node.id}
               node={node}
               edges={edges}
-              selected={selectedNodeIds.includes(node.id)}
+              selected={selectedNodeIds.includes(node.id) && selectedGroupId !== node.groupId}
               isGenerationTarget={activeGenerationTargetId === node.id}
-              showSelectionTools={!isMultiNodeSelection}
+              showSelectionTools={!isMultiNodeSelection && selectedGroupId === null}
               selectedItem={selectedItem}
               activeTool={activeTool}
               markers={markers}
@@ -2414,47 +2575,34 @@ export default function CanvasBoard({
               imageRasterZoom={isWheelZooming ? imageRasterZoom : zoom}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
-                const groupedNodeIds = getGroupedNodeIds(id);
-                const shouldPreserveGroupSelection =
-                  marqueeSelectedNodeIds !== null &&
-                  marqueeSelectedNodeIds.length > 1 &&
-                  marqueeSelectedNodeIds.includes(id);
-
-                if (groupedNodeIds.length > 1) {
-                  setMarqueeSelectedNodeIds(groupedNodeIds);
-                  onSelect({ type: "node", id: groupedNodeIds[0] });
-                  return;
-                }
-
-                if (!shouldPreserveGroupSelection) {
-                  setMarqueeSelectedNodeIds(null);
-                  onSelect({ type: "node", id });
-                }
+                setSelectedGroupId(null);
+                setMarqueeSelectedNodeIds(null);
+                onSelect({ type: "node", id });
               }}
               onStartConnection={handleConnectionHandlePointerDown}
               onSelectOverlay={(item) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect(item);
               }}
               onAddSketchLine={onAddSketchLine}
               onSelectSketchLine={onSelectSketchLine}
               onSelectSketchGroup={(id) => {
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelectSketchGroup(id);
               }}
               onSelectContextMenu={(id, x, y) => {
-                const groupedNodeIds = getGroupedNodeIds(id);
-                if (groupedNodeIds.length > 1) {
-                  setMarqueeSelectedNodeIds(groupedNodeIds);
-                  onSelect({ type: "node", id: groupedNodeIds[0], menu: { x, y } });
-                  return;
-                }
+                setSelectedGroupId(null);
                 setMarqueeSelectedNodeIds(null);
                 onSelect({ type: "node", id, menu: { x, y } });
               }}
               onUpdateNode={updateCanvasNode}
               onCommitResize={commitNodeResize}
-              onDragStart={handleNodePointerDown}
+              onDragStart={(id, event) => {
+                setSelectedGroupId(null);
+                handleNodePointerDown(id, event);
+              }}
               onImageAction={onImageAction}
               onMultiAngle={onMultiAngle}
               onAddObject={onAddObject}
@@ -2478,6 +2626,7 @@ export default function CanvasBoard({
             eraserPreview={eraserPreview}
             selectedStrokeId={selectedItem.type === "pen-stroke" ? selectedItem.id : null}
             onSelectStroke={(strokeId) => {
+              setSelectedGroupId(null);
               setMarqueeSelectedNodeIds(null);
               onSelect({ type: "pen-stroke", id: strokeId });
             }}
@@ -2601,14 +2750,67 @@ type MenuItem = {
   onSelect?: () => void;
 };
 
+const GROUP_CONNECTION_ROLES: Array<{ label: string; role: ImageConnectionRole }> = [
+  { label: "Site / Base", role: "layout_reference" },
+  { label: "Sketch / Layout", role: "structure_reference" },
+  { label: "Material / Style", role: "material_reference" },
+  { label: "Reference", role: "generic_reference" },
+];
+
+function GroupConnectionRolePicker({
+  x,
+  y,
+  viewportZoom,
+  onSelect,
+}: {
+  x: number;
+  y: number;
+  viewportZoom: number;
+  onSelect: (role: ImageConnectionRole, label: string) => void;
+}) {
+  const uiScale = 1 / viewportZoom;
+
+  return (
+    <div
+      data-canvas-ui="true"
+      className="absolute z-[105] flex items-center gap-1 rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] p-1.5 shadow-[0_12px_28px_var(--canvas-theme-shadow)]"
+      style={{
+        left: x,
+        top: y - 50 * uiScale,
+        transform: `translate(-50%, -100%) scale(${uiScale})`,
+        transformOrigin: "bottom center",
+      }}
+    >
+      <span className="px-1 text-[10px] font-semibold text-[var(--canvas-theme-text-muted)]">Use group as</span>
+      {GROUP_CONNECTION_ROLES.map((item) => (
+        <button
+          key={item.role}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(item.role, item.label);
+          }}
+          className="rounded-lg px-2 py-1 text-[11px] font-semibold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MultiSelectToolbar({
   x,
   y,
   viewportZoom = 1,
   canGroup,
   canUngroup,
+  group,
   onGroup,
   onUngroup,
+  onRenameGroup,
+  onChangeGroupColor,
+  onArrangeGroup,
   onMerge,
   onDownload,
 }: {
@@ -2617,15 +2819,20 @@ function MultiSelectToolbar({
   viewportZoom?: number;
   canGroup: boolean;
   canUngroup: boolean;
+  group: CanvasNodeGroup | null;
   onGroup: () => void;
   onUngroup: () => void;
+  onRenameGroup: () => void;
+  onChangeGroupColor: (groupId: string, color: CanvasGroupColor) => void;
+  onArrangeGroup: (groupId: string, mode: CanvasGroupArrangeMode) => void;
   onMerge: () => void;
   onDownload: () => void;
 }) {
+  const [openGroupMenu, setOpenGroupMenu] = useState<"color" | "arrange" | null>(null);
   const uiScale = 1 / viewportZoom;
   const actions = [
     ...(canGroup ? [{ label: "Group", icon: Group, onClick: onGroup }] : []),
-    ...(canUngroup ? [{ label: "Ungroup", icon: Ungroup, onClick: onUngroup }] : []),
+    ...(!group && canUngroup ? [{ label: "Ungroup", icon: Ungroup, onClick: onUngroup }] : []),
     { label: "Merge", icon: Zap, onClick: onMerge },
     { label: "Download", icon: Download, onClick: onDownload },
   ];
@@ -2641,25 +2848,149 @@ function MultiSelectToolbar({
         transformOrigin: "top center",
       }}
     >
+      {group ? (
+        <>
+          <div className="relative">
+            <ContextualToolbarToolButton
+              label="Background color"
+              aria-expanded={openGroupMenu === "color"}
+              hideTooltip={openGroupMenu === "color"}
+              onClick={(event) => {
+                event.stopPropagation();
+                setOpenGroupMenu((current) => current === "color" ? null : "color");
+              }}
+            >
+              <Palette className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+            </ContextualToolbarToolButton>
+            {openGroupMenu === "color" ? (
+              <div className="absolute left-0 top-full z-[110] mt-1 flex gap-1 rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] p-1.5 shadow-[0_10px_24px_var(--canvas-theme-shadow)]">
+                {CANVAS_GROUP_COLOR_OPTIONS.map((color) => (
+                  <button
+                    key={color.id}
+                    type="button"
+                    title={color.label}
+                    aria-label={`Use ${color.label} group color`}
+                    aria-pressed={group.color === color.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onChangeGroupColor(group.id, color.id);
+                      setOpenGroupMenu(null);
+                    }}
+                    className={`h-5 w-5 rounded-full border-2 transition hover:scale-110 ${group.color === color.id ? "border-[var(--canvas-theme-text)]" : "border-transparent"}`}
+                    style={{ backgroundColor: color.accent }}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="relative">
+            <ContextualToolbarToolButton
+              label="Arrange group"
+              aria-expanded={openGroupMenu === "arrange"}
+              hideTooltip={openGroupMenu === "arrange"}
+              onClick={(event) => {
+                event.stopPropagation();
+                setOpenGroupMenu((current) => current === "arrange" ? null : "arrange");
+              }}
+            >
+              <Grid3X3 className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+            </ContextualToolbarToolButton>
+            {openGroupMenu === "arrange" ? (
+              <div className="absolute left-0 top-full z-[110] mt-1 w-28 rounded-xl border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-[0_10px_24px_var(--canvas-theme-shadow)]">
+                {[
+                  { id: "row" as const, label: "Row", icon: Rows3 },
+                  { id: "grid" as const, label: "Grid", icon: Grid3X3 },
+                  { id: "stack" as const, label: "Stack", icon: Columns3 },
+                ].map((arrangement) => {
+                  const Icon = arrangement.icon;
+                  return (
+                    <button
+                      key={arrangement.id}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onArrangeGroup(group.id, arrangement.id);
+                        setOpenGroupMenu(null);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
+                    >
+                      <Icon className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+                      {arrangement.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          <ContextualToolbarToolButton
+            label="Rename group"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRenameGroup();
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+          </ContextualToolbarToolButton>
+
+          <ContextualToolbarToolButton
+            label="Ungroup"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUngroup();
+            }}
+          >
+            <Ungroup className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
+          </ContextualToolbarToolButton>
+        </>
+      ) : null}
+
       {actions.map((action) => {
         const Icon = action.icon;
 
         return (
-          <button
+          <ContextualToolbarToolButton
             key={action.label}
-            type="button"
+            label={action.label}
             onClick={(event) => {
               event.stopPropagation();
               action.onClick();
             }}
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-bold text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)]"
           >
             <Icon className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-            <span>{action.label}</span>
-            <ChevronDown className="h-3.5 w-3.5 text-[var(--canvas-theme-icon-muted)]" aria-hidden="true" />
-          </button>
+          </ContextualToolbarToolButton>
         );
       })}
+    </div>
+  );
+}
+
+function ContextualToolbarToolButton({
+  label,
+  hideTooltip = false,
+  children,
+  ...buttonProps
+}: {
+  label: string;
+  hideTooltip?: boolean;
+  children: React.ReactNode;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <div className="group relative">
+      <button
+        type="button"
+        aria-label={label}
+        {...buttonProps}
+        className="grid h-7 w-7 place-items-center rounded-lg text-[var(--canvas-theme-text)] transition hover:bg-[var(--canvas-theme-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-selection-ring)]"
+      >
+        {children}
+      </button>
+      <span
+        className={`pointer-events-none absolute bottom-[calc(100%+7px)] left-1/2 z-[120] -translate-x-1/2 whitespace-nowrap rounded-lg border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-panel)] px-2 py-1 text-[11px] font-medium text-[var(--canvas-theme-text)] shadow-[0_4px_12px_var(--canvas-theme-shadow)] transition-[opacity,transform] duration-150 ${hideTooltip ? "translate-y-0 opacity-0" : "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"}`}
+      >
+        {label}
+      </span>
     </div>
   );
 }
