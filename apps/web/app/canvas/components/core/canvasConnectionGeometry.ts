@@ -6,6 +6,8 @@ import {
   getPortsBySide,
 } from "../../utils/canvasNodePorts";
 import {
+  CANVAS_PORT_HANDLE_CENTER_OUTSET,
+  CANVAS_PORT_HANDLE_OUTSET,
   getCornerAnchoredPortOffsetY,
   getGenericNodePortOffsetY,
   getImageOutputPortOffsetY,
@@ -18,9 +20,9 @@ import type { ImageHandlePosition, ImageConnectionRole } from "../../types/canva
 
 export const INPUT_PORT_HANDLE_CENTER_OFFSET = 6;
 /** Full handle box offset from the card edge, used by the DOM layout. */
-export const AGGREGATE_HANDLE_OFFSET = 38;
+export const AGGREGATE_HANDLE_OFFSET = CANVAS_PORT_HANDLE_OUTSET;
 /** SVG edges must end at the center of the 32px handle, not its outer edge. */
-export const AGGREGATE_HANDLE_CENTER_OFFSET = AGGREGATE_HANDLE_OFFSET / 2;
+export const AGGREGATE_HANDLE_CENTER_OFFSET = CANVAS_PORT_HANDLE_CENTER_OUTSET;
 
 const MATERIAL_PATTERN = /(material|tile|texture|gach|da|vat lieu|limestone|stone)/i;
 const ARCHITECTURE_PATTERN = /(house|architecture|structure|nha|mai|cot|kien truc|roof|building)/i;

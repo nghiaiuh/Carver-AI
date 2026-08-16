@@ -22,6 +22,11 @@ import {
   getPresetChildRightAnchor,
   isPresetGroupNode,
 } from "../../utils/presetGroupHelpers";
+import { getCanvasNodeGroup } from "../../utils/canvasNodeGroups";
+import {
+  getGroupSemanticPortPoint,
+  isGroupPortCompatibleWithConnection,
+} from "../../utils/canvasGroupPorts";
 
 type CanvasEdgesProps = {
   nodes: CanvasNode[];
@@ -33,6 +38,7 @@ type CanvasEdgesProps = {
   // For interactive dragging — includes optional snappedPortId from hit-radius resolution
   draftEdge?: {
     sourceId: string;
+    sourceGroupId?: string;
     sourceHandle?: CanvasEdge["fromHandle"];
     sourcePortId?: string;
     connectionKind: "text" | "image";
@@ -57,10 +63,17 @@ export default function CanvasEdges({
   /** Get the output anchor, preferring the edge's stable semantic source port. */
   const getSourceAnchor = (
     nodeId: string,
+    sourceGroupId?: string,
     sourcePortId?: string,
     handle?: CanvasEdge["fromHandle"],
     connectionKind: "text" | "image" = "image",
   ) => {
+    const sourceGroup = getCanvasNodeGroup(nodes, sourceGroupId);
+    if (sourceGroup) {
+      return isGroupPortCompatibleWithConnection(sourcePortId, connectionKind)
+        ? getGroupSemanticPortPoint(sourceGroup, sourcePortId)
+        : null;
+    }
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
 
@@ -117,6 +130,7 @@ export default function CanvasEdges({
         if (!sourceCenter) {
           sourceCenter = getSourceAnchor(
             edge.sourceId,
+            edge.sourceGroupId,
             edge.sourcePortId,
             edge.fromHandle,
             getEdgeConnectionKind(edge),
@@ -206,6 +220,7 @@ export default function CanvasEdges({
         if (!sourceCenter) {
           sourceCenter = getSourceAnchor(
             draftEdge.sourceId,
+            draftEdge.sourceGroupId,
             draftEdge.sourcePortId,
             draftEdge.sourceHandle,
             draftEdge.connectionKind,
