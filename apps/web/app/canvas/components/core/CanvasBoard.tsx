@@ -500,6 +500,23 @@ export default function CanvasBoard({
       height: maxY - minY,
     };
   }, [isMultiNodeSelection, selectedNodes]);
+  const multiSelectToolbarAnchor = useMemo(() => {
+    // Groups add world-space padding around their members. Anchor the toolbar to
+    // that outer frame so its screen-space offset remains stable at every zoom.
+    if (selectedCanvasNodeGroup) {
+      return {
+        x: selectedCanvasNodeGroup.bounds.x + selectedCanvasNodeGroup.bounds.width / 2,
+        y: selectedCanvasNodeGroup.bounds.y,
+      };
+    }
+
+    if (!multiSelectBounds) return null;
+
+    return {
+      x: multiSelectBounds.x + multiSelectBounds.width / 2,
+      y: multiSelectBounds.y,
+    };
+  }, [multiSelectBounds, selectedCanvasNodeGroup]);
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -2400,10 +2417,10 @@ export default function CanvasBoard({
           transition: "none",
         }}
       >
-        {isMultiNodeSelection && multiSelectBounds ? (
+        {isMultiNodeSelection && multiSelectToolbarAnchor ? (
           <MultiSelectToolbar
-            x={multiSelectBounds.x + multiSelectBounds.width / 2}
-            y={multiSelectBounds.y}
+            x={multiSelectToolbarAnchor.x}
+            y={multiSelectToolbarAnchor.y}
             viewportZoom={zoom}
             canGroup={canGroupSelectedNodes}
             canUngroup={canUngroupSelectedNodes}
@@ -2843,7 +2860,7 @@ function MultiSelectToolbar({
       className="contextual-toolbar absolute z-[100] flex items-center gap-0.5 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)] p-1 shadow-xl shadow-[var(--canvas-theme-shadow)] backdrop-blur"
       style={{
         left: x,
-        top: y - 62 * uiScale,
+        top: y - 90 * uiScale,
         transform: `translateX(-50%) scale(${uiScale})`,
         transformOrigin: "top center",
       }}
