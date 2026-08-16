@@ -16,10 +16,12 @@ import {
 import { isAssistantNode, isImageGeneratorNode, isPresetGroupNode } from "./presetGroupHelpers";
 import { resolveContextGroupItems } from "./contextGroupHelpers";
 import { getCameraShotSetPrompt } from "./cameraShotHelpers";
+import { getCanvasEdgeSourceNodes } from "./canvasNodeGroups";
 
 type InboundEdge = {
   id: string;
   sourceId: string;
+  sourceGroupId?: string;
   targetId: string;
   sourcePresetChildId?: string | null;
   sourcePortId?: string;
@@ -165,10 +167,9 @@ export function buildImageGeneratorGraphContext(
   const seenTextKeys = new Set<string>();
 
   for (const edge of getInboundEdgesForGenerator(generatorNodeId, edges)) {
-    const sourceNode = nodes.find((node) => node.id === edge.sourceId);
-    if (!sourceNode || isImageGeneratorNode(sourceNode)) {
-      continue;
-    }
+    const sourceNodes = getCanvasEdgeSourceNodes(nodes, edge);
+    for (const sourceNode of sourceNodes) {
+      if (isImageGeneratorNode(sourceNode)) continue;
 
     if (isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasCameraShotSetNode(sourceNode)) {
       const content = getConnectedTextContent(sourceNode);
@@ -250,6 +251,7 @@ export function buildImageGeneratorGraphContext(
       role: edge.role ?? "generic_reference",
       sourcePresetChildId: edge.sourcePresetChildId ?? null,
     });
+    }
   }
 
   const executionTarget = imageReferences[0] ?? null;

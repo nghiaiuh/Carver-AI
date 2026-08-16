@@ -29,6 +29,7 @@ import type {
 import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
 import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
 import { resolveContextGroupItems } from "./contextGroupHelpers";
+import { getCanvasEdgeSourceNodes } from "./canvasNodeGroups";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
 import {
   sanitizePersistedSnapshotImageUrl,
@@ -124,8 +125,9 @@ export function resolveConnectedImageReferences(
   for (const edge of getInboundEdgesForTarget(targetNodeId, edges)) {
     if (edge.sourcePresetChildId) continue;
 
-    const sourceNode = nodes.find((node) => node.id === edge.sourceId);
-    if (!sourceNode || isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasTextNode(sourceNode)) continue;
+    const sourceNodes = getCanvasEdgeSourceNodes(nodes, edge);
+    for (const sourceNode of sourceNodes) {
+      if (isPresetGroupNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasTextNode(sourceNode)) continue;
 
     if (isCanvasContextGroupNode(sourceNode)) {
       for (const item of resolveContextGroupItems(sourceNode, nodes)) {
@@ -160,7 +162,7 @@ export function resolveConnectedImageReferences(
       (output) => output.assetId === gallerySelectedOutputAssetId,
     ) ?? gallerySource?.imageGenerator.outputs[0];
 
-    const key = `${edge.sourceId}:${edge.sourcePresetChildId ?? "node"}:${edge.targetPresetChildId ?? "target"}`;
+    const key = `${sourceNode.id}:${edge.sourcePresetChildId ?? "node"}:${edge.targetPresetChildId ?? "target"}`;
     if (references.has(key)) continue;
 
     references.set(key, {
@@ -171,6 +173,7 @@ export function resolveConnectedImageReferences(
       role: normalizeRole(edge.role),
       sourcePresetChildId: edge.sourcePresetChildId ?? null,
     });
+    }
   }
 
   return [...references.values()];
@@ -422,6 +425,9 @@ export function buildCanvasSnapshotWithGraph(params: {
         y: node.y,
         width: node.width,
         height: node.height,
+        groupId: node.groupId,
+        groupLabel: node.groupLabel,
+        groupColor: node.groupColor,
         scale: node.scale,
         sourceImage: sanitizeSourceImageForSnapshot(node.sourceImage),
         regionMask: sanitizeMaskDataForSnapshot(node.regionMask),
@@ -475,6 +481,7 @@ export function buildCanvasSnapshotWithGraph(params: {
       edges: params.edges.map((edge) => ({
         id: edge.id,
         sourceId: edge.sourceId,
+        sourceGroupId: edge.sourceGroupId,
         targetId: edge.targetId,
         kind: edge.kind,
         sourcePortId: edge.sourcePortId,
