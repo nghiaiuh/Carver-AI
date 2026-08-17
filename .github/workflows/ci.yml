@@ -39,6 +39,13 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # Several workspaces export their public TypeScript declarations from
+      # dist/. Build the dependency chain before linting a clean checkout.
+      - run: npm run build --workspace @carver/shared
+      - run: npm run build --workspace @carver/db
+      - run: npm run build --workspace @carver/queue
+      - run: npm run build --workspace @carver/storage
+      - run: npm run build --workspace @carver/ai
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:canvas-workflow --workspace @carver/web
