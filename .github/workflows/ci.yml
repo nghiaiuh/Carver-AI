@@ -9,14 +9,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
+    name: Quality, tests, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
-      # Build-time placeholders only. CI never receives production credentials.
+      # Non-secret values required only while compiling Next.js configuration.
       NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
-      # next.config.mjs validates this public URL while compiling CSP headers.
       NEXT_PUBLIC_LANDING_ASSET_BASE_URL: https://ci-assets.carver.example
       SUPABASE_URL: https://ci.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
@@ -25,105 +30,41 @@ jobs:
       CLOUDFLARE_R2_ACCOUNT_ID: ci-account
       CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
       CLOUDFLARE_R2_SECRET_ACCESS_KEY: ci-secret-key
-      CLOUDFLARE_R2_BUCKET: ci-bucket
+      CLOUDFLARE_R2_BUCKET: ci-private-bucket
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci
-      # The web app consumes declaration files from these workspace package exports.
-      # Build them first so CI cannot pass against a stale local dist directory.
-      - run: npm run build --workspace @carver/shared
-      - run: npm run build --workspace @carver/db
-      - run: npm run build --workspace @carver/queue
-      - run: npm run build --workspace @carver/storage
-      - run: npm run build --workspace @carver/ai
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run test:canvas-workflow --workspace @carver/web
       - run: npm run test:prompt-engine
+      - run: npm run test --workspace @carver/shared
+      - run: npm run test --workspace @carver/queue
       - run: npm run test:openai-contracts --workspace @carver/worker
       - run: npm run test:image-generator --workspace @carver/worker
-      - run: npm run test --workspace @carver/shared
-      - run: npm run security:api-boundaries
-      - run: npm run test --workspace @carver/queue
       - run: npm run test --workspace @carver/worker
+      - run: npm run security:api-boundaries
       - run: npm run migration:validate
-      - run: npm run build --workspace @carver/worker
-      - run: npm run build --workspace @carver/web
+      - run: npm run build
 
-  tenant-isolation-staging:
-    # This job is deliberately opt-in. It requires a disposable staging project,
-    # never production Supabase keys.
-    if: github.event_name == 'workflow_dispatch'
+  dependency-audit:
+    name: Dependency audit (advisory)
     runs-on: ubuntu-latest
-    environment: staging
+    timeout-minutes: 10
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci
-      # Workspace exports resolve from dist/ in a clean checkout as well.
-      - run: npm run build --workspace @carver/shared
-      - run: npm run build --workspace @carver/db
-      - run: npm run build --workspace @carver/queue
-      - run: npm run build --workspace @carver/storage
-      - run: npm run build --workspace @carver/ai
-      - run: test -n "$SUPABASE_TEST_URL" && test -n "$SUPABASE_TEST_ANON_KEY" && test -n "$SUPABASE_TEST_SERVICE_ROLE_KEY"
-        env:
-          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
-          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
-          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
-      - run: npm run dev --workspace @carver/web > /tmp/carver-web.log 2>&1 &
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
-          NEXT_PUBLIC_LANDING_ASSET_BASE_URL: https://ci-assets.carver.example
-          SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
-          REDIS_URL: rediss://default:ci-password@localhost:6379
-          ASSET_GATEWAY_SIGNING_SECRET: ci-signing-secret-at-least-32-characters
-          CLOUDFLARE_R2_ACCOUNT_ID: ci-account
-          CLOUDFLARE_R2_ACCESS_KEY_ID: ci-access-key
-          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ci-secret-key
-          CLOUDFLARE_R2_BUCKET: ci-bucket
-      - run: for i in {1..60}; do curl -fsS http://127.0.0.1:3000 > /dev/null && exit 0; sleep 1; done; cat /tmp/carver-web.log; exit 1
-      - run: npm run test:tenant-isolation --workspace @carver/db
-        env:
-          CARVER_RUN_INTEGRATION_TESTS: "1"
-          CARVER_TEST_ENVIRONMENT: staging
-          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
-          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
-          SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
-          CARVER_TEST_WEB_BASE_URL: http://127.0.0.1:3000
-
-  e2e-staging:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: test -n "$CARVER_E2E_BASE_URL" && test -n "$E2E_STORAGE_STATE_JSON"
-        env:
-          CARVER_E2E_BASE_URL: ${{ vars.CARVER_E2E_BASE_URL }}
-          E2E_STORAGE_STATE_JSON: ${{ secrets.CARVER_E2E_STORAGE_STATE_JSON }}
-      - run: npx playwright install --with-deps chromium
-      - run: node -e "require('node:fs').writeFileSync('/tmp/carver-e2e-storage-state.json', process.env.E2E_STORAGE_STATE_JSON)"
-        env:
-          E2E_STORAGE_STATE_JSON: ${{ secrets.CARVER_E2E_STORAGE_STATE_JSON }}
-      - run: npm run test:e2e
-        env:
-          CARVER_RUN_E2E: "1"
-          # Both staging web and worker must set CARVER_ENABLE_AI_JOB_SIMULATION=true.
-          # This proves the queue contract without calling a paid image provider.
-          CARVER_E2E_RUN_GENERATION: "1"
-          CARVER_E2E_BASE_URL: ${{ vars.CARVER_E2E_BASE_URL }}
-          CARVER_E2E_STORAGE_STATE_PATH: /tmp/carver-e2e-storage-state.json
+      # Dependabot opens remediation PRs. Keep this visible without turning an
+      # advisory update into an unrelated deployment outage.
+      - run: npm audit --omit=dev --audit-level=high

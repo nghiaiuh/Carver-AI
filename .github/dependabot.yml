@@ -3,10 +3,26 @@ updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: daily
+    open-pull-requests-limit: 3
+    target-branch: main
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
     groups:
-      minor-and-patch:
+      non-major:
         update-types:
           - minor
           - patch
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    target-branch: main
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(ci)
