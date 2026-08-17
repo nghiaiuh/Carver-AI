@@ -76,7 +76,9 @@ export function getNodeConnectionCountsBySide(nodeId: string, edges: CanvasEdge[
   return edges.reduce(
     (counts, edge) => {
       const kind = getEdgeConnectionKind(edge);
-      if (edge.sourceId === nodeId) {
+      // A group edge keeps a representative sourceId for persisted-edge
+      // compatibility, but its visible source handle belongs to the group frame.
+      if (edge.sourceId === nodeId && !edge.sourceGroupId) {
         counts[edge.fromHandle ?? "right"][kind] += 1;
       }
       if (edge.targetId === nodeId) {

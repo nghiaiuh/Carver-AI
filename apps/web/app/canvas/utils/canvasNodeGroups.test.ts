@@ -8,6 +8,7 @@ import {
 } from "./canvasNodeGroups";
 import {
   getGroupPortButtonLayout,
+  getGroupPortConnectionCount,
   getGroupSemanticPort,
   getGroupSemanticPortPoint,
   GROUP_OUTPUT_IMAGE_PORT_ID,
@@ -89,6 +90,22 @@ test("a group edge expands all member images without a synthetic group node", ()
     getCanvasEdgeSourceNodes(groupedNodes, edge).map((node) => node.id),
     ["site-a", "site-b"],
   );
+});
+
+test("a group port counts only its virtual output edges", () => {
+  const edge: CanvasEdge = {
+    id: "site-views-to-generator",
+    sourceId: "site-a",
+    sourceGroupId: "site-views",
+    sourcePortId: GROUP_OUTPUT_IMAGE_PORT_ID,
+    targetId: "generator",
+    targetPortId: "image-generator-input-image",
+    kind: "image",
+    label: "Site / Base",
+  };
+
+  assert.equal(getGroupPortConnectionCount([edge], "site-views", GROUP_OUTPUT_IMAGE_PORT_ID), 1);
+  assert.equal(getGroupPortConnectionCount([edge], "another-group", GROUP_OUTPUT_IMAGE_PORT_ID), 0);
 });
 
 test("arrange operations update member coordinates without changing their group identity", () => {

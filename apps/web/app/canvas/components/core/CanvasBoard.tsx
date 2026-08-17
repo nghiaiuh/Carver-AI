@@ -2439,6 +2439,7 @@ export default function CanvasBoard({
           <CanvasNodeGroupFrame
             key={group.id}
             group={group}
+            edges={edges}
             selected={selectedGroupId === group.id}
             onPointerDown={handleGroupPointerDown}
             onStartConnection={handleGroupConnectionStart}

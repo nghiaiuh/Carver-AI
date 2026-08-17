@@ -1,4 +1,4 @@
-import type { CanvasConnectionKind } from "../types/canvas";
+import type { CanvasConnectionKind, CanvasEdge } from "../types/canvas";
 import type { CanvasNodePortDefinition } from "./canvasNodePorts";
 import {
   CANVAS_PORT_HANDLE_CENTER_OUTSET,
@@ -61,4 +61,11 @@ export function isGroupPortCompatibleWithConnection(
   kind: CanvasConnectionKind,
 ) {
   return getGroupSemanticPort(portId)?.acceptedKinds.includes(kind) ?? false;
+}
+
+/** Returns the number of edges emitted by a virtual group output port. */
+export function getGroupPortConnectionCount(edges: CanvasEdge[], groupId: string, portId: string) {
+  return edges.filter(
+    (edge) => edge.sourceGroupId === groupId && edge.sourcePortId === portId,
+  ).length;
 }

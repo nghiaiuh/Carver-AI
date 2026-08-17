@@ -5,13 +5,16 @@ import {
   type CanvasNodeGroup,
 } from "../../utils/canvasNodeGroups";
 import {
+  getGroupPortConnectionCount,
   getGroupPortButtonLayout,
   GROUP_OUTPUT_IMAGE_PORT_ID,
 } from "../../utils/canvasGroupPorts";
+import type { CanvasEdge } from "../../types/canvas";
 import CanvasConnectionPortHandle from "./CanvasConnectionPortHandle";
 
 type CanvasNodeGroupFrameProps = {
   group: CanvasNodeGroup;
+  edges: CanvasEdge[];
   selected: boolean;
   onPointerDown: (groupId: string, event: React.PointerEvent<HTMLDivElement>) => void;
   onStartConnection: (groupId: string, event: React.PointerEvent<HTMLButtonElement>) => void;
@@ -20,12 +23,15 @@ type CanvasNodeGroupFrameProps = {
 /** Visual container, style toolbar, and shared image output port for a node group. */
 export default function CanvasNodeGroupFrame({
   group,
+  edges,
   selected,
   onPointerDown,
   onStartConnection,
 }: CanvasNodeGroupFrameProps) {
   const activeColor = CANVAS_GROUP_COLOR_OPTIONS.find((color) => color.id === group.color) ?? CANVAS_GROUP_COLOR_OPTIONS[0];
   const outputPortLayout = getGroupPortButtonLayout(group, GROUP_OUTPUT_IMAGE_PORT_ID);
+  const outputPortConnectionCount = getGroupPortConnectionCount(edges, group.id, GROUP_OUTPUT_IMAGE_PORT_ID);
+  const shouldShowOutputPort = selected || outputPortConnectionCount > 0;
   const frameClass = selected
     ? "border-[var(--canvas-theme-selection)] ring-2 ring-[var(--canvas-theme-selection-ring)]"
     : "border-[var(--canvas-theme-border-strong)]";
@@ -52,7 +58,7 @@ export default function CanvasNodeGroupFrame({
         <span className="text-[var(--canvas-theme-text-muted)]">{group.nodeIds.length}</span>
       </div>
 
-      {selected && outputPortLayout ? (
+      {shouldShowOutputPort && outputPortLayout ? (
         <div
           className="pointer-events-auto absolute z-20"
           style={{
@@ -65,6 +71,7 @@ export default function CanvasNodeGroupFrame({
         >
           <CanvasConnectionPortHandle
             ariaLabel={`Connect ${group.label}`}
+            count={outputPortConnectionCount}
             kind="image"
             selected={selected}
             active={selected}
