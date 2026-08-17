@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "node ../../node_modules/eslint/bin/eslint.js .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:canvas-workflow": "tsx --test app/canvas/utils/contextGroupHelpers.test.ts app/canvas/utils/canvasGenerationContext.test.ts app/canvas/utils/cameraShotHelpers.test.ts app/canvas/utils/canvasNodeGroups.test.ts"
   },
@@ -31,7 +31,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.19",
-    "eslint": "10.8.0",
     "eslint-config-next": "^16.2.6",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
