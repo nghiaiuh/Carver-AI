@@ -70,7 +70,7 @@ function loadConfig(): IntegrationConfig {
 const config = loadConfig();
 
 function assertNoDatabaseError(error: DatabaseResponse["error"]) {
-  assert.equal(error, null, error?.message);
+  assert.equal(error, null, error?.message ?? "Unexpected database error.");
 }
 
 async function assertHidden(response: PromiseLike<DatabaseResponse>) {
