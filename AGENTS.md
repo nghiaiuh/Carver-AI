@@ -1,377 +1,225 @@
-# Carver AI Agent Instructions
-
-## Identity Check
-
-When responding to the user after completing a task, always address or refer to the user as **Nghĩa IT**.
-
-This is a context-check marker to confirm the agent has read and followed this file.
-Example:
-
-```md
-Done, Nghĩa IT.
-```
+# Carver AI Agent Guide
 
 ## Project Overview
 
-Carver AI is an AI Landscape Architect Co-Pilot for landscape and garden design.
+- Carver AI is a canvas-first AI co-pilot for landscape and garden design, not a generic image generator.
+- It helps landscape engineers, studios, homeowners, and internal teams create controlled design concepts from real site context.
+- Core promise: preserve layout, camera, perspective, object positions, scale, paths, ponds, buildings, and protected areas while editing or generating images.
+- Product principle: preserve layout before beautifying. Treat every AI edit as a controlled design operation.
+- When completing a coding task, address the user as **Nghĩa IT**.
 
-## Fast Startup
+## Current Goals
 
-Before scanning the repo broadly, read `context.md` at the repository root.
+- Stabilize canvas persistence, interaction, version restore, graph connections, and themed tool UI.
+- Complete graph-driven landscape workflows: site images, sketches, materials/references, prompts, generation, and controlled iteration.
+- Support narrow language-led edits such as "only change this path" while preserving the rest of the scene.
+- Build toward lightweight 2.5D camera planning and multi-angle outputs. Do not assume full 3D reconstruction is needed.
+- Keep backend, security, observability, and staging verification production-oriented before billing or collaboration work.
 
-Use it to quickly understand:
+## Tech Stack
 
-* package ownership
-* canvas architecture
-* preset-group workflow
-* generation graph context
-* chat image-input flow
-* the most relevant files for each type of task
+- TypeScript monorepo; Node.js >=20.9; npm workspaces; Turborepo.
+- Web: Next.js App Router 16, React 19, Tailwind CSS, Lucide, GSAP, Framer Motion.
+- Backend-for-frontend: Next.js route handlers and server services. No NestJS or Express currently.
+- Data/auth: Supabase Postgres, Auth, RLS, sequential SQL migrations.
+- Async work: BullMQ with Redis and an independently run TypeScript worker.
+- Storage/image processing: private Cloudflare R2-compatible storage, S3 SDK, Sharp on server/worker only.
+- AI: OpenAI Responses API for text/chat and queue-backed image jobs; Prompt Engine is in packages/ai.
+- Tests: node:test through tsx; Playwright for E2E. Do not add Jest/Vitest without an explicit decision.
 
-The product is not a generic image generator. Its core value is helping users design and edit landscape concepts while preserving real-world layout constraints such as object position, scale, camera angle, pond shape, house placement, garden paths, and locked design areas.
+## Architecture
 
-Primary users:
+### Package Boundaries
 
-* Landscape engineers.
-* Garden and architecture studios.
-* Homeowners or normal users who want to design their own garden.
-* Internal project/team workflow users.
+- apps/web: web UI, canvas, API routes, Next.js BFF, browser-safe code.
+- apps/worker: BullMQ consumers, provider calls, image processing, retries, maintenance, and cleanup.
+- packages/ai: prompt engine and graph-aware AI brief logic.
+- packages/db: Supabase clients/types and SQL migrations under packages/db/sql.
+- packages/queue: queue names, job contracts, BullMQ wiring.
+- packages/storage: server-side R2, asset metadata, image-format and library helpers.
+- packages/shared: cross-package snapshots, AI jobs, operation drafts, image-generator contracts, and test fakes.
 
-## Core Product Principles
+### Request, AI, and Asset Flow
 
-1. Preserve layout before beautifying.
-2. Treat every image edit as a controlled design operation.
-3. The canvas is the main workspace.
-4. The AI assistant supports the canvas, not the other way around.
-5. User-uploaded images, reference images, masks, selected regions, and locked objects must be treated as important context.
-6. Do not let AI generation randomly change important layout elements.
-7. Prefer stable MVP behavior over clever but fragile abstractions.
+- API routes are thin boundaries: authenticate, verify project ownership, validate input, enforce applicable rate limits, then call server services.
+- Long-running AI work must use ai_jobs + BullMQ + worker. Do not call providers inside request handlers.
+- Worker loads authoritative job/project/snapshot/asset data server-side; queue payloads stay minimal and non-sensitive.
+- Job creation is idempotent. Retries must reuse the job instead of double enqueueing or charging.
+- Chat sidebar persists project chat history. Assistant card is single-turn, graph-local, node-local; it must not write chat_threads/chat_messages or enqueue an image job.
+- Supabase Auth is the only identity system. Browser code uses public/anon clients only; service role stays server/worker/test-runner only.
+- Private assets persist stable assetId/metadata. Resolve short-lived /api/assets/[assetId]/content URLs at runtime. Never persist signed URLs, storage paths, blobs, data URLs, secrets, or provider payloads.
 
-## Main Product Concepts
+### Canvas, Groups, and Ports
 
-### Canvas-first Workflow
+- State/actions: apps/web/app/canvas/hooks/useCanvasWorkspace.ts.
+- Board rendering/interactions: apps/web/app/canvas/components/core/CanvasBoard.tsx.
+- Layout shell: apps/web/app/canvas/components/core/CanvasWorkspace.tsx.
+- Canvas data must be serializable, restorable, and backward-compatible with prior snapshots.
+- canvasNodePorts.ts is the source of truth for port ID, direction, type, side, ordering, capacity, and compatibility. Do not add ad-hoc port IDs or separate port geometry.
+- canvasPortLayout.ts is shared by port UI, drag anchors, and edges. Existing port anchors must not move when port count or connected edges change.
+- Image nodes are source-only with right-top image output. Assistant, text, Image Generator, and gallery ports follow the registry.
+- Named canvas groups are member groupId containers, not fake asset nodes. They may expose a virtual typed image output through shared group-port geometry.
+- Do not add new dedicated Site Set, Sketch Layer, or Material Board cards. Use a group and a role chosen on the connection into Assistant/Image Generator. Group labels are for humans, not AI source of truth.
+- Selecting a group must not select every child. Child ports/toolbars appear only when that child is selected.
+- Use --canvas-theme-* semantic tokens for all canvas UI, ports, edges, selection visuals, minimap, and flyouts. Do not add hardcoded theme colors.
+- Use existing viewport helpers and atomic pan/zoom updates. Screen-fixed offsets/sizes must be divided by zoom.
 
-The user should be able to:
+### Generation, Images, and Persistence
 
-* Create a project.
-* Upload or paste sources images.
-* Select objects or regions on the canvas.
-* Chat with AI using canvas context.
-* Generate or refine landscape concepts.
-* Save versioned canvas snapshots.
-* Compare design versions.
-* Export results.
+- Graph inbound edges to a target are the generation context source of truth; never infer context from card order or URL text.
+- Preserve prompt structure: direct target, references, preserve exactly, change only, material/style requirements, and avoid constraints.
+- Image Generator is job-backed and persists prompt, graph inputs, status, outputs, selected output, and active job ID in snapshots.
+- Image ratio must use the shared ratio registry for UI, API validation, worker sizing/crop, and card geometry. Resize changes actual dimensions; never CSS-scale card text/icons.
+- Create/reuse image-output-gallery only when a generation produces two or more outputs. It references stable asset IDs and has an auto-edge from the generator.
+- Send output quantity through provider field n, never as Prompt Engine interpreter text.
+- Use injectable OpenAI transports and deterministic fake PNG fixtures for contract tests. CI/default tests must not need OPENAI_API_KEY or spend money.
+- Cloud draft is a mutable materialized document; immutable snapshots are created only by manual/close finalization or checkpoints.
+- Autosave is operation-first persistence V2: IndexedDB journal + cloud operation batches + ACKed operation IDs. Do not restore full-document last-write-wins autosave.
+- Never clear local draft state on conflict. Disjoint entity changes can rebase; same-entity conflicts preserve a recovery copy.
+- ACK removes only acknowledged local operations in the same IndexedDB transaction that advances revision/checkpoint.
+- Manual Save flushes/ACKs pending operations before finalizing. New operations created during finalization remain pending.
+- Migrations 026_canvas_draft_operation_log.sql and 027_canvas_draft_operation_rpc_alias_fix.sql are required for operation draft APIs.
 
-Canvas state must be serializable, restorable, and versionable.
+## Repository Structure
 
-Current implemented direction:
+- README.md: architecture and future-flow diagrams. Dashed/planned paths are not implemented behavior.
+- context.md: fast-start file map. Read it first, then verify current code before relying on roadmap notes.
+- apps/web/app/canvas/types/canvas.ts: canvas node/edge contracts.
+- apps/web/app/canvas/utils/canvasGenerationContext.ts: graph-to-generation context.
+- apps/web/app/canvas/utils/imageGeneratorGraphContext.ts: Image Generator graph context.
+- apps/web/app/canvas/utils/assistantGraphContext.ts: Assistant-card graph context.
+- apps/web/app/canvas/utils/canvasSnapshotHydration.ts: safe snapshot/draft hydration.
+- apps/web/app/canvas/utils/localCanvasDraft.ts: IndexedDB operation journal and recovery behavior.
+- apps/web/lib/server/aiJobService.ts: AI-job BFF orchestration.
+- apps/web/lib/server/assetService.ts: owned asset URL resolution/hydration.
+- apps/web/lib/server/chatService.ts: persistent chat orchestration.
+- apps/web/lib/server/assistantService.ts: non-persistent Assistant-card execution.
+- apps/worker/src/services/generation-service.ts: generation orchestration.
+- apps/worker/src/providers/openai/generate-image.ts: OpenAI image adapter/transport seam.
+- packages/shared/src/snapshot.ts, ai-jobs.ts, canvas-draft.ts, image-generator.ts: shared contracts.
 
-* Selected canvas images can act as the active generation/chat target.
-* Preset library items create or update `presetGroup` nodes on the canvas.
-* Connection lines between images and preset references are used as generation context.
-* Chat now supports image-aware input through the OpenAI Responses API path.
-* Shared snapshot types include graph state and active generation target support.
+## Development Commands
 
-### Spatial Lock System
+Run from repository root unless a workspace is specified.
 
-Spatial Lock is a key Carver AI feature.
+~~~powershell
+npm run dev
+npm run dev --workspace @carver/web
+npm run dev --workspace @carver/worker
 
-The system should allow the user to preserve or lock:
-
-* House position.
-* Koi pond shape and location.
-* Rockery waterfall / hòn non bộ position.
-* Pavilion / gazebo position.
-* Driveway and walking paths.
-* Courtyard paving.
-* Gate, walls, fences, and boundary lines.
-* Existing trees or planting zones.
-* Camera angle and perspective.
-* Object scale, elevation, and proportions.
-
-When AI edits an image, it must distinguish clearly between:
-
-* Editable area.
-* Preserved area.
-* Locked object.
-* Reference image.
-* Style instruction.
-* Replacement instruction.
-
-### Prompt Engine
-
-The prompt engine turns rough user instructions into structured AI-ready prompts.
-
-It should support:
-
-* Intent detection.
-* Canvas context collection.
-* Selected region/object context.
-* Preservation rules.
-* Reference image roles.
-* Style and material instructions.
-* Planting instructions.
-* Negative constraints.
-* Output quality requirements.
-
-The prompt engine should clarify and protect design constraints without over-filtering user creativity.
-
-## Repository Ownership
-
-Use these package boundaries:
-
-* Web UI, canvas, landing page, and API routes: `apps/web`.
-* AI state, prompt engine, intent routing, and graph nodes: `packages/ai`.
-* Supabase clients, database types, SQL schema, and RLS policies: `packages/db`.
-* Queue configuration and job contracts: `packages/queue`.
-* Worker processors and background jobs: `apps/worker`.
-* Shared types and constants: `packages/shared` if available.
-* Shared UI components: `packages/ui` if available.
-
-Keep changes inside the package that owns the behavior.
-
-## Development Workflow
-
-Before editing:
-
-1. Read `context.md` first unless the task is extremely small.
-2. Inspect the relevant files and package.
-3. Understand the current product behavior.
-4. Check whether the code is demo-only or production-intended.
-5. Avoid changing unrelated packages.
-6. Avoid large rewrites unless the task clearly requires it.
-
-While editing:
-
-1. Keep canvas data compatible with existing snapshots.
-2. Keep server-only code out of client bundles.
-3. Keep database logic out of React UI components when possible.
-4. Keep AI orchestration logic out of UI components.
-5. Prefer small, testable functions.
-6. Delete unused demo code instead of building around it.
-7. Use clear names instead of overly clever abstractions.
-
-Before handoff, run when feasible:
-
-```bash
 npm run build
-npm run typecheck
 npm run lint
-```
+npm run typecheck
+npm run typecheck --workspace @carver/web
+npm run test:canvas-workflow --workspace @carver/web
+npm run test --workspace @carver/shared
+npm run test --workspace @carver/worker
+npm run test:openai-contracts --workspace @carver/worker
+npm run test:image-generator --workspace @carver/worker
+npm run test:prompt-engine --workspace @carver/ai
+npm run test:tenant-isolation --workspace @carver/db
+npm run migration:validate
+npm run test:e2e
 
-If a command cannot be run, mention it clearly in the final response.
+npm run security:env
+npm run security:api-boundaries
+~~~
 
-## Frontend Guidelines
+- Use focused checks for small changes; run broader checks for cross-package, dependency, build, or deployment changes.
+- Staging integration/E2E/database smoke tests need explicit staging configuration. Never point destructive or tenant-isolation tests at production.
+- Do not run npm audit fix --force without a reviewed Next/Sharp/deployment upgrade plan.
 
-Canvas features may include:
+## Coding Conventions
 
-* Image upload.
-* Image paste from clipboard.
-* Image-to-image connection lines.
-* Pan.
-* Zoom.
-* Zoom to cursor.
-* Object selection.
-* Region selection or masking.
-* Move and resize objects.
-* Toolbar actions.
-* Chat/context panel.
-* Version preview.
+- Use TypeScript, clear domain names, small testable functions, and the package boundaries above.
+- Reuse existing utilities/contracts rather than creating a parallel state model, coordinate system, transport, or schema.
+- Use apply_patch for source edits. Preserve user work in dirty files.
+- Prefer ASCII in new code unless the existing file needs Unicode.
+- Keep server-only code out of browser bundles; keep route handlers thin and business orchestration in services.
+- Canvas interactions use Pointer Events and pointer capture. A resize gesture is one undo entry and must not conflict with node drag/pan.
+- Use semantic theme tokens and preserve the established canvas visual language.
+- Add comments only where behavior is otherwise non-obvious.
 
-Canvas rules:
+## Agent Working Rules
 
-* Do not break image aspect ratio.
-* Do not stretch or blur canvas images.
-* Preserve zoom and pan predictability.
-* Keep object metadata serializable.
-* Do not hardcode demo images as production data.
-* Pasted images should have sensible fallback metadata such as `Pasted Image`.
+- Read context.md and relevant code before editing. Verify types, routes, migrations, and tests; roadmap text alone is insufficient.
+- Do not modify outside task scope unless required for a correct contract, test, or migration.
+- Do not delete files or do broad rewrites without a clear task reason.
+- Before a large/cross-package change, provide a short plan. Otherwise make the smallest safe implementation.
+- Preserve snapshot/API compatibility; add hydration/adapters for existing persisted data where required.
+- Never hardcode secrets, credentials, user IDs, storage paths, production-only URLs, or provider behavior.
+- Do not change public APIs, database schema, auth/RLS, rate limits, or deployment configuration unless the task requires it.
+- Do not bypass ownership checks, asset gateway, credit ledger, queue, or operation persistence.
+- After changes, run relevant tests/lint/typecheck when feasible, run git diff --check, inspect git diff, and report failures/warnings honestly.
+- If a requirement is unclear, choose the simplest non-breaking solution and state the assumption.
+- Never reset, checkout, delete, or revert existing user changes without explicit approval.
+- For a completed coding task, report: summary, files changed, manual test, commands run/not run, known risks/follow-up, and exact suggested commit commands. Do not claim a commit was created unless it was run.
 
-UI direction:
+## Git Workflow
 
-* Clean, bright, modern interface.
-* White or soft neutral background.
-* Canvas-first layout.
-* Lightweight floating toolbar.
-* Clear panels.
-* Minimal visual clutter.
-* Professional design-tool feeling.
+- Assume a dirty worktree. Inspect git status --short before edits and do not overwrite unrelated work.
+- Use small, single-purpose commits. For a versioned rollout, include the label, for example: feat(canvas): v2 add operation journal.
+- Do not amend commits unless asked.
+- Before suggesting a commit, list changed files, call out mixed changes, and provide exact git add and git commit commands.
+- Do not say a commit, migration, deployment, or test succeeded unless it actually succeeded.
 
-Avoid:
+## Database Rules
 
-* Heavy dashboard clutter.
-* Demo placeholder flows in production.
-* Hidden important actions.
-* UI that covers too much of the canvas.
+- packages/db/sql is the Supabase schema source of truth. Add sequentially numbered migrations; never rewrite an applied migration.
+- Run npm run migration:validate; apply to Supabase staging first; run smoke/tenant checks; then deliberately apply to production.
+- Commit migrations even after applying them to Supabase.
+- New user-owned tables need RLS, ownership policies, least-privilege grants, and expected-query indexes.
+- Service-role RPCs are only for trusted server workflows. Routes still authenticate, authorize, validate, and enforce quota/rate policy before invoking them.
+- Map database errors to safe API errors. Never expose raw Postgres, R2, OpenAI, or Supabase messages.
+- Prisma scripts exist but are not the source of truth for Supabase production migrations. Do not use prisma db push for production schema changes.
 
-## AI and Landscape Domain Guidelines
+## Dependency Rules
 
-Carver AI should understand common landscape concepts such as:
+- Prefer existing dependencies and platform features. Add a dependency only for a clear unmet need.
+- Review maintenance, license, TypeScript support, security, bundle/server impact, and correct workspace placement first.
+- Browser dependencies belong in apps/web; service-role, Redis, provider, and Sharp dependencies stay server/worker-side.
+- Update lockfile and run focused checks after dependency changes. Verify clean production build for Next/Sharp changes.
+- Do not use forced audit fixes or broad dependency upgrades without a plan and regression coverage.
 
-* Vietnamese koi garden.
-* Koi pond / hồ koi.
-* Rockery waterfall / hòn non bộ.
-* Bonsai.
-* Tùng la hán / podocarpus.
-* Vạn niên tùng.
-* Mai chiếu thủy.
-* Sung cảnh / ficus bonsai.
-* Trúc quân tử / slender bamboo.
-* Cau / areca palm.
-* Cau đỏ / areca palm with red fruit.
-* Dương xỉ / fern.
-* Tropical shrubs.
-* Gray grid courtyard paving.
-* Traditional Vietnamese wooden house.
-* Hexagonal pavilion / gazebo.
-* Vietnamese, Korean, Japanese, Chinese, and tropical garden styles.
+## Known Issues / Gotchas
 
-When building prompts for image generation or image editing, prefer this structure:
+- Every Supabase environment must have the current migration chain. Missing migrations 026/027 cause operation-draft API/schema failures and pending local operations.
+- Restart local Next after route handler changes; verify the route exists before treating a 404 as a data issue.
+- A bootstrap/blank document must never overwrite IndexedDB operations or a newer cloud draft. Operations remain recoverable until server ACK.
+- Web and worker must target the same intended Supabase project and compatible migration level. Mismatch can present as job/RPC/outbox failures.
+- Sharp is deployment-sensitive because it needs target Linux binaries. Keep it server/worker-only and validate builds after Sharp/Next upgrades.
+- Asset gateway URLs are authenticated signed routes, not public static assets. Do not expose R2 paths to work around failures.
+- Provider/storage/worker errors must stay safe for users; diagnose with request IDs and redacted logs.
+- Canvas dimensions are world units; floating UI may require screen-fixed sizing. Divide screen offsets/sizes by viewport zoom and anchor to the same rendered bounds.
+- Some console errors can be browser extensions or GSAP selector warnings. Confirm the target element/problem before changing application logic.
 
-```md
-Use Image A as the direct edit target.
-Use Image B as the reference image.
+## Important Decisions
 
-MAIN GOAL
-...
+- Canvas is the product center; chat assists the canvas.
+- Natural language narrow edits are preferred. Strong preservation should use target/context/marks where possible, not force users to lock every object.
+- Semantic scene graph, mark-to-object, automatic preservation, multi-angle families, and 3D reconstruction are roadmap work. Do not represent them as complete or add heavyweight infrastructure without validation.
+- Groups plus typed connection roles replace specialized reference cards. Group names do not determine AI meaning.
+- A new object/port type is a vertical change: contract, port registry, rendering, hydration, graph resolver, persistence, and tests.
+- Fake provider transports/fixture buffers are required for OpenAI Image Generator tests; real provider checks are optional, budgeted, and outside CI.
 
-STRICT EDITING RULE
-...
+## Current Project State
 
-PRESERVE EXACTLY
-...
+- Implemented direction: authenticated project boundaries, RLS-oriented migrations, private asset gateway, queue-backed AI jobs, graph-aware chat/generation, Assistant card single-turn flow, Image Generator/output-gallery contracts, and operation-first draft persistence V2.
+- Current canvas direction: typed ports, shared port geometry, named selectable groups with virtual image output, themed floating tools, Assistant/Image Generator cards, ratio-aware generator behavior, and output galleries.
+- In progress: group interaction/port polish, persistence hardening for real multi-tab/offline/reload cases, Image Generator observability/reliability, and staging verification of newest migrations.
+- Not production-verified: capacity/SLOs, full staging E2E, provider/storage failure observability, backup/restore drills, billing, collaboration/presence, semantic scene graph, reliable multi-angle generation, and full export/version-review UX.
 
-CHANGE ONLY
-...
+## Next Priorities
 
-STYLE / MATERIAL / PLANTING REQUIREMENTS
-...
+1. Apply and smoke-test current SQL migrations on staging; verify operation drafts, RLS, recovery paths, worker leases/outbox, and web/worker environment alignment.
+2. Add regression/E2E coverage for persistence races: reload, offline/reconnect, ACK ordering, multi-tab rebase, same-entity recovery, finalization, assets, and generated outputs.
+3. Complete Image Generator reliability: bounded polling, safe worker-stage telemetry, retry behavior, gallery creation, asset delivery, and fake-provider contracts.
+4. Build controlled single-image editing: mark/region input, preserve/change-only prompt contract, and snapshot-safe asset references.
+5. Finish group connection-role UX and contextual group tools without reintroducing specialized reference cards.
+6. Add camera planner/shot-set only after controlled editing and persistence are stable. Do not start 3D reconstruction until user data proves it necessary.
 
-AVOID
-...
-```
+## Unconfirmed Information
 
-Common preservation rules:
-
-* Preserve original camera angle.
-* Preserve original perspective.
-* Preserve master layout.
-* Preserve house position.
-* Preserve pond shape and location.
-* Preserve rockery position.
-* Preserve pavilion/gazebo position.
-* Preserve bridge position.
-* Preserve driveway.
-* Preserve courtyard.
-* Preserve wall and fence positions.
-* Preserve lawn island shapes.
-* Preserve stepping stone path.
-* Preserve object scale and proportions.
-
-## Current Architecture Notes
-
-Important current implementation details:
-
-* `apps/web/app/canvas/hooks/useCanvasWorkspace.ts` is the center of canvas state and actions.
-* `apps/web/app/canvas/utils/generationContext.ts` builds graph-aware generation context.
-* `apps/web/app/canvas/components/library/LibrarySidebar.tsx` owns preset library and preset flyout UI.
-* `apps/web/app/canvas/components/panels/EditorRightPanel.tsx` owns chat composer behavior, including linked canvas image context.
-* `apps/web/lib/server/openaiChat.ts` and `apps/web/app/api/chat/route.ts` own OpenAI chat integration.
-
-## Backend Guidelines
-
-API routes must:
-
-* Authenticate the user.
-* Verify project ownership.
-* Validate payloads.
-* Never trust `user_id`, `owner_id`, or `project_id` from the client without checking ownership.
-* Use Supabase server helpers for server-side access.
-* Avoid running long AI work directly inside request/response routes when queue/worker is more appropriate.
-
-AI jobs should be used for:
-
-* Image generation.
-* Image refinement.
-* Image analysis.
-* Complex prompt building.
-* Export jobs.
-* Multi-step design workflows.
-
-AI job records should track:
-
-* Job type.
-* User ID.
-* Project ID.
-* Input snapshot ID if available.
-* Input assets.
-* Prompt or prompt reference.
-* Status.
-* Error message if failed.
-* Output asset IDs.
-* Output snapshot ID if available.
-
-## Security Checklist
-
-* Supabase Auth is the identity source.
-* Do not create a parallel user identity system.
-* Browser code must only use anon Supabase clients.
-* Service-role access must stay server-side or worker-side only.
-* API routes must check authenticated user before reading or mutating project data.
-* Do not log access tokens, refresh tokens, service-role keys, signed URLs, private storage paths, sensitive prompts, or job payloads.
-* Every user-owned table must have RLS enabled before production.
-* Storage should be private by default.
-* Signed URLs should be generated only when needed and should expire quickly.
-* Validate uploaded file type and file size.
-* Prevent cross-user access to projects, assets, chat messages, snapshots, jobs, and exports.
-
-## Data Model Guide
-
-Important MVP tables may include:
-
-* `profiles`
-* `projects`
-* `landscape_briefs`
-* `canvas_snapshots`
-* `assets`
-* `chat_threads`
-* `chat_messages`
-* `ai_jobs`
-* `design_versions`
-* `exports`
-* `spatial_locks`
-* `prompt_templates`
-
-Recommended storage buckets:
-
-* `project-uploads`
-* `generated-assets`
-* `exports`
-* `temp-processing`
-
-Storage rules:
-
-* Store stable storage paths, not long-lived signed URLs.
-* Generate signed URLs only when reading.
-* Connect every asset to project ownership.
-* Never expose another user's asset path.
-
-## Handoff Format
-
-When finishing a coding task, respond with:
-
-1. Summary of changes.
-2. Files changed.
-3. How to test manually.
-4. Commands run.
-5. Commands not run.
-6. Known risks or follow-up tasks.
-7. Suggested commit content.
-
-For tasks that changed files, always include a concise commit section at the end of the response. Include the exact `git add ...` commands for the files changed by the task and a recommended `git commit -m "..."` message. If the work contains unrelated goals, split the commit suggestions into multiple small commits. Do not say a commit was created unless `git commit` was actually run.
-
-Always remember the identity check marker:
-
-```md
-Done, Nghĩa IT.
-```
+- Production capacity, SLOs, rate limits, provider quotas, backup/restore readiness, and exact deployment environment settings are unconfirmed until measured and verified.
+- Whether legacy context-group/camera-shot-set nodes remain user-visible or are compatibility/roadmap artifacts must be verified before extending them.
+- Full multi-user collaboration, live cursors, presence, project membership, billing, and 3D reconstruction are not confirmed complete.
