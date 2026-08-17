@@ -32,7 +32,7 @@ jobs:
       CLOUDFLARE_R2_SECRET_ACCESS_KEY: ci-secret-key
       CLOUDFLARE_R2_BUCKET: ci-private-bucket
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 10
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
