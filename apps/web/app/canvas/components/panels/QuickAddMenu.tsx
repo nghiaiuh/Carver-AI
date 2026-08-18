@@ -37,7 +37,7 @@ const QUICK_ADD_ITEMS: QuickAddItem[] = [
   { id: "carver-generate", title: "Image Generator", section: "Basics", category: "ai", icon: ImageIcon, iconClassName: "bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]", description: "Create an image generation node with graph-aware context." },
   { id: "ai-brief", title: "Assistant", section: "Basics", category: "ai", icon: Bot, iconClassName: "bg-[var(--canvas-theme-hover)] text-[var(--canvas-theme-icon)]", description: "Add a landscape assistant prompt and result card." },
   { id: "upload-image", title: "Project Site Images", section: "Media", category: "media", icon: UploadCloud, iconClassName: "bg-sky-50 text-sky-600", description: "Choose a site photo or reference from the project library." },
-  { id: "camera-shot-set", title: "Camera Shot Set", section: "Camera", category: "camera", icon: Camera, iconClassName: "bg-rose-50 text-rose-600", description: "Plan camera viewpoints and connect them as text context." },
+  { id: "camera-shot-set", title: "Multi-Angles", section: "Camera", category: "camera", icon: Camera, iconClassName: "bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]", description: "Set up ordered camera shots from a connected plan or scene image." },
 ];
 
 const CATEGORY_TABS: Array<{ id: QuickAddCategory; label: string; icon: QuickAddItem["icon"] }> = [
