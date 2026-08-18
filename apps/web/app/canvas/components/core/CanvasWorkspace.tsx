@@ -337,7 +337,7 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
               onPersistCanvasNodeImageAsset={actions.persistCanvasNodeImageAsset}
               onRunAssistantNode={actions.runAssistantNode}
               onRunImageGeneratorNode={actions.runImageGeneratorNode}
-              onToggleCameraShot={actions.toggleCameraShot}
+              onUpdateCameraShotSet={actions.updateCameraShotSet}
               generatorAssetUrls={state.resolvedGeneratorAssetUrls}
               onHistoryActionsChange={handleHistoryActionsChange}
             />
