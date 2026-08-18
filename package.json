@@ -25,9 +25,9 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "eslint": "9.39.4",
-    "supabase": "^2.109.1",
+    "supabase": "^2.114.0",
     "turbo": "latest"
   },
   "overrides": {
