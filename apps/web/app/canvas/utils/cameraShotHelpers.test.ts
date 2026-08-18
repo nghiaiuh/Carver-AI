@@ -43,12 +43,13 @@ const generator: CanvasNode = {
   },
 };
 
-test("camera planner emits the first selected shot deterministically for a single run", () => {
+test("multi-angles emits every ordered camera shot for downstream generation", () => {
   const prompt = getCameraShotSetPrompt(cameraPlan);
 
-  assert.match(prompt, /Left Corner/);
-  assert.match(prompt, /three-quarter view from the left-front corner/i);
-  assert.doesNotMatch(prompt, /Night Lighting/);
+  assert.match(prompt, /MULTI-ANGLES \(2 ordered shots/i);
+  assert.match(prompt, /Camera 01/i);
+  assert.match(prompt, /Camera 02/i);
+  assert.match(prompt, /orbit shot/i);
 });
 
 test("image generator receives a connected camera plan as text context", () => {
@@ -66,5 +67,5 @@ test("image generator receives a connected camera plan as text context", () => {
   assert.ok(context);
   assert.equal(context.generatorContext.textReferences.length, 1);
   assert.equal(context.generatorContext.textReferences[0]?.title, "Camera Shot Set #1");
-  assert.match(context.generatorContext.textReferences[0]?.content ?? "", /Left Corner/);
+  assert.match(context.generatorContext.textReferences[0]?.content ?? "", /MULTI-ANGLES/);
 });
