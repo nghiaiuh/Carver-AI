@@ -19,6 +19,7 @@ import type {
   CanvasAssistantState,
   CanvasCameraShotSetState,
   CanvasCameraShotPreset,
+  CanvasMultiAngleCamera,
   CanvasContextGroupState,
   CanvasPresetGroupNode,
   CanvasSourceImage,
@@ -37,6 +38,7 @@ import {
 } from "./canvasNodePorts";
 import { isPresetGroupNode, syncPresetGroupPreview } from "./presetGroupHelpers";
 import { normalizeCanvasViewportZoom } from "./canvasViewport";
+import { createCameraShotSet } from "./cameraShotHelpers";
 
 const DEFAULT_IMAGE_NODE_WIDTH = 240;
 const DEFAULT_IMAGE_NODE_HEIGHT = 180;
@@ -409,20 +411,67 @@ function sanitizeContextGroupState(value: unknown): CanvasContextGroupState | nu
 
 function sanitizeCameraShotSetState(value: unknown): CanvasCameraShotSetState | null {
   const source = objectValue(value);
-  if (!Array.isArray(source?.shots)) {
-    return null;
+  if (!source) return null;
+
+  const cameras = Array.isArray(source.cameras)
+    ? source.cameras.flatMap((camera): CanvasMultiAngleCamera[] => {
+        const entry = objectValue(camera);
+        const plan = objectValue(entry?.plan);
+        const orbit = objectValue(entry?.orbit);
+        const id = stringValue(entry?.id);
+        const name = stringValue(entry?.name);
+        if (!id || !name || !plan || !orbit) return [];
+        const viewDirection = plan.viewDirection === "auto" || plan.viewDirection === "manual"
+          ? plan.viewDirection
+          : "look-at-target";
+        return [{
+          id,
+          name,
+          isVisible: entry?.isVisible !== false,
+          plan: {
+            u: numberValue(plan.u, 0.5),
+            v: numberValue(plan.v, 0.2),
+            targetU: numberValue(plan.targetU, 0.5),
+            targetV: numberValue(plan.targetV, 0.55),
+            height: numberValue(plan.height, 2.8),
+            lens: numberValue(plan.lens, 28),
+            pitch: numberValue(plan.pitch, 0),
+            viewDirection,
+          },
+          orbit: {
+            rotate: numberValue(orbit.rotate, -35),
+            tilt: numberValue(orbit.tilt, -20),
+            distance: numberValue(orbit.distance, 7.5),
+            lens: numberValue(orbit.lens, 35),
+          },
+        }];
+      })
+    : [];
+  if (cameras.length > 0) {
+    const selectedCameraId = stringValue(source.selectedCameraId);
+    return {
+      mode: source.mode === "plan" ? "plan" : "orbit",
+      cameras,
+      selectedCameraId: cameras.some((camera) => camera.id === selectedCameraId)
+        ? selectedCameraId
+        : cameras[0]?.id ?? null,
+      cameraDisplayMode: source.cameraDisplayMode === "show-all" || source.cameraDisplayMode === "selected-only"
+        ? source.cameraDisplayMode
+        : "ghost",
+    };
   }
 
-  const shots = source.shots.flatMap((shot) => {
-    const entry = objectValue(shot);
-    const id = stringValue(entry?.id);
-    const label = stringValue(entry?.label);
-    const instruction = stringValue(entry?.instruction);
-    if (!id || !CAMERA_SHOT_PRESETS.has(id as CanvasCameraShotPreset) || !label || !instruction) return [];
-    return [{ id: id as CanvasCameraShotPreset, label, instruction, selected: entry?.selected === true }];
-  });
-
-  return shots.length > 0 ? { shots } : null;
+  // Version-1 camera planner snapshots stored selected named presets only.
+  const selectedPresets = Array.isArray(source.shots)
+    ? source.shots.flatMap((shot) => {
+        const entry = objectValue(shot);
+        const id = stringValue(entry?.id);
+        return entry?.selected === true && id && CAMERA_SHOT_PRESETS.has(id as CanvasCameraShotPreset)
+          ? [id as CanvasCameraShotPreset]
+          : [];
+      })
+    : [];
+  return createCameraShotSet(selectedPresets);
 }
 
 function sanitizeTextNodeState(value: unknown) {
@@ -675,8 +724,8 @@ function sanitizeGraphNode(node: unknown, index: number): CanvasNode | null {
       prompt: nullableStringValue(source?.prompt),
       x: numberValue(source?.x, index * 32),
       y: numberValue(source?.y, index * 24),
-      width: Math.max(1, numberValue(source?.width, 320)),
-      height: Math.max(1, numberValue(source?.height, 260)),
+      width: Math.max(1, numberValue(source?.width, 860)),
+      height: Math.max(1, numberValue(source?.height, 680)),
       groupId,
       groupLabel,
       groupColor,

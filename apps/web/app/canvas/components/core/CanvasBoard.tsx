@@ -31,7 +31,7 @@ import type {
   CanvasNode,
   CanvasPresetChild,
   CanvasPresetGroupNode,
-  CanvasCameraShotPreset,
+  CanvasCameraShotSetState,
   CanvasTextNode,
   EditorTool,
   Marker,
@@ -205,7 +205,7 @@ type CanvasBoardProps = {
     nodeId: string,
     options?: { simulation?: CarverAiJobSimulationConfig },
   ) => void | Promise<void>;
-  onToggleCameraShot: (nodeId: string, shotId: CanvasCameraShotPreset) => void;
+  onUpdateCameraShotSet: (nodeId: string, value: CanvasCameraShotSetState) => void;
   generatorAssetUrls: Record<string, {
     thumbUrl: string;
     previewUrl: string;
@@ -385,7 +385,7 @@ export default function CanvasBoard({
   onPersistCanvasNodeImageAsset,
   onRunAssistantNode,
   onRunImageGeneratorNode,
-  onToggleCameraShot,
+  onUpdateCameraShotSet,
   generatorAssetUrls,
   onHistoryActionsChange,
 }: CanvasBoardProps) {
@@ -2565,7 +2565,14 @@ export default function CanvasBoard({
                 setSelectedGroupId(null);
                 handleNodePointerDown(id, event);
               }}
-              onToggleShot={onToggleCameraShot}
+              inputImageUrl={(() => {
+                const inputEdge = edges.find((edge) =>
+                  edge.targetId === node.id && edge.targetPortId === "camera-shot-set-input-image",
+                );
+                const inputNode = inputEdge ? nodes.find((candidate) => candidate.id === inputEdge.sourceId) : null;
+                return inputNode?.sourceImage?.url ?? inputNode?.imageUrl ?? null;
+              })()}
+              onUpdateCameraShotSet={onUpdateCameraShotSet}
               onStartConnection={handleConnectionHandlePointerDown}
               onSelectContextMenu={(id, x, y) => {
                 setSelectedGroupId(null);

@@ -463,7 +463,14 @@ export function buildCanvasSnapshotWithGraph(params: {
           : undefined,
         cameraShotSet: isCanvasCameraShotSetNode(node)
           ? {
-              shots: node.cameraShotSet.shots.map((shot) => ({ ...shot })),
+              mode: node.cameraShotSet.mode,
+              cameras: node.cameraShotSet.cameras.map((camera) => ({
+                ...camera,
+                plan: { ...camera.plan },
+                orbit: { ...camera.orbit },
+              })),
+              selectedCameraId: node.cameraShotSet.selectedCameraId,
+              cameraDisplayMode: node.cameraShotSet.cameraDisplayMode,
             }
           : undefined,
         assistant: isAssistantNode(node) ? node.assistant : undefined,

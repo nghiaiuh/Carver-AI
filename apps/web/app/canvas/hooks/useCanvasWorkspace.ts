@@ -58,6 +58,7 @@ import {
   type PresetGroupCategory,
   type CanvasContextGroupKind,
   type CanvasCameraShotPreset,
+  type CanvasCameraShotSetState,
   inferObjectTypeFromTag,
 } from "../types/canvas";
 import {
@@ -2716,7 +2717,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         height: DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT,
         scale: 1,
         imageUrl: "",
-        title: `Camera Shot Set #${current.filter(isCanvasCameraShotSetNode).length + 1}`,
+        title: `Multi-Angles #${current.filter(isCanvasCameraShotSetNode).length + 1}`,
         prompt: null,
         role: "reference",
         inputPorts: getCameraShotSetInputPorts(),
@@ -2728,21 +2729,12 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     showToast("Camera Shot Set added. Connect it to an Assistant or Image Generator.");
   };
 
-  const toggleCameraShot = (nodeId: string, shotId: CanvasCameraShotPreset) => {
+  const updateCameraShotSet = (nodeId: string, cameraShotSet: CanvasCameraShotSetState) => {
     setNodes((current) => current.map((node) => {
       if (!isCanvasCameraShotSetNode(node) || node.id !== nodeId) return node;
-      const target = node.cameraShotSet.shots.find((shot) => shot.id === shotId);
-      if (!target) return node;
-      const selectedCount = node.cameraShotSet.shots.filter((shot) => shot.selected).length;
-      if (target.selected && selectedCount === 1) return node;
-
       return {
         ...node,
-        cameraShotSet: {
-          shots: node.cameraShotSet.shots.map((shot) =>
-            shot.id === shotId ? { ...shot, selected: !shot.selected } : shot,
-          ),
-        },
+        cameraShotSet,
       };
     }));
   };
@@ -3659,7 +3651,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       addImageGeneratorNode,
       addContextGroupNode,
       addCameraShotSetNode,
-      toggleCameraShot,
+      updateCameraShotSet,
       runAssistantNode,
       runImageGeneratorNode,
       uploadAssetsToFolder,

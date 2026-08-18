@@ -218,12 +218,30 @@ export type CanvasGraphNodeSnapshot = {
     }>;
   };
   cameraShotSet?: {
-    shots: Array<{
+    mode: "plan" | "orbit";
+    cameras: Array<{
       id: string;
-      label: string;
-      instruction: string;
-      selected: boolean;
+      name: string;
+      isVisible: boolean;
+      plan: {
+        u: number;
+        v: number;
+        targetU: number;
+        targetV: number;
+        height: number;
+        lens: number;
+        pitch: number;
+        viewDirection: "auto" | "look-at-target" | "manual";
+      };
+      orbit: {
+        rotate: number;
+        tilt: number;
+        distance: number;
+        lens: number;
+      };
     }>;
+    selectedCameraId?: string | null;
+    cameraDisplayMode?: "show-all" | "ghost" | "selected-only";
   };
   text?: {
     content: string;

@@ -374,8 +374,45 @@ export type CanvasCameraShot = {
   selected: boolean;
 };
 
+export type CanvasMultiAnglesMode = "plan" | "orbit";
+export type CanvasCameraDisplayMode = "show-all" | "ghost" | "selected-only";
+
+/** Coordinates are normalized against the connected plan image, never its pixels. */
+export type CanvasPlanCameraTransform = {
+  u: number;
+  v: number;
+  targetU: number;
+  targetV: number;
+  height: number;
+  lens: number;
+  pitch: number;
+  viewDirection: "auto" | "look-at-target" | "manual";
+};
+
+export type CanvasOrbitCameraTransform = {
+  rotate: number;
+  tilt: number;
+  distance: number;
+  lens: number;
+};
+
+/**
+ * One editable camera becomes one downstream shot. Both transforms are stored
+ * so changing the card mode never throws away a user's camera work.
+ */
+export type CanvasMultiAngleCamera = {
+  id: string;
+  name: string;
+  plan: CanvasPlanCameraTransform;
+  orbit: CanvasOrbitCameraTransform;
+  isVisible: boolean;
+};
+
 export type CanvasCameraShotSetState = {
-  shots: CanvasCameraShot[];
+  mode: CanvasMultiAnglesMode;
+  cameras: CanvasMultiAngleCamera[];
+  selectedCameraId: string | null;
+  cameraDisplayMode: CanvasCameraDisplayMode;
 };
 
 export type CanvasImageNode = CanvasNodeBase & {
@@ -558,8 +595,8 @@ export const IMAGE_GENERATOR_MIN_OUTPUT_COUNT = 1;
 export const IMAGE_GENERATOR_MAX_OUTPUT_COUNT = 4;
 export const DEFAULT_CONTEXT_GROUP_NODE_WIDTH = 340;
 export const DEFAULT_CONTEXT_GROUP_NODE_HEIGHT = 260;
-export const DEFAULT_CAMERA_SHOT_SET_NODE_WIDTH = 320;
-export const DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT = 260;
+export const DEFAULT_CAMERA_SHOT_SET_NODE_WIDTH = 860;
+export const DEFAULT_CAMERA_SHOT_SET_NODE_HEIGHT = 680;
 
 export const DEFAULT_PEN_SETTINGS: PenSettings = {
   color: "#000000",

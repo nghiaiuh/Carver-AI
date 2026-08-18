@@ -202,6 +202,17 @@ const CAMERA_SHOT_SET_NODE_PORT_SCHEMA: CanvasNodePortSchema = {
   nodeKind: "camera-shot-set",
   ports: [
     {
+      id: "camera-shot-set-input-image",
+      direction: "input",
+      kind: "image",
+      side: "left",
+      order: 0,
+      label: "Input image",
+      acceptedKinds: ["image"],
+      maxConnections: 1,
+      legacyInputIndex: 0,
+    },
+    {
       id: "camera-shot-set-output-text",
       direction: "output",
       kind: "text",
