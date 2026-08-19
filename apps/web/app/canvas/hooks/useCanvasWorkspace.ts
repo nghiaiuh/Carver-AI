@@ -611,6 +611,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const cloudDraftFirstDirtyAtRef = useRef<number | null>(null);
   const cloudDraftRetryTimeoutRef = useRef<number | null>(null);
   const cloudDraftRetryAttemptRef = useRef(0);
+  const cloudDraftEntityConflictRef = useRef(false);
   const cloudDraftSyncInFlightRef = useRef(false);
   const latestDraftMutationIdRef = useRef<string | null>(null);
   const latestSnapshotDocumentRef = useRef<CanvasSnapshotDocument>(coerceCanvasSnapshotDocument(undefined));
@@ -1290,6 +1291,24 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       return false;
     }
 
+    // A same-entity conflict already has a server-side recovery copy. Keep
+    // the local operation journal untouched and pause cloud writes so the
+    // autosave debounce cannot submit that same conflicting batch repeatedly.
+    if (cloudDraftEntityConflictRef.current) {
+      recordCanvasPersistenceBenchmarkEvent({
+        operation: "cloud-draft-sync",
+        projectId,
+        intent: syncParams.force ? "manual" : "autosave",
+        attemptedAt,
+        durationMs: 0,
+        payloadBytes,
+        requestSent: false,
+        result: "skipped",
+        skipReason: "conflict",
+      });
+      return false;
+    }
+
     const localDraft = await loadCanvasDraft(currentUserId, projectId, tabIdRef.current);
     const pendingOperations = localDraft?.pendingOperations ?? [];
     if (pendingOperations.length === 0) {
@@ -1356,9 +1375,17 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
 
-      if (response.status === 409 || payload.code === "DRAFT_CONFLICT" || payload.code === "DRAFT_ENTITY_CONFLICT") {
-        setDraftWarning("Some changes conflicted. A recovery copy was saved; cloud changes remain visible.");
-        showToast("Some changes conflicted. A recovery copy was saved.");
+      if (payload.code === "DRAFT_ENTITY_CONFLICT") {
+        cloudDraftEntityConflictRef.current = true;
+        cloudDraftFirstDirtyAtRef.current = null;
+        cloudDraftRetryAttemptRef.current = 0;
+        if (cloudDraftRetryTimeoutRef.current !== null) {
+          window.clearTimeout(cloudDraftRetryTimeoutRef.current);
+          cloudDraftRetryTimeoutRef.current = null;
+        }
+        setDraftConflict(localDraft);
+        setDraftWarning("Some changes conflicted. A recovery copy was saved and cloud sync is paused to protect local changes.");
+        showToast("Some changes conflicted. Local recovery was preserved.");
         recordCanvasPersistenceBenchmarkEvent({
           operation: "cloud-draft-sync",
           projectId,
@@ -1371,6 +1398,14 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           skipReason: "conflict",
         });
         return false;
+      }
+
+      if (response.status === 409 || payload.code === "DRAFT_CONFLICT") {
+        const syncError = new Error(payload.error || "The project draft changed before this batch could be committed.") as Error & {
+          code?: string;
+        };
+        syncError.code = payload.code ?? "DRAFT_CONFLICT";
+        throw syncError;
       }
 
       if (!response.ok || !payload.data?.draft) {
@@ -1879,6 +1914,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   useEffect(() => {
     const projectId = params.projectId;
     canvasPersistenceReadyRef.current = false;
+    cloudDraftEntityConflictRef.current = false;
     if (!projectId) {
       savedSnapshotFingerprintRef.current = null;
       applyCloudDraftMeta(null);
@@ -2055,6 +2091,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
           applyHydratedSnapshotState(baseDocument);
           // Never clear a branch merely because the cloud advanced. Its pending
           // operations are the only lossless input for a later rebase/recovery.
+          cloudDraftEntityConflictRef.current = true;
           setDraftConflict(draftRecord);
           setDraftWarning("A newer cloud draft exists. Local changes remain safe and can be recovered.");
           canvasPersistenceReadyRef.current = true;
