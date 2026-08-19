@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "node ../../node_modules/eslint/bin/eslint.js .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:canvas-workflow": "tsx --test app/canvas/utils/contextGroupHelpers.test.ts app/canvas/utils/canvasGenerationContext.test.ts app/canvas/utils/cameraShotHelpers.test.ts app/canvas/utils/canvasNodeGroups.test.ts app/canvas/utils/planCameraMath.test.ts"
+    "test:canvas-workflow": "tsx --test app/canvas/utils/contextGroupHelpers.test.ts app/canvas/utils/canvasGenerationContext.test.ts app/canvas/utils/cameraShotHelpers.test.ts app/canvas/utils/canvasNodeGroups.test.ts app/canvas/utils/planCameraMath.test.ts app/canvas/utils/orbitCameraMath.test.ts"
   },
   "dependencies": {
     "@carver/ai": "*",
