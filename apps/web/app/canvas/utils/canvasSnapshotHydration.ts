@@ -434,8 +434,10 @@ function sanitizeCameraShotSetState(value: unknown): CanvasCameraShotSetState | 
             targetU: numberValue(plan.targetU, 0.5),
             targetV: numberValue(plan.targetV, 0.55),
             height: numberValue(plan.height, 2.8),
+            targetHeight: typeof plan.targetHeight === "number" ? plan.targetHeight : undefined,
             lens: numberValue(plan.lens, 28),
             pitch: numberValue(plan.pitch, 0),
+            roll: typeof plan.roll === "number" ? plan.roll : 0,
             viewDirection,
           },
           orbit: {

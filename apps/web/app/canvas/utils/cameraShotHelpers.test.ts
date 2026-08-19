@@ -52,6 +52,25 @@ test("multi-angles emits every ordered camera shot for downstream generation", (
   assert.match(prompt, /orbit shot/i);
 });
 
+test("plan camera prompt includes camera origin, target, and roll", () => {
+  const planNode = {
+    ...cameraPlan,
+    cameraShotSet: {
+      ...cameraPlan.cameraShotSet,
+      mode: "plan" as const,
+      cameras: cameraPlan.cameraShotSet.cameras.map((camera) => ({
+        ...camera,
+        plan: { ...camera.plan, targetHeight: 0.8, roll: 12 },
+      })),
+    },
+  };
+  const prompt = getCameraShotSetPrompt(planNode);
+
+  assert.match(prompt, /normalized position/i);
+  assert.match(prompt, /roll 12°/i);
+  assert.match(prompt, /target .* elevation 0\.8 m/i);
+});
+
 test("image generator receives a connected camera plan as text context", () => {
   const context = buildImageGeneratorGraphContext(
     generator.id,

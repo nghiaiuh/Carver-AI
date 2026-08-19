@@ -229,8 +229,10 @@ export type CanvasGraphNodeSnapshot = {
         targetU: number;
         targetV: number;
         height: number;
+        targetHeight?: number;
         lens: number;
         pitch: number;
+        roll?: number;
         viewDirection: "auto" | "look-at-target" | "manual";
       };
       orbit: {

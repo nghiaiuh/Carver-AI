@@ -54,8 +54,10 @@ export function areCameraShotSetStatesEqual(
       camera.plan.targetU === other.plan.targetU &&
       camera.plan.targetV === other.plan.targetV &&
       camera.plan.height === other.plan.height &&
+      camera.plan.targetHeight === other.plan.targetHeight &&
       camera.plan.lens === other.plan.lens &&
       camera.plan.pitch === other.plan.pitch &&
+      camera.plan.roll === other.plan.roll &&
       camera.plan.viewDirection === other.plan.viewDirection &&
       camera.orbit.rotate === other.orbit.rotate &&
       camera.orbit.tilt === other.orbit.tilt &&
@@ -78,6 +80,7 @@ export function createMultiAngleCamera(index = 1, preset?: CanvasCameraShotPrese
       height: 2.8,
       lens: 28,
       pitch: 0,
+      roll: 0,
       viewDirection: "look-at-target",
     },
     orbit: legacy?.orbit ?? {
@@ -118,8 +121,11 @@ export function getCameraShotSetPrompt(node: CanvasCameraShotSetNode) {
 
   const instructions = cameras.map((camera, index) => {
     if (mode === "plan") {
-      const { height, lens, pitch, targetU, targetV } = camera.plan;
-      return `${index + 1}. ${camera.name}: plan-surface shot at ${height.toFixed(1)} m, ${lens} mm, pitch ${pitch}°, looking at normalized plan target (${targetU.toFixed(2)}, ${targetV.toFixed(2)}).`;
+      const { u, v, height, targetHeight, lens, pitch, roll = 0, targetU, targetV } = camera.plan;
+      const targetElevation = typeof targetHeight === "number"
+        ? ` at elevation ${targetHeight.toFixed(1)} m`
+        : "";
+      return `${index + 1}. ${camera.name}: plan-surface camera at normalized position (${u.toFixed(2)}, ${v.toFixed(2)}), height ${height.toFixed(1)} m, ${lens} mm, pitch ${pitch}°, roll ${roll}°, looking at normalized plan target (${targetU.toFixed(2)}, ${targetV.toFixed(2)})${targetElevation}.`;
     }
     const { rotate, tilt, distance, lens } = camera.orbit;
     return `${index + 1}. ${camera.name}: orbit shot, rotate ${rotate}°, tilt ${tilt}°, distance ${distance.toFixed(1)} m, ${lens} mm lens, looking at the scene center.`;

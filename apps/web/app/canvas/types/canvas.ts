@@ -384,8 +384,12 @@ export type CanvasPlanCameraTransform = {
   targetU: number;
   targetV: number;
   height: number;
+  /** Optional explicit target elevation. Legacy snapshots derive it from pitch. */
+  targetHeight?: number;
   lens: number;
   pitch: number;
+  /** Roll around the viewing axis in degrees. */
+  roll?: number;
   viewDirection: "auto" | "look-at-target" | "manual";
 };
 
