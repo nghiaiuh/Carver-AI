@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasCameraShotSetNode, CanvasNode } from "../types/canvas";
 import { getCameraShotSetInputPorts, getImageGeneratorInputPorts } from "./canvasNodePorts";
-import { createCameraShotSet, getCameraShotSetPrompt } from "./cameraShotHelpers";
+import { areCameraShotSetStatesEqual, createCameraShotSet, getCameraShotSetPrompt } from "./cameraShotHelpers";
 import { buildImageGeneratorGraphContext } from "./imageGeneratorGraphContext";
 
 const cameraPlan: CanvasCameraShotSetNode = {
@@ -68,4 +68,28 @@ test("image generator receives a connected camera plan as text context", () => {
   assert.equal(context.generatorContext.textReferences.length, 1);
   assert.equal(context.generatorContext.textReferences[0]?.title, "Camera Shot Set #1");
   assert.match(context.generatorContext.textReferences[0]?.content ?? "", /MULTI-ANGLES/);
+});
+
+test("camera shot state equality ignores reconstructed but unchanged pointer updates", () => {
+  const state = createCameraShotSet(["eye-level"]);
+  const reconstructed = {
+    ...state,
+    cameras: state.cameras.map((camera) => ({
+      ...camera,
+      plan: { ...camera.plan },
+      orbit: { ...camera.orbit },
+    })),
+  };
+
+  assert.equal(areCameraShotSetStatesEqual(state, reconstructed), true);
+  assert.equal(
+    areCameraShotSetStatesEqual(state, {
+      ...reconstructed,
+      cameras: reconstructed.cameras.map((camera) => ({
+        ...camera,
+        plan: { ...camera.plan, u: camera.plan.u + 0.01 },
+      })),
+    }),
+    false,
+  );
 });

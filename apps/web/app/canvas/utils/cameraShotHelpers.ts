@@ -28,6 +28,42 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+export function areCameraShotSetStatesEqual(
+  left: CanvasCameraShotSetState,
+  right: CanvasCameraShotSetState,
+) {
+  if (left === right) return true;
+
+  if (
+    left.mode !== right.mode ||
+    left.selectedCameraId !== right.selectedCameraId ||
+    left.cameraDisplayMode !== right.cameraDisplayMode ||
+    left.cameras.length !== right.cameras.length
+  ) {
+    return false;
+  }
+
+  return left.cameras.every((camera, index) => {
+    const other = right.cameras[index];
+    return Boolean(other) &&
+      camera.id === other.id &&
+      camera.name === other.name &&
+      camera.isVisible === other.isVisible &&
+      camera.plan.u === other.plan.u &&
+      camera.plan.v === other.plan.v &&
+      camera.plan.targetU === other.plan.targetU &&
+      camera.plan.targetV === other.plan.targetV &&
+      camera.plan.height === other.plan.height &&
+      camera.plan.lens === other.plan.lens &&
+      camera.plan.pitch === other.plan.pitch &&
+      camera.plan.viewDirection === other.plan.viewDirection &&
+      camera.orbit.rotate === other.orbit.rotate &&
+      camera.orbit.tilt === other.orbit.tilt &&
+      camera.orbit.distance === other.orbit.distance &&
+      camera.orbit.lens === other.orbit.lens;
+  });
+}
+
 export function createMultiAngleCamera(index = 1, preset?: CanvasCameraShotPreset): CanvasMultiAngleCamera {
   const legacy = preset ? LEGACY_PRESET_TRANSFORMS[preset] : undefined;
   return {

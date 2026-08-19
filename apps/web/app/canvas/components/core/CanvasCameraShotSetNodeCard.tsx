@@ -200,7 +200,9 @@ export default function CanvasCameraShotSetNodeCard({
     updateFromPointer(event, kind, cameraId);
   };
   const handleViewportPointerMove = (event: React.PointerEvent<HTMLElement>, kind: "camera" | "target" | "orbit", cameraId?: string) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) updateFromPointer(event, kind, cameraId);
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    updateFromPointer(event, kind, cameraId);
   };
   const hasInput = Boolean(inputImageUrl);
 

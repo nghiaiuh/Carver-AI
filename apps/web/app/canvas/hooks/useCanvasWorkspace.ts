@@ -73,7 +73,7 @@ import {
   CONTEXT_GROUP_LABELS,
   createContextGroupItems,
 } from "../utils/contextGroupHelpers";
-import { createCameraShotSet } from "../utils/cameraShotHelpers";
+import { areCameraShotSetStatesEqual, createCameraShotSet } from "../utils/cameraShotHelpers";
 import { MAX_MASK_HISTORY } from "../utils/regionMask";
 import {
   buildCanvasGenerationContext,
@@ -2729,15 +2729,21 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     showToast("Camera Shot Set added. Connect it to an Assistant or Image Generator.");
   };
 
-  const updateCameraShotSet = (nodeId: string, cameraShotSet: CanvasCameraShotSetState) => {
-    setNodes((current) => current.map((node) => {
-      if (!isCanvasCameraShotSetNode(node) || node.id !== nodeId) return node;
-      return {
-        ...node,
-        cameraShotSet,
-      };
-    }));
-  };
+  const updateCameraShotSet = useCallback((nodeId: string, cameraShotSet: CanvasCameraShotSetState) => {
+    setNodes((current) => {
+      let changed = false;
+      const next = current.map((node) => {
+        if (!isCanvasCameraShotSetNode(node) || node.id !== nodeId) return node;
+        if (areCameraShotSetStatesEqual(node.cameraShotSet, cameraShotSet)) return node;
+        changed = true;
+        return {
+          ...node,
+          cameraShotSet,
+        };
+      });
+      return changed ? next : current;
+    });
+  }, []);
 
   const addImageGeneratorNode = () => {
     const selectedNode =
