@@ -87,9 +87,13 @@ Context and camera nodes:
 - `context-group` represents Site Set, Sketch Layer, or Material Board. It stores
   stable source node/asset IDs, exposes one typed image output, and expands to
   individual references only when an AI context is built.
-- `camera-shot-set` persists selected 2.5D shot instructions. It exposes one
-  typed text output for Assistant/Image Generator; it is planning context, not
-  a completed multi-angle generation family yet.
+- `camera-shot-set` persists selected 2.5D shot instructions. Plan Surface uses
+  one Three.js viewport with a textured plan plane, separate editor/shot cameras,
+  camera/target transform gizmos, and quick view presets. Its normalized plan
+  coordinates remain snapshot-compatible while optional target elevation and
+  roll preserve the richer rig. It exposes one typed text output for
+  Assistant/Image Generator; it is planning context, not a completed
+  multi-angle generation family yet.
 
 ## 4. Preset system: current mental model
 
