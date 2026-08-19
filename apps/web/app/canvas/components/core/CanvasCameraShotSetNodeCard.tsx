@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Camera,
   ChevronDown,
@@ -27,6 +27,7 @@ import type {
 } from "../../types/canvas";
 import { getCanvasNodeVisualScale } from "../../utils/canvasNodePorts";
 import { createMultiAngleCamera, getSelectedCamera } from "../../utils/cameraShotHelpers";
+import OrbitCameraViewport3D from "./OrbitCameraViewport3D";
 import PlanCameraViewport3D from "./PlanCameraViewport3D";
 
 type CanvasCameraShotSetNodeCardProps = {
@@ -48,15 +49,6 @@ type CanvasCameraShotSetNodeCardProps = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const orbitPoint = (camera: CanvasMultiAngleCamera) => {
-  const rotate = (camera.orbit.rotate * Math.PI) / 180;
-  const tilt = (camera.orbit.tilt * Math.PI) / 180;
-  return {
-    x: 50 + Math.cos(tilt) * Math.sin(rotate) * 42,
-    y: 50 - Math.sin(tilt) * 38,
-  };
-};
-
 function iconButtonClass(active = false) {
   return `grid h-8 w-8 place-items-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-selection-ring)] ${active
     ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]"
@@ -126,7 +118,6 @@ export default function CanvasCameraShotSetNodeCard({
   const height = node.height * scale;
   const state = node.cameraShotSet;
   const selectedCamera = getSelectedCamera(node);
-  const viewportRef = useRef<HTMLDivElement>(null);
   const [cameraManagerOpen, setCameraManagerOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [draggedCameraId, setDraggedCameraId] = useState<string | null>(null);
@@ -172,37 +163,6 @@ export default function CanvasCameraShotSetNodeCard({
   const renameCamera = (camera: CanvasMultiAngleCamera) => {
     const name = window.prompt("Camera name", camera.name)?.trim();
     if (name) updateCamera(camera.id, (current) => ({ ...current, name }));
-  };
-  const updateFromPointer = (event: React.PointerEvent<HTMLElement>, kind: "camera" | "target" | "orbit", cameraId?: string) => {
-    const camera = cameraId ? state.cameras.find((entry) => entry.id === cameraId) ?? selectedCamera : selectedCamera;
-    if (!camera || !viewportRef.current) return;
-    const rect = viewportRef.current.getBoundingClientRect();
-    const x = clamp((event.clientX - rect.left) / rect.width, 0.04, 0.96);
-    const y = clamp((event.clientY - rect.top) / rect.height, 0.05, 0.95);
-    if (kind === "orbit") {
-      updateCamera(camera.id, (current) => ({
-        ...current,
-        orbit: { ...current.orbit, rotate: clamp((x - 0.5) * 360, -180, 180), tilt: clamp((0.5 - y) * 160, -80, 80) },
-      }));
-      return;
-    }
-    updateCamera(camera.id, (current) => ({
-      ...current,
-      plan: kind === "target"
-        ? { ...current.plan, targetU: x, targetV: y }
-        : { ...current.plan, u: x, v: y },
-    }));
-  };
-  const handleViewportPointerDown = (event: React.PointerEvent<HTMLElement>, kind: "camera" | "target" | "orbit", cameraId?: string) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    updateFromPointer(event, kind, cameraId);
-  };
-  const handleViewportPointerMove = (event: React.PointerEvent<HTMLElement>, kind: "camera" | "target" | "orbit", cameraId?: string) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    event.stopPropagation();
-    updateFromPointer(event, kind, cameraId);
   };
   const hasInput = Boolean(inputImageUrl);
 
@@ -261,10 +221,10 @@ export default function CanvasCameraShotSetNodeCard({
         </div>
 
         <div className="flex min-h-0 flex-1 border-y border-[var(--canvas-theme-border)]">
-          <div ref={viewportRef} className="relative min-w-0 flex-[0_0_74%] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.035),transparent_68%)]" style={{ backgroundColor: "var(--canvas-theme-surface)" }} onPointerDown={(event) => handleViewportPointerDown(event, state.mode === "plan" ? "camera" : "orbit")} onPointerMove={(event) => handleViewportPointerMove(event, state.mode === "plan" ? "camera" : "orbit")}>
+          <div className="relative min-w-0 flex-[0_0_74%] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.035),transparent_68%)]" style={{ backgroundColor: "var(--canvas-theme-surface)" }}>
             {hasInput && selectedCamera ? state.mode === "plan"
               ? <PlanSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} onSelect={selectCamera} onUpdateCamera={updateCamera} />
-              : <OrbitSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} displayMode={state.cameraDisplayMode} onSelect={selectCamera} onCameraPointerDown={(event, cameraId) => handleViewportPointerDown(event, "orbit", cameraId)} onCameraPointerMove={(event, cameraId) => handleViewportPointerMove(event, "orbit", cameraId)} />
+              : <OrbitSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} displayMode={state.cameraDisplayMode} onSelect={selectCamera} onUpdateCamera={updateCamera} />
               : <EmptyViewport />}
           </div>
           <div className="flex-1 bg-[var(--canvas-theme-surface-muted)]" style={{ backgroundColor: "var(--canvas-theme-surface-muted)" }}>
@@ -293,77 +253,8 @@ function PlanSurface({ inputImageUrl, cameras, selectedCamera, onSelect, onUpdat
   return <PlanCameraViewport3D inputImageUrl={inputImageUrl} cameras={cameras} selectedCamera={selectedCamera} onSelect={onSelect} onUpdateCamera={onUpdateCamera} />;
 }
 
-function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onSelect, onCameraPointerDown, onCameraPointerMove }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; displayMode: CanvasCameraDisplayMode; onSelect: (id: string) => void; onCameraPointerDown: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onCameraPointerMove: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; }) {
-  return (
-    <div className="absolute inset-0 overflow-hidden">
-      <svg aria-hidden="true" className="pointer-events-none absolute inset-[2%] h-[96%] w-[96%]" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".45" strokeWidth=".32" />
-        <ellipse cx="50" cy="50" rx="42" ry="11" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".28" strokeWidth=".25" />
-        <ellipse cx="50" cy="50" rx="42" ry="24" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".34" strokeWidth=".25" />
-        <ellipse cx="50" cy="50" rx="42" ry="35" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".22" strokeWidth=".25" />
-        <ellipse cx="50" cy="50" rx="13" ry="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".32" strokeWidth=".25" />
-        <ellipse cx="50" cy="50" rx="27" ry="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".28" strokeWidth=".25" />
-        <ellipse cx="50" cy="50" rx="37" ry="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".18" strokeWidth=".25" />
-        <path d="M 50 8 V 92 M 8 50 H 92" stroke="currentColor" className="text-[var(--canvas-theme-border)]" strokeOpacity=".25" strokeWidth=".25" strokeDasharray="1.2 1.8" />
-      </svg>
-
-      <span aria-hidden="true" className="absolute left-1/2 top-[5%] grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌃</span>
-      <span aria-hidden="true" className="absolute bottom-[5%] left-1/2 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌄</span>
-
-      <div className="absolute left-1/2 top-1/2 z-10 h-[39%] w-[45%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] shadow-[0_12px_28px_rgba(0,0,0,.35)]">
-        <img src={inputImageUrl} alt="Connected scene reference" draggable={false} className="h-full w-full object-contain" />
-      </div>
-
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        {cameras.map((camera) => {
-          const point = orbitPoint(camera);
-          const active = camera.id === selectedCamera.id;
-          return (
-            <g key={`orbit-guideline-${camera.id}`}>
-              <line
-                x1={point.x}
-                y1={point.y}
-                x2="50"
-                y2="50"
-                stroke="var(--canvas-theme-selection)"
-                strokeOpacity={active ? ".8" : ".16"}
-                strokeWidth=".38"
-                strokeDasharray="1.5 1.4"
-              />
-              <circle cx={point.x} cy={point.y} r="1" fill="var(--canvas-theme-selection)" fillOpacity={active ? ".9" : ".25"} />
-            </g>
-          );
-        })}
-      </svg>
-
-      <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)]" />
-
-      {cameras.map((camera) => {
-        const point = orbitPoint(camera);
-        const active = camera.id === selectedCamera.id;
-        return (
-          <button
-            key={camera.id}
-            type="button"
-            aria-label={`Drag ${camera.name} around orbit`}
-            className={`absolute z-30 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[13px] border shadow-[0_10px_18px_rgba(0,0,0,.3)] transition ${active ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)]" : "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]"} ${displayMode === "ghost" && !active ? "opacity-30" : ""}`}
-            style={{ left: `${point.x}%`, top: `${point.y}%`, transform: "translate(-50%, -50%) rotate(-18deg)" }}
-            onPointerDown={(event) => { onSelect(camera.id); onCameraPointerDown(event, camera.id); }}
-            onPointerMove={(event) => onCameraPointerMove(event, camera.id)}
-          >
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--canvas-theme-text)] text-[var(--canvas-theme-surface-panel)] shadow-sm">
-              <Camera className="h-4 w-4" strokeWidth={1.8} />
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
+function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onSelect, onUpdateCamera }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; displayMode: CanvasCameraDisplayMode; onSelect: (id: string) => void; onUpdateCamera: (id: string, change: (camera: CanvasMultiAngleCamera) => CanvasMultiAngleCamera) => void; }) {
+  return <OrbitCameraViewport3D inputImageUrl={inputImageUrl} cameras={cameras} selectedCamera={selectedCamera} displayMode={displayMode} onSelect={onSelect} onUpdateCamera={onUpdateCamera} />;
 }
 
 function CameraInspector({ state, selectedCamera, onSelect, onAdd, onUpdateCamera }: { state: CanvasCameraShotSetState; selectedCamera: CanvasMultiAngleCamera | null; onSelect: (id: string) => void; onAdd: () => void; onUpdateCamera: (id: string, change: (camera: CanvasMultiAngleCamera) => CanvasMultiAngleCamera) => void; }) {
