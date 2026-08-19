@@ -318,6 +318,17 @@ export default function PlanCameraViewport3D({
     orbitControls.minDistance = 3;
     orbitControls.maxDistance = 80;
 
+    // OrbitControls owns wheel zoom while the pointer is over this renderer.
+    // Prevent the event from bubbling to CanvasBoard's canvas-wide wheel zoom.
+    const stopCanvasWheelZoom = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    renderer.domElement.addEventListener("wheel", stopCanvasWheelZoom, { passive: false });
+    // Toolbar overlays sit above the renderer, so they need the same boundary
+    // even though their wheel events never target the WebGL canvas directly.
+    container.addEventListener("wheel", stopCanvasWheelZoom, { passive: false });
+
     const planPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(planSizeRef.current.width, planSizeRef.current.depth),
       new THREE.MeshBasicMaterial({ color: borderColor, side: THREE.DoubleSide }),
@@ -457,6 +468,8 @@ export default function PlanCameraViewport3D({
         resizeObserver.disconnect();
         renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
         renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+        renderer.domElement.removeEventListener("wheel", stopCanvasWheelZoom);
+        container.removeEventListener("wheel", stopCanvasWheelZoom);
         orbitControls.dispose();
         transformControls.dispose();
         planPlane.material.map?.dispose();
@@ -570,6 +583,7 @@ export default function PlanCameraViewport3D({
   return (
     <div
       ref={containerRef}
+      data-canvas-wheel-scope="local"
       tabIndex={0}
       aria-label="2.5D plan camera viewport"
       className="absolute inset-0 overflow-hidden bg-[var(--canvas-theme-surface)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--canvas-theme-selection-ring)]"

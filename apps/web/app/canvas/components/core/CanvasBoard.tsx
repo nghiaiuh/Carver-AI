@@ -285,6 +285,10 @@ function getCursorPointRelativeToContainer(event: WheelEvent, container: HTMLEle
   return getPointerPointInContainer(event, container);
 }
 
+function isLocallyScopedWheelTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("[data-canvas-wheel-scope='local']"));
+}
+
 function isCanvasInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
 
@@ -1096,6 +1100,7 @@ export default function CanvasBoard({
   // ── Wheel zoom ──────────────────────────────────────────────────────────────
   const handleWheel = useCallback((event: WheelEvent) => {
     if (isRegionEditing) return;
+    if (isLocallyScopedWheelTarget(event.target)) return;
     event.preventDefault();
 
     const container = containerRef.current;
