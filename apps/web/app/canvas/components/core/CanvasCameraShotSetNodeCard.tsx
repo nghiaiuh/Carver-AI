@@ -359,7 +359,7 @@ function PlanMarker({ camera, active, ghost, onSelect, onPointerDown, onPointerM
 function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onSelect, onCameraPointerDown, onCameraPointerMove }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; displayMode: CanvasCameraDisplayMode; onSelect: (id: string) => void; onCameraPointerDown: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onCameraPointerMove: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; }) {
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <svg aria-hidden="true" className="absolute inset-[2%] h-[96%] w-[96%]" viewBox="0 0 100 100">
+      <svg aria-hidden="true" className="pointer-events-none absolute inset-[2%] h-[96%] w-[96%]" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".45" strokeWidth=".32" />
         <ellipse cx="50" cy="50" rx="42" ry="11" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".28" strokeWidth=".25" />
         <ellipse cx="50" cy="50" rx="42" ry="24" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".34" strokeWidth=".25" />
@@ -368,26 +368,43 @@ function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onS
         <ellipse cx="50" cy="50" rx="27" ry="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".28" strokeWidth=".25" />
         <ellipse cx="50" cy="50" rx="37" ry="42" fill="none" stroke="currentColor" className="text-[var(--canvas-theme-border-strong)]" strokeOpacity=".18" strokeWidth=".25" />
         <path d="M 50 8 V 92 M 8 50 H 92" stroke="currentColor" className="text-[var(--canvas-theme-border)]" strokeOpacity=".25" strokeWidth=".25" strokeDasharray="1.2 1.8" />
+      </svg>
+
+      <span aria-hidden="true" className="absolute left-1/2 top-[5%] grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌃</span>
+      <span aria-hidden="true" className="absolute bottom-[5%] left-1/2 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌄</span>
+
+      <div className="absolute left-1/2 top-1/2 z-10 h-[39%] w-[45%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] shadow-[0_12px_28px_rgba(0,0,0,.35)]">
+        <img src={inputImageUrl} alt="Connected scene reference" draggable={false} className="h-full w-full object-contain" />
+      </div>
+
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+      >
         {cameras.map((camera) => {
           const point = orbitPoint(camera);
           const active = camera.id === selectedCamera.id;
-          const controlX = (point.x + 50) / 2;
-          const controlY = Math.max(point.y + 16, 68);
           return (
-            <g key={`orbit-path-${camera.id}`}>
-              <path d={`M ${point.x} ${point.y} Q ${controlX} ${controlY}, 50 50`} fill="none" stroke="var(--canvas-theme-selection)" strokeOpacity={active ? ".8" : ".16"} strokeWidth=".38" strokeDasharray="1.5 1.4" />
+            <g key={`orbit-guideline-${camera.id}`}>
+              <line
+                x1={point.x}
+                y1={point.y}
+                x2="50"
+                y2="50"
+                stroke="var(--canvas-theme-selection)"
+                strokeOpacity={active ? ".8" : ".16"}
+                strokeWidth=".38"
+                strokeDasharray="1.5 1.4"
+              />
               <circle cx={point.x} cy={point.y} r="1" fill="var(--canvas-theme-selection)" fillOpacity={active ? ".9" : ".25"} />
             </g>
           );
         })}
       </svg>
 
-      <span aria-hidden="true" className="absolute left-1/2 top-[5%] grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌃</span>
-      <span aria-hidden="true" className="absolute bottom-[5%] left-1/2 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)]/90 text-[var(--canvas-theme-text-muted)]">⌄</span>
-
-      <div className="absolute left-1/2 top-1/2 h-[39%] w-[45%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] shadow-[0_12px_28px_rgba(0,0,0,.35)]">
-        <img src={inputImageUrl} alt="Connected scene reference" draggable={false} className="h-full w-full object-contain" />
-      </div>
+      <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)]" />
 
       {cameras.map((camera) => {
         const point = orbitPoint(camera);
@@ -397,7 +414,7 @@ function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onS
             key={camera.id}
             type="button"
             aria-label={`Drag ${camera.name} around orbit`}
-            className={`absolute z-10 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[13px] border shadow-[0_10px_18px_rgba(0,0,0,.3)] transition ${active ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)]" : "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]"} ${displayMode === "ghost" && !active ? "opacity-30" : ""}`}
+            className={`absolute z-30 grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[13px] border shadow-[0_10px_18px_rgba(0,0,0,.3)] transition ${active ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)]" : "border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]"} ${displayMode === "ghost" && !active ? "opacity-30" : ""}`}
             style={{ left: `${point.x}%`, top: `${point.y}%`, transform: "translate(-50%, -50%) rotate(-18deg)" }}
             onPointerDown={(event) => { onSelect(camera.id); onCameraPointerDown(event, camera.id); }}
             onPointerMove={(event) => onCameraPointerMove(event, camera.id)}
