@@ -16,7 +16,6 @@ import {
   Plus,
   RotateCcw,
   Trash2,
-  Video,
 } from "lucide-react";
 import type {
   CanvasCameraDisplayMode,
@@ -28,6 +27,7 @@ import type {
 } from "../../types/canvas";
 import { getCanvasNodeVisualScale } from "../../utils/canvasNodePorts";
 import { createMultiAngleCamera, getSelectedCamera } from "../../utils/cameraShotHelpers";
+import PlanCameraViewport3D from "./PlanCameraViewport3D";
 
 type CanvasCameraShotSetNodeCardProps = {
   node: CanvasCameraShotSetNode;
@@ -263,7 +263,7 @@ export default function CanvasCameraShotSetNodeCard({
         <div className="flex min-h-0 flex-1 border-y border-[var(--canvas-theme-border)]">
           <div ref={viewportRef} className="relative min-w-0 flex-[0_0_74%] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.035),transparent_68%)]" style={{ backgroundColor: "var(--canvas-theme-surface)" }} onPointerDown={(event) => handleViewportPointerDown(event, state.mode === "plan" ? "camera" : "orbit")} onPointerMove={(event) => handleViewportPointerMove(event, state.mode === "plan" ? "camera" : "orbit")}>
             {hasInput && selectedCamera ? state.mode === "plan"
-              ? <PlanSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} displayMode={state.cameraDisplayMode} onSelect={selectCamera} onCameraPointerDown={(event, cameraId) => handleViewportPointerDown(event, "camera", cameraId)} onCameraPointerMove={(event, cameraId) => handleViewportPointerMove(event, "camera", cameraId)} onTargetPointerDown={(event) => handleViewportPointerDown(event, "target")} onTargetPointerMove={(event) => handleViewportPointerMove(event, "target")} />
+              ? <PlanSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} onSelect={selectCamera} onUpdateCamera={updateCamera} />
               : <OrbitSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} displayMode={state.cameraDisplayMode} onSelect={selectCamera} onCameraPointerDown={(event, cameraId) => handleViewportPointerDown(event, "orbit", cameraId)} onCameraPointerMove={(event, cameraId) => handleViewportPointerMove(event, "orbit", cameraId)} />
               : <EmptyViewport />}
           </div>
@@ -289,73 +289,8 @@ function EmptyViewport() {
   return <div className="absolute inset-0 grid place-items-center px-8 text-center"><div><ImageIcon className="mx-auto h-5 w-5 text-[var(--canvas-theme-icon-muted)]" /><p className="mt-3 text-[13px] font-medium text-[var(--canvas-theme-text)]">Connect an image to set up camera angles</p><p className="mt-1 text-[11px] leading-4 text-[var(--canvas-theme-text-muted)]">Use a floor plan with Plan Surface or a scene image with Orbit 360.</p></div></div>;
 }
 
-function PlanSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onSelect, onCameraPointerDown, onCameraPointerMove, onTargetPointerDown, onTargetPointerMove }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; displayMode: CanvasCameraDisplayMode; onSelect: (id: string) => void; onCameraPointerDown: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onCameraPointerMove: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onTargetPointerDown: (event: React.PointerEvent<HTMLElement>) => void; onTargetPointerMove: (event: React.PointerEvent<HTMLElement>) => void; }) {
-  return (
-    <div className="absolute inset-0 overflow-hidden bg-[var(--canvas-theme-surface)] [background-image:linear-gradient(rgba(255,255,255,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.045)_1px,transparent_1px)] [background-size:24px_24px]">
-      <div aria-hidden="true" className="absolute inset-x-0 top-[42%] h-px bg-[var(--canvas-theme-border)]/60" />
-      <div className="absolute inset-x-[7%] bottom-[13%] top-[17%]">
-        <div className="absolute inset-0 border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-surface-muted)] shadow-[0_28px_38px_rgba(0,0,0,.42)] [transform:perspective(920px)_rotateX(36deg)] [transform-origin:center_center]">
-          <img src={inputImageUrl} alt="Connected floor plan" draggable={false} className="h-full w-full object-contain p-3" />
-        </div>
-
-        {cameras.map((camera) => (
-          <PlanMarker
-            key={camera.id}
-            camera={camera}
-            active={camera.id === selectedCamera.id}
-            ghost={displayMode === "ghost" && camera.id !== selectedCamera.id}
-            onSelect={onSelect}
-            onPointerDown={onCameraPointerDown}
-            onPointerMove={onCameraPointerMove}
-          />
-        ))}
-
-        <button
-          type="button"
-          aria-label="Drag target point"
-          className="absolute z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)] shadow-[0_0_0_4px_var(--canvas-theme-selection-soft)]"
-          style={{ left: `${selectedCamera.plan.targetU * 100}%`, top: `${selectedCamera.plan.targetV * 100}%` }}
-          onPointerDown={onTargetPointerDown}
-          onPointerMove={onTargetPointerMove}
-        >
-          <span className="absolute inset-1 rounded-full bg-[var(--canvas-theme-selection)]" />
-        </button>
-      </div>
-
-      <svg aria-hidden="true" className="absolute right-4 top-7 h-16 w-16" viewBox="0 0 64 64">
-        <path d="M20 46V10 M20 46l30 12 M20 46l27-15" fill="none" stroke="var(--canvas-theme-text-muted)" strokeWidth="1.5" />
-        <path d="M20 10l-3 6h6z" fill="#7B8BFF" /><path d="M50 58l-7-1 3-5z" fill="var(--canvas-theme-selection)" /><path d="M47 31l-6 3 5 4z" fill="#A6D77A" />
-        <text x="15" y="9" fill="var(--canvas-theme-text)" fontSize="10">Z</text><text x="52" y="61" fill="var(--canvas-theme-text)" fontSize="10">X</text><text x="50" y="29" fill="var(--canvas-theme-text)" fontSize="10">Y</text>
-      </svg>
-      <span aria-hidden="true" className="absolute left-1/2 top-3 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]">⌃</span>
-      <span aria-hidden="true" className="absolute bottom-3 left-1/2 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]">⌄</span>
-    </div>
-  );
-}
-
-function PlanMarker({ camera, active, ghost, onSelect, onPointerDown, onPointerMove }: { camera: CanvasMultiAngleCamera; active: boolean; ghost: boolean; onSelect: (id: string) => void; onPointerDown: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onPointerMove: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; }) {
-  const dx = camera.plan.targetU - camera.plan.u;
-  const dy = camera.plan.targetV - camera.plan.v;
-  const lift = active ? Math.min(58, 12 + camera.plan.height * 8) : 5;
-  return (
-    <>
-      <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-        <line x1={`${camera.plan.u * 100}%`} y1={`${camera.plan.v * 100}%`} x2={`${camera.plan.targetU * 100}%`} y2={`${camera.plan.targetV * 100}%`} stroke="var(--canvas-theme-selection)" strokeOpacity={active ? ".82" : ".2"} strokeDasharray="3 3" strokeWidth="1" />
-        <path d={`M ${camera.plan.u * 100}% ${camera.plan.v * 100}% L ${(camera.plan.u + dx * .86 - dy * .13) * 100}% ${(camera.plan.v + dy * .86 + dx * .13) * 100}% L ${(camera.plan.u + dx * .86 + dy * .13) * 100}% ${(camera.plan.v + dy * .86 - dx * .13) * 100}% Z`} fill="var(--canvas-theme-selection-soft)" fillOpacity={active ? ".36" : ".1"} stroke="var(--canvas-theme-selection)" strokeOpacity={active ? ".7" : ".15"} strokeWidth=".65" />
-      </svg>
-      <span aria-hidden="true" className={`pointer-events-none absolute z-[9] w-px border-l border-dashed border-[var(--canvas-theme-selection)] ${ghost ? "opacity-30" : ""}`} style={{ left: `${camera.plan.u * 100}%`, top: `calc(${camera.plan.v * 100}% - ${lift}px)`, height: `${lift}px` }} />
-      <button
-        type="button"
-        aria-label={`Drag ${camera.name} on plan`}
-        className={`absolute z-10 grid h-10 w-10 place-items-center rounded-[10px] border shadow-[0_8px_18px_rgba(0,0,0,.32)] transition ${active ? "border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-text)]" : "border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] text-[var(--canvas-theme-text-muted)]"} ${ghost ? "opacity-30" : ""}`}
-        style={{ left: `${camera.plan.u * 100}%`, top: `${camera.plan.v * 100}%`, transform: `translate(-50%, calc(-50% - ${lift}px))` }}
-        onPointerDown={(event) => { onSelect(camera.id); onPointerDown(event, camera.id); }}
-        onPointerMove={(event) => onPointerMove(event, camera.id)}
-      >
-        <span className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--canvas-theme-border-strong)] bg-[var(--canvas-theme-text)] text-[var(--canvas-theme-surface-panel)]"><Video className="h-4 w-4" /></span>
-      </button>
-    </>
-  );
+function PlanSurface({ inputImageUrl, cameras, selectedCamera, onSelect, onUpdateCamera }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; onSelect: (id: string) => void; onUpdateCamera: (id: string, change: (camera: CanvasMultiAngleCamera) => CanvasMultiAngleCamera) => void; }) {
+  return <PlanCameraViewport3D inputImageUrl={inputImageUrl} cameras={cameras} selectedCamera={selectedCamera} onSelect={onSelect} onUpdateCamera={onUpdateCamera} />;
 }
 
 function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onSelect, onCameraPointerDown, onCameraPointerMove }: { inputImageUrl: string; cameras: CanvasMultiAngleCamera[]; selectedCamera: CanvasMultiAngleCamera; displayMode: CanvasCameraDisplayMode; onSelect: (id: string) => void; onCameraPointerDown: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; onCameraPointerMove: (event: React.PointerEvent<HTMLElement>, cameraId: string) => void; }) {
@@ -434,7 +369,44 @@ function OrbitSurface({ inputImageUrl, cameras, selectedCamera, displayMode, onS
 function CameraInspector({ state, selectedCamera, onSelect, onAdd, onUpdateCamera }: { state: CanvasCameraShotSetState; selectedCamera: CanvasMultiAngleCamera | null; onSelect: (id: string) => void; onAdd: () => void; onUpdateCamera: (id: string, change: (camera: CanvasMultiAngleCamera) => CanvasMultiAngleCamera) => void; }) {
   if (!selectedCamera) return null;
   const plan = selectedCamera.plan; const orbit = selectedCamera.orbit;
-  return <aside className="min-w-[184px] flex-1 overflow-y-auto bg-[var(--canvas-theme-surface-muted)] px-4 py-4"><p className="mb-2 text-[11px] font-medium text-[var(--canvas-theme-text-muted)]">Camera</p><label className="relative mb-2 block"><select aria-label="Selected camera" value={selectedCamera.id} onChange={(event) => onSelect(event.target.value)} className="h-9 w-full appearance-none rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-3 pr-8 text-[12px] font-medium text-[var(--canvas-theme-text)] outline-none focus:border-[var(--canvas-theme-selection)]">{state.cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-[var(--canvas-theme-icon-muted)]" /></label><button type="button" onClick={onAdd} className="mb-4 flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-[var(--canvas-theme-border)] text-[12px] font-medium text-[var(--canvas-theme-text-soft)] transition hover:bg-[var(--canvas-theme-hover)]"><Plus className="h-3.5 w-3.5" /> Add Camera</button><div className="border-t border-[var(--canvas-theme-border)] pt-4"><p className="mb-4 text-[12px] font-medium text-[var(--canvas-theme-text)]">{state.mode === "plan" ? "Plan Control" : "Orbit Control"}</p>{state.mode === "plan" ? <div className="space-y-4"><RangeControl label="Height" value={plan.height} min={.5} max={15} step={.1} suffix=" m" onChange={(height) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, height } }))} /><RangeControl label="Lens" value={plan.lens} min={18} max={70} step={1} suffix=" mm" onChange={(lens) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, lens } }))} /><label className="block"><span className="mb-1.5 block text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">Target</span><select value={plan.viewDirection === "manual" ? "Custom Point" : "Center of Plan"} onChange={(event) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, viewDirection: event.target.value === "Custom Point" ? "manual" : "look-at-target" } }))} className="h-9 w-full rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-2.5 text-[11px] text-[var(--canvas-theme-text)]"><option>Center of Plan</option><option>Custom Point</option></select></label><RangeControl label="Pitch" value={plan.pitch} min={-60} max={60} step={1} suffix="°" onChange={(pitch) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, pitch } }))} /></div> : <div className="space-y-4"><RangeControl label="Rotate" value={orbit.rotate} min={-180} max={180} step={1} suffix="°" onChange={(rotate) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, rotate } }))} /><RangeControl label="Tilt" value={orbit.tilt} min={-80} max={80} step={1} suffix="°" onChange={(tilt) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, tilt } }))} /><RangeControl label="Distance" value={orbit.distance} min={3} max={15} step={.1} suffix=" m" onChange={(distance) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, distance } }))} /><div><p className="mb-2 text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">Quick Angles</p><div className="flex gap-1.5">{[{ label: "Front", rotate: 0, tilt: 0 }, { label: "Left", rotate: -90, tilt: 0 }, { label: "Right", rotate: 90, tilt: 0 }, { label: "Back", rotate: 180, tilt: 0 }, { label: "Top", rotate: 0, tilt: 65 }].map((preset) => <button key={preset.label} type="button" title={preset.label} aria-label={`${preset.label} orbit angle`} onClick={() => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, rotate: preset.rotate, tilt: preset.tilt } }))} className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--canvas-theme-border)] text-[9px] text-[var(--canvas-theme-text-muted)] transition hover:border-[var(--canvas-theme-selection)] hover:text-[var(--canvas-theme-selection)]">{preset.label[0]}</button>)}</div></div></div>}</div></aside>;
+  return (
+    <aside className="min-w-[184px] flex-1 overflow-y-auto bg-[var(--canvas-theme-surface-muted)] px-4 py-4">
+      <p className="mb-2 text-[11px] font-medium text-[var(--canvas-theme-text-muted)]">Camera</p>
+      <label className="relative mb-2 block">
+        <select aria-label="Selected camera" value={selectedCamera.id} onChange={(event) => onSelect(event.target.value)} className="h-9 w-full appearance-none rounded-[10px] border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-muted)] px-3 pr-8 text-[12px] font-medium text-[var(--canvas-theme-text)] outline-none focus:border-[var(--canvas-theme-selection)]">
+          {state.cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-[var(--canvas-theme-icon-muted)]" />
+      </label>
+      <button type="button" onClick={onAdd} className="mb-4 flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-[var(--canvas-theme-border)] text-[12px] font-medium text-[var(--canvas-theme-text-soft)] transition hover:bg-[var(--canvas-theme-hover)]"><Plus className="h-3.5 w-3.5" /> Add Camera</button>
+      <div className="border-t border-[var(--canvas-theme-border)] pt-4">
+        <p className="mb-1 text-[12px] font-medium text-[var(--canvas-theme-text)]">{state.mode === "plan" ? "Plan Control" : "Orbit Control"}</p>
+        {state.mode === "plan" ? (
+          <div className="space-y-4">
+            <p className="mb-3 text-[10px] leading-4 text-[var(--canvas-theme-text-muted)]">Use the viewport gizmo for XYZ position, rotation, and target.</p>
+            <RangeControl label="Height" value={plan.height} min={.1} max={30} step={.1} suffix=" m" onChange={(height) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, height } }))} />
+            <RangeControl label="Lens" value={plan.lens} min={18} max={70} step={1} suffix=" mm" onChange={(lens) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, lens } }))} />
+            <RangeControl label="Pitch" value={plan.pitch} min={-89} max={89} step={1} suffix="°" onChange={(pitch) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, pitch, targetHeight: undefined } }))} />
+            <RangeControl label="Roll" value={plan.roll ?? 0} min={-180} max={180} step={1} suffix="°" onChange={(roll) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, roll } }))} />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <RangeControl label="Rotate" value={orbit.rotate} min={-180} max={180} step={1} suffix="°" onChange={(rotate) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, rotate } }))} />
+            <RangeControl label="Tilt" value={orbit.tilt} min={-80} max={80} step={1} suffix="°" onChange={(tilt) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, tilt } }))} />
+            <RangeControl label="Distance" value={orbit.distance} min={3} max={15} step={.1} suffix=" m" onChange={(distance) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, distance } }))} />
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-[var(--canvas-theme-text-soft)]">Quick Angles</p>
+              <div className="flex gap-1.5">
+                {[{ label: "Front", rotate: 0, tilt: 0 }, { label: "Left", rotate: -90, tilt: 0 }, { label: "Right", rotate: 90, tilt: 0 }, { label: "Back", rotate: 180, tilt: 0 }, { label: "Top", rotate: 0, tilt: 65 }].map((preset) => (
+                  <button key={preset.label} type="button" title={preset.label} aria-label={`${preset.label} orbit angle`} onClick={() => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, orbit: { ...camera.orbit, rotate: preset.rotate, tilt: preset.tilt } }))} className="grid h-7 w-7 place-items-center rounded-lg border border-[var(--canvas-theme-border)] text-[9px] text-[var(--canvas-theme-text-muted)] transition hover:border-[var(--canvas-theme-selection)] hover:text-[var(--canvas-theme-selection)]">{preset.label[0]}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
 }
 
 function CameraFilmstrip({ state, inputImageUrl, draggedCameraId, onDragStart, onReorder, onSelect, onDuplicate, onDelete, onRename, onAdd }: { state: CanvasCameraShotSetState; inputImageUrl: string | null; draggedCameraId: string | null; onDragStart: (id: string | null) => void; onReorder: (fromId: string, toId: string) => void; onSelect: (id: string) => void; onDuplicate: () => void; onDelete: (id: string) => void; onRename: (camera: CanvasMultiAngleCamera) => void; onAdd: () => void; }) { return <footer className="shrink-0 px-5 py-3"><div className="mb-2 flex items-center justify-between"><p className="text-[12px] font-medium text-[var(--canvas-theme-text)]">Cameras ({state.cameras.length})</p><span className="text-[10px] text-[var(--canvas-theme-text-muted)]">Drag to reorder</span></div><div className="flex gap-2 overflow-x-auto pb-0.5">{state.cameras.map((camera, index) => <div key={camera.id} draggable onDragStart={() => onDragStart(camera.id)} onDragEnd={() => onDragStart(null)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedCameraId) onReorder(draggedCameraId, camera.id); onDragStart(null); }} className={`group/thumb relative h-[66px] w-[88px] shrink-0 overflow-hidden rounded-lg border transition ${camera.id === state.selectedCameraId ? "border-[var(--canvas-theme-selection)] shadow-[0_0_0_1px_var(--canvas-theme-selection-soft)]" : "border-[var(--canvas-theme-border)]"}`}><button type="button" aria-label={`Select ${camera.name}`} onClick={() => onSelect(camera.id)} className="absolute inset-0 bg-[var(--canvas-theme-surface-muted)]">{inputImageUrl ? <img src={inputImageUrl} alt="" draggable={false} className="h-full w-full object-cover opacity-75" /> : <span className="grid h-full place-items-center"><Camera className="h-4 w-4 text-[var(--canvas-theme-icon-muted)]" /></span>}<span className="absolute left-1 top-1 rounded bg-black/55 px-1 py-0.5 text-[9px] font-semibold text-white">{String(index + 1).padStart(2, "0")}</span><span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-1 text-left text-[9px] text-white">{camera.name}</span></button><button type="button" aria-label={`Rename ${camera.name}`} onClick={(event) => { event.stopPropagation(); onRename(camera); }} className="absolute right-1 top-1 hidden h-4 w-4 place-items-center rounded bg-black/55 text-white group-hover/thumb:grid"><GripVertical className="h-3 w-3" /></button><div className="absolute right-1 top-6 hidden flex-col gap-0.5 group-hover/thumb:flex"><button type="button" aria-label={`Duplicate ${camera.name}`} onClick={(event) => { event.stopPropagation(); onSelect(camera.id); onDuplicate(); }} className="grid h-4 w-4 place-items-center rounded bg-black/55 text-white"><Copy className="h-2.5 w-2.5" /></button>{state.cameras.length > 1 ? <button type="button" aria-label={`Delete ${camera.name}`} onClick={(event) => { event.stopPropagation(); onDelete(camera.id); }} className="grid h-4 w-4 place-items-center rounded bg-black/55 text-white"><Trash2 className="h-2.5 w-2.5" /></button> : null}</div></div>)}<button type="button" aria-label="Add camera" onClick={onAdd} className="grid h-[66px] w-[72px] shrink-0 place-items-center rounded-lg border border-dashed border-[var(--canvas-theme-border-strong)] text-[var(--canvas-theme-text-muted)] transition hover:border-[var(--canvas-theme-selection)] hover:text-[var(--canvas-theme-selection)]"><Plus className="h-5 w-5" /></button></div></footer>; }
