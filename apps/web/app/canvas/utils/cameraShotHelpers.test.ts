@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasCameraShotSetNode, CanvasNode } from "../types/canvas";
-import { getCameraShotSetInputPorts, getImageGeneratorInputPorts } from "./canvasNodePorts";
+import {
+  getCameraShotSetInputPorts,
+  getImageGeneratorInputPorts,
+  getNodePortDefinitions,
+  resolveTargetPortIdForEdge,
+} from "./canvasNodePorts";
 import { areCameraShotSetStatesEqual, createCameraShotSet, getCameraShotSetPrompt } from "./cameraShotHelpers";
 import { buildImageGeneratorGraphContext } from "./imageGeneratorGraphContext";
 
@@ -50,6 +55,27 @@ test("multi-angles emits every ordered camera shot for downstream generation", (
   assert.match(prompt, /Camera 01/i);
   assert.match(prompt, /Camera 02/i);
   assert.match(prompt, /orbit shot/i);
+});
+
+test("multi-angle card uses the shared image-input and text-output port schema", () => {
+  assert.deepEqual(
+    getNodePortDefinitions(cameraPlan).map(({ id, direction, kind, side }) => ({ id, direction, kind, side })),
+    [
+      { id: "camera-shot-set-input-image", direction: "input", kind: "image", side: "left" },
+      { id: "camera-shot-set-output-text", direction: "output", kind: "text", side: "right" },
+    ],
+  );
+});
+
+test("legacy image edges resolve to the multi-angle card's backward-facing image input", () => {
+  assert.equal(
+    resolveTargetPortIdForEdge({
+      node: cameraPlan,
+      targetPortId: "port-img-0",
+      kind: "image",
+    }),
+    "camera-shot-set-input-image",
+  );
 });
 
 test("plan camera prompt includes camera origin, target, and roll", () => {

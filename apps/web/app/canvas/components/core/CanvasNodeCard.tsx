@@ -70,6 +70,7 @@ import {
 } from "lucide-react";
 import Sparkles from "../../../components/icons/CarverSparklesIcon";
 import CanvasConnectionPortHandle from "./CanvasConnectionPortHandle";
+import CanvasSemanticPortHandles from "./CanvasSemanticPortHandles";
 import ContextualToolbar from "../widgets/ContextualToolbar";
 import {
   AGGREGATE_HANDLE_OFFSET,
@@ -79,12 +80,9 @@ import {
 import {
   getCanvasNodeVisualScale,
   getDefaultSourcePortId,
-  getNodeSemanticPorts,
-  getPortsBySide,
   isImageOutputOnlyNode,
 } from "../../utils/canvasNodePorts";
 import {
-  getCornerAnchoredPortOffsetY,
   getGenericNodePortOffsetY,
   getImageOutputPortOffsetY,
 } from "../../utils/canvasPortLayout";
@@ -1641,29 +1639,6 @@ export default function CanvasNodeCard({
       rightHandles.push({ kind: "image", count: connectionCountsBySide.right.image });
     }
   }
-  const semanticPortHandles = hasSemanticPorts
-    ? getNodeSemanticPorts(node).flatMap((port) => {
-        const count = edges.filter((edge) =>
-          port.direction === "input"
-            ? edge.targetId === node.id && edge.targetPortId === port.id
-            : edge.sourceId === node.id && edge.sourcePortId === port.id,
-        ).length;
-        const sameSidePorts = getPortsBySide(node, port.side);
-        const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);
-        return selected || count > 0
-          ? [{
-              port,
-              count,
-              topOffset: getCornerAnchoredPortOffsetY({
-                height: displayHeight,
-                index: Math.max(portIndex, 0),
-                total: sameSidePorts.length,
-                side: port.side,
-              }),
-            }]
-          : [];
-      })
-    : [];
   const nodeFrameClassName = getNodeFrameClassName({
     selected,
     isGenerationTarget,
@@ -1962,24 +1937,15 @@ export default function CanvasNodeCard({
             ))}
           </div>
 
-          {hasSemanticPorts
-            ? semanticPortHandles.map(({ port, count, topOffset }) => (
-              <ConnectionHandleSlot
-                key={port.id}
-                count={count}
-                kind={port.kind}
-                side={port.side}
-                selected={selected}
-                isConnectionTarget={isConnectionTarget}
-                displayHeight={displayHeight}
-                topOverride={topOffset}
-                interactive={port.direction === "output"}
-                onPointerDown={(event) =>
-                  onStartConnection(node.id, port.side, port.kind, event, port.id)
-                }
-              />
-            ))
-            : null}
+          {hasSemanticPorts ? (
+            <CanvasSemanticPortHandles
+              node={node}
+              edges={edges}
+              selected={selected}
+              isConnectionTarget={isConnectionTarget}
+              onStartConnection={onStartConnection}
+            />
+          ) : null}
           {!hasSemanticPorts && !isImageOutputOnly ? leftHandles.map((handle) => (
             <ConnectionHandleSlot
               key={`left-${handle.kind}`}

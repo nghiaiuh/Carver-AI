@@ -67,6 +67,7 @@ import {
   getNodeSemanticPort,
   getTargetPortIdForConnection,
   getTextNodeInputPorts,
+  resolveTargetPortIdForEdge,
 } from "../../utils/canvasNodePorts";
 import {
   buildPresetSourceImage,
@@ -2559,6 +2560,7 @@ export default function CanvasBoard({
             <CanvasCameraShotSetNodeCard
               key={node.id}
               node={node}
+              edges={edges}
               selected={selectedNodeIds.includes(node.id) && selectedGroupId !== node.groupId}
               isConnectionTarget={hoveredConnectionTargetId === node.id}
               onSelect={(id) => {
@@ -2572,7 +2574,11 @@ export default function CanvasBoard({
               }}
               inputImageUrl={(() => {
                 const inputEdge = edges.find((edge) =>
-                  edge.targetId === node.id && edge.targetPortId === "camera-shot-set-input-image",
+                  edge.targetId === node.id && resolveTargetPortIdForEdge({
+                    node,
+                    targetPortId: edge.targetPortId,
+                    kind: edge.kind ?? "image",
+                  }) === "camera-shot-set-input-image",
                 );
                 const inputNode = inputEdge ? nodes.find((candidate) => candidate.id === inputEdge.sourceId) : null;
                 return inputNode?.sourceImage?.url ?? inputNode?.imageUrl ?? null;

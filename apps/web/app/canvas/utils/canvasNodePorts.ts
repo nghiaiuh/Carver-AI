@@ -350,6 +350,31 @@ export function getInputPortDefinitions(node: CanvasNode) {
   return getNodePortDefinitions(node).filter((port) => port.direction === "input");
 }
 
+/**
+ * Resolves legacy edge port IDs to the current typed input port. This keeps
+ * persisted connections anchored to the same backward-facing input as newly
+ * created edges after a card adopts the shared port registry.
+ */
+export function resolveTargetPortIdForEdge({
+  node,
+  targetPortId,
+  kind,
+}: {
+  node: CanvasNode;
+  targetPortId: string;
+  kind: CanvasConnectionKind;
+}) {
+  const requestedPort = getNodeSemanticPort(node, targetPortId);
+  if (
+    requestedPort?.direction === "input" &&
+    requestedPort.acceptedKinds.includes(kind)
+  ) {
+    return requestedPort.id;
+  }
+
+  return getInputPortDefinitions(node).find((port) => port.acceptedKinds.includes(kind))?.id ?? targetPortId;
+}
+
 export function getOutputPortDefinitions(node: CanvasNode) {
   return getNodePortDefinitions(node).filter((port) => port.direction === "output");
 }

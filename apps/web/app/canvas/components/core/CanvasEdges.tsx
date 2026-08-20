@@ -18,6 +18,9 @@ import {
   getSemanticPortPoint,
 } from "./canvasConnectionGeometry";
 import {
+  resolveTargetPortIdForEdge,
+} from "../../utils/canvasNodePorts";
+import {
   getPresetChildAnchor,
   getPresetChildRightAnchor,
   isPresetGroupNode,
@@ -101,7 +104,12 @@ export default function CanvasEdges({
       if (childAnchor) return childAnchor;
     }
 
-    const semanticPoint = getSemanticPortPoint(node, targetPortId);
+    const resolvedTargetPortId = resolveTargetPortIdForEdge({
+      node,
+      targetPortId,
+      kind: connectionKind,
+    });
+    const semanticPoint = getSemanticPortPoint(node, resolvedTargetPortId);
     if (semanticPoint) return semanticPoint;
 
     if (!isPresetGroupNode(node)) {

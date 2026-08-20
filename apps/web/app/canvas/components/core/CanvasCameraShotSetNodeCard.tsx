@@ -11,7 +11,6 @@ import {
   Image as ImageIcon,
   List,
   MoreHorizontal,
-  MoveRight,
   Orbit,
   Plus,
   RotateCcw,
@@ -22,16 +21,21 @@ import type {
   CanvasCameraShotSetNode,
   CanvasCameraShotSetState,
   CanvasConnectionKind,
+  CanvasEdge,
   CanvasMultiAngleCamera,
   ImageHandlePosition,
 } from "../../types/canvas";
-import { getCanvasNodeVisualScale } from "../../utils/canvasNodePorts";
+import {
+  getCanvasNodeVisualScale,
+} from "../../utils/canvasNodePorts";
 import { createMultiAngleCamera, getSelectedCamera } from "../../utils/cameraShotHelpers";
+import CanvasSemanticPortHandles from "./CanvasSemanticPortHandles";
 import OrbitCameraViewport3D from "./OrbitCameraViewport3D";
 import PlanCameraViewport3D from "./PlanCameraViewport3D";
 
 type CanvasCameraShotSetNodeCardProps = {
   node: CanvasCameraShotSetNode;
+  edges: CanvasEdge[];
   selected: boolean;
   isConnectionTarget?: boolean;
   inputImageUrl?: string | null;
@@ -104,6 +108,7 @@ function RangeControl({
 
 export default function CanvasCameraShotSetNodeCard({
   node,
+  edges,
   selected,
   isConnectionTarget = false,
   inputImageUrl,
@@ -126,7 +131,6 @@ export default function CanvasCameraShotSetNodeCard({
     : isConnectionTarget
       ? "border-[var(--canvas-theme-connector-active)] ring-2 ring-[var(--canvas-theme-guide-soft)]"
       : "border-[var(--canvas-theme-border-strong)] hover:border-[var(--canvas-theme-selection)]";
-
   const visibleCameras = useMemo(() => state.cameras.filter((camera) => {
     if (!camera.isVisible) return false;
     return state.cameraDisplayMode !== "selected-only" || camera.id === selectedCamera?.id;
@@ -170,7 +174,7 @@ export default function CanvasCameraShotSetNodeCard({
     <div
       data-canvas-node-id={node.id}
       className="group absolute select-none"
-      style={{ left: node.x, top: node.y, width, height, zIndex: selected ? 80 : 5 }}
+      style={{ left: node.x, top: node.y, width, height, zIndex: selected ? 80 : 15 }}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -227,7 +231,7 @@ export default function CanvasCameraShotSetNodeCard({
               : <OrbitSurface inputImageUrl={inputImageUrl!} cameras={visibleCameras} selectedCamera={selectedCamera} displayMode={state.cameraDisplayMode} onSelect={selectCamera} onUpdateCamera={updateCamera} />
               : <EmptyViewport />}
           </div>
-          <div className="flex-1 bg-[var(--canvas-theme-surface-muted)]" style={{ backgroundColor: "var(--canvas-theme-surface-muted)" }}>
+          <div className="min-h-0 flex-1 overflow-hidden bg-[var(--canvas-theme-surface-muted)]" style={{ backgroundColor: "var(--canvas-theme-surface-muted)" }}>
             <CameraInspector state={state} selectedCamera={selectedCamera} onSelect={selectCamera} onAdd={duplicateSelectedCamera} onUpdateCamera={updateCamera} />
           </div>
         </div>
@@ -239,8 +243,13 @@ export default function CanvasCameraShotSetNodeCard({
         }} onSelect={selectCamera} onDuplicate={duplicateSelectedCamera} onDelete={deleteCamera} onRename={renameCamera} onAdd={duplicateSelectedCamera} />
       </div>
 
-      <span aria-label="Input image connector" className="absolute left-[-16px] top-[calc(100%-61px)] z-20 grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-connection-image)] shadow-[0_8px_18px_var(--canvas-theme-shadow)]"><ImageIcon className="h-3.5 w-3.5" /></span>
-      <button type="button" title="Connect multi-angle shots" aria-label="Connect multi-angle shots" className="absolute right-[-16px] top-[45px] z-20 grid h-8 w-8 place-items-center rounded-full border border-[var(--canvas-theme-handle-border)] bg-[var(--canvas-theme-surface-panel)] text-[var(--canvas-theme-connection-text)] shadow-[0_8px_18px_var(--canvas-theme-shadow)] transition hover:scale-105" onPointerDown={(event) => { event.stopPropagation(); onStartConnection(node.id, "right", "text", event, "camera-shot-set-output-text"); }}><MoveRight className="h-3.5 w-3.5" /></button>
+      <CanvasSemanticPortHandles
+        node={node}
+        edges={edges}
+        selected={selected}
+        isConnectionTarget={isConnectionTarget}
+        onStartConnection={onStartConnection}
+      />
     </div>
   );
 }
@@ -274,7 +283,6 @@ function CameraInspector({ state, selectedCamera, onSelect, onAdd, onUpdateCamer
         <p className="mb-1 text-[12px] font-medium text-[var(--canvas-theme-text)]">{state.mode === "plan" ? "Plan Control" : "Orbit Control"}</p>
         {state.mode === "plan" ? (
           <div className="space-y-4">
-            <p className="mb-3 text-[10px] leading-4 text-[var(--canvas-theme-text-muted)]">Use the viewport gizmo for XYZ position, rotation, and target.</p>
             <RangeControl label="Height" value={plan.height} min={.1} max={30} step={.1} suffix=" m" onChange={(height) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, height } }))} />
             <RangeControl label="Lens" value={plan.lens} min={18} max={70} step={1} suffix=" mm" onChange={(lens) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, lens } }))} />
             <RangeControl label="Pitch" value={plan.pitch} min={-89} max={89} step={1} suffix="°" onChange={(pitch) => onUpdateCamera(selectedCamera.id, (camera) => ({ ...camera, plan: { ...camera.plan, pitch, targetHeight: undefined } }))} />
