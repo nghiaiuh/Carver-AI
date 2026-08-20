@@ -149,19 +149,15 @@ export default function PlanCameraViewport3D({
   const onSelectRef = useRef(onSelect);
   const onUpdateCameraRef = useRef(onUpdateCamera);
   const modeRef = useRef<GizmoMode>("move");
-  const coordinateSpaceRef = useRef<"world" | "local">("world");
-  const snapRef = useRef(false);
   const draggingRef = useRef(false);
   const activeAimDistanceRef = useRef(4);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const [mode, setMode] = useState<GizmoMode>("move");
-  const [coordinateSpace, setCoordinateSpace] = useState<"world" | "local">("world");
-  const [snap, setSnap] = useState(false);
   const [activeView, setActiveView] = useState<ViewPreset>("perspective");
   const statusText = mode === "target"
     ? "Target controls camera direction"
     : mode === "rotate"
-      ? "Rotate on world or local axes"
+      ? "Rotate camera"
       : "Move camera on X, Y, or Z";
 
   useEffect(() => {
@@ -170,9 +166,7 @@ export default function PlanCameraViewport3D({
     onSelectRef.current = onSelect;
     onUpdateCameraRef.current = onUpdateCamera;
     modeRef.current = mode;
-    coordinateSpaceRef.current = coordinateSpace;
-    snapRef.current = snap;
-  }, [cameras, coordinateSpace, mode, onSelect, onUpdateCamera, selectedCamera, snap]);
+  }, [cameras, mode, onSelect, onUpdateCamera, selectedCamera]);
 
   const syncSelectedCamera = useCallback(() => {
     const runtime = runtimeRef.current;
@@ -194,12 +188,10 @@ export default function PlanCameraViewport3D({
     runtime.transformControls.detach();
     runtime.transformControls.attach(modeRef.current === "target" ? runtime.targetObject : shotCamera);
     runtime.transformControls.setMode(modeRef.current === "rotate" ? "rotate" : "translate");
-    runtime.transformControls.setSpace(modeRef.current === "rotate" ? coordinateSpaceRef.current : "world");
+    runtime.transformControls.setSpace("world");
     runtime.transformControls.showX = true;
     runtime.transformControls.showY = true;
     runtime.transformControls.showZ = true;
-    runtime.transformControls.translationSnap = snapRef.current ? 0.25 : null;
-    runtime.transformControls.rotationSnap = snapRef.current ? degToRad(15) : null;
 
     updateLine(runtime.aimLine, shotCamera.position, runtime.targetObject.position);
     const ground = runtime.targetObject.position.clone();
@@ -541,7 +533,7 @@ export default function PlanCameraViewport3D({
 
   useEffect(() => {
     syncSelectedCamera();
-  }, [coordinateSpace, mode, snap, syncSelectedCamera]);
+  }, [mode, syncSelectedCamera]);
 
   const applyViewPreset = (preset: ViewPreset) => {
     const runtime = runtimeRef.current;
@@ -600,9 +592,6 @@ export default function PlanCameraViewport3D({
         <ViewportToolButton active={mode === "move"} label="Move camera (W)" onClick={() => setMode("move")}><Move className="h-3.5 w-3.5" /></ViewportToolButton>
         <ViewportToolButton active={mode === "rotate"} label="Rotate camera (E)" onClick={() => setMode("rotate")}><RotateCw className="h-3.5 w-3.5" /></ViewportToolButton>
         <ViewportToolButton active={mode === "target"} label="Move target (T)" onClick={() => setMode("target")}><Crosshair className="h-3.5 w-3.5" /></ViewportToolButton>
-        <span className="mx-0.5 h-5 w-px bg-[var(--canvas-theme-border)]" />
-        <button type="button" onClick={() => setCoordinateSpace((current) => current === "world" ? "local" : "world")} className="h-7 rounded-lg px-2 text-[10px] font-semibold text-[var(--canvas-theme-text-soft)] transition hover:bg-[var(--canvas-theme-hover)]" title="Transform coordinate space">{coordinateSpace === "world" ? "World" : "Local"}</button>
-        <button type="button" aria-pressed={snap} onClick={() => setSnap((current) => !current)} className={`h-7 rounded-lg px-2 text-[10px] font-semibold transition ${snap ? "bg-[var(--canvas-theme-selection-soft)] text-[var(--canvas-theme-selection)]" : "text-[var(--canvas-theme-text-soft)] hover:bg-[var(--canvas-theme-hover)]"}`} title="Snap movement and rotation">Snap</button>
       </div>
 
       <div className="absolute right-3 top-3 z-20 rounded-xl border border-[var(--canvas-theme-border)] bg-[var(--canvas-theme-surface-panel)]/95 p-1 shadow-[0_8px_22px_var(--canvas-theme-shadow)] backdrop-blur">
