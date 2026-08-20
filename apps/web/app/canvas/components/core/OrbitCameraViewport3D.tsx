@@ -49,6 +49,9 @@ type CameraDrag = {
   distance: number;
 };
 
+const ORBIT_IMAGE_MAX_WIDTH = 9.6;
+const ORBIT_IMAGE_MAX_HEIGHT = 7.2;
+
 function getThemeColor(element: HTMLElement, token: string, fallback: string) {
   const value = getComputedStyle(element).getPropertyValue(token).trim();
   const color = new THREE.Color();
@@ -330,7 +333,7 @@ export default function OrbitCameraViewport3D({
     scene.add(sphereGrid);
 
     const imagePlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.8, 3.2),
+      new THREE.PlaneGeometry(ORBIT_IMAGE_MAX_WIDTH, 6.4),
       new THREE.MeshBasicMaterial({
         color: surfaceColor,
         side: THREE.DoubleSide,
@@ -535,10 +538,12 @@ export default function OrbitCameraViewport3D({
         texture.anisotropy = Math.min(8, runtime.renderer.capabilities.getMaxAnisotropy());
         const image = texture.image as { width?: number; height?: number };
         const aspect = image.width && image.height ? image.width / image.height : 1.5;
-        const maxWidth = 4.8;
-        const maxHeight = 3.6;
-        const width = aspect >= maxWidth / maxHeight ? maxWidth : maxHeight * aspect;
-        const height = aspect >= maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+        const width = aspect >= ORBIT_IMAGE_MAX_WIDTH / ORBIT_IMAGE_MAX_HEIGHT
+          ? ORBIT_IMAGE_MAX_WIDTH
+          : ORBIT_IMAGE_MAX_HEIGHT * aspect;
+        const height = aspect >= ORBIT_IMAGE_MAX_WIDTH / ORBIT_IMAGE_MAX_HEIGHT
+          ? ORBIT_IMAGE_MAX_WIDTH / aspect
+          : ORBIT_IMAGE_MAX_HEIGHT;
         runtime.imagePlane.geometry.dispose();
         runtime.imagePlane.geometry = new THREE.PlaneGeometry(width, height);
         runtime.imagePlane.material.map?.dispose();
