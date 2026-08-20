@@ -613,6 +613,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   const cloudDraftRetryAttemptRef = useRef(0);
   const cloudDraftEntityConflictRef = useRef(false);
   const cloudDraftSyncInFlightRef = useRef(false);
+  const remoteCanvasReconcileInFlightRef = useRef(false);
   const latestDraftMutationIdRef = useRef<string | null>(null);
   const latestSnapshotDocumentRef = useRef<CanvasSnapshotDocument>(coerceCanvasSnapshotDocument(undefined));
   const latestSnapshotFingerprintRef = useRef<string>("");
@@ -1041,12 +1042,6 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
       });
       lastPersistedLocalDraftFingerprintRef.current = snapshotFingerprint;
 
-      draftChannelRef.current?.postMessage({
-        type: "draft-updated",
-        userId: currentUserId,
-        projectId,
-        tabId: tabIdRef.current,
-      });
       recordCanvasPersistenceBenchmarkEvent({
         operation: "local-draft-save",
         projectId,
@@ -1802,43 +1797,63 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
   }, [activeNodeId, nodes]);
 
   const reconcileRemoteCanvasOperations = useCallback(async () => {
-    if (!currentUserId || !params.projectId) return;
-    const afterRevision = cloudDraftMetaRef.current.revision ?? 0;
-    const client = requireCanvasSupabaseClient(supabase);
-    const response = await authedFetch(
-      client,
-      `/api/project-drafts/${params.projectId}/operations?afterRevision=${afterRevision}`,
-      { cache: "no-store" },
-    );
-    const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
-    const remoteOperations = (payload.data?.operations ?? [])
-      .filter((operation) => operation.clientId !== tabIdRef.current);
-    if (!response.ok || remoteOperations.length === 0) return;
+    if (
+      !currentUserId ||
+      !params.projectId ||
+      cloudDraftEntityConflictRef.current ||
+      remoteCanvasReconcileInFlightRef.current
+    ) return;
 
-    const localDraft = await loadCanvasDraft(currentUserId, params.projectId, tabIdRef.current);
-    const conflict = getCanvasOperationConflict(localDraft?.pendingOperations ?? [], remoteOperations);
-    if (conflict.hasConflict) {
-      setDraftWarning("Another tab changed the same canvas item. Your local changes remain in the recovery journal.");
-      return;
+    remoteCanvasReconcileInFlightRef.current = true;
+    try {
+      const afterRevision = cloudDraftMetaRef.current.revision ?? 0;
+      const client = requireCanvasSupabaseClient(supabase);
+      const response = await authedFetch(
+        client,
+        `/api/project-drafts/${params.projectId}/operations?afterRevision=${afterRevision}`,
+        { cache: "no-store" },
+      );
+      const payload = (await response.json().catch(() => ({}))) as DraftRouteResponse;
+      const remoteOperations = (payload.data?.operations ?? [])
+        .filter((operation) => operation.clientId !== tabIdRef.current);
+      if (!response.ok || remoteOperations.length === 0) return;
+
+      const localDraft = await loadCanvasDraft(currentUserId, params.projectId, tabIdRef.current);
+      const conflict = getCanvasOperationConflict(localDraft?.pendingOperations ?? [], remoteOperations);
+      if (conflict.hasConflict) {
+        // Keep the pending journal intact as the recovery branch, but do not
+        // repeatedly re-read the same remote change on every canvas mutation.
+        cloudDraftEntityConflictRef.current = true;
+        cloudDraftFirstDirtyAtRef.current = null;
+        if (cloudDraftSyncTimeoutRef.current !== null) {
+          window.clearTimeout(cloudDraftSyncTimeoutRef.current);
+          cloudDraftSyncTimeoutRef.current = null;
+        }
+        setDraftConflict(localDraft);
+        setDraftWarning("Another tab changed the same canvas item. Your local changes remain in the recovery journal.");
+        return;
+      }
+
+      const latestRevision = Math.max(
+        afterRevision,
+        ...remoteOperations.map((operation) => operation.committedRevision ?? afterRevision),
+      );
+      await applyRemoteCanvasDraftOperations(currentUserId, params.projectId, {
+        clientId: tabIdRef.current,
+        operations: remoteOperations.map((operation) => operation.payload),
+        cloudDraftRevision: latestRevision,
+      });
+      applyHydratedSnapshotState(applyCanvasDraftOperations(
+        latestSnapshotDocumentRef.current,
+        remoteOperations.map((operation) => operation.payload),
+      ));
+      cloudDraftMetaRef.current = {
+        ...cloudDraftMetaRef.current,
+        revision: latestRevision,
+      };
+    } finally {
+      remoteCanvasReconcileInFlightRef.current = false;
     }
-
-    const latestRevision = Math.max(
-      afterRevision,
-      ...remoteOperations.map((operation) => operation.committedRevision ?? afterRevision),
-    );
-    await applyRemoteCanvasDraftOperations(currentUserId, params.projectId, {
-      clientId: tabIdRef.current,
-      operations: remoteOperations.map((operation) => operation.payload),
-      cloudDraftRevision: latestRevision,
-    });
-    applyHydratedSnapshotState(applyCanvasDraftOperations(
-      latestSnapshotDocumentRef.current,
-      remoteOperations.map((operation) => operation.payload),
-    ));
-    cloudDraftMetaRef.current = {
-      ...cloudDraftMetaRef.current,
-      revision: latestRevision,
-    };
   }, [applyHydratedSnapshotState, currentUserId, params.projectId, supabase]);
 
   useEffect(() => {
@@ -1884,7 +1899,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         return;
       }
 
-      if (message.type === "draft-updated" || message.type === "draft-acknowledged") {
+      if (message.type === "draft-acknowledged") {
         void reconcileRemoteCanvasOperations().catch(() => undefined);
       }
 
