@@ -1108,6 +1108,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
             height: image.height,
             mimeType: image.mimeType,
             provider: image.provider,
+            cameraShot: image.cameraShot,
           }));
           const selectedOutputAssetId =
             node.imageGenerator.selectedOutputAssetId &&
@@ -3036,7 +3037,9 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         viewportZoom,
       });
       // Freeze the selected count into this job so later UI changes cannot alter an in-flight request.
-      const outputCount = Math.min(
+      const outputCount = graphContext.generatorContext.cameraShotSet
+        ? 1
+        : Math.min(
         IMAGE_GENERATOR_MAX_OUTPUT_COUNT,
         Math.max(IMAGE_GENERATOR_MIN_OUTPUT_COUNT, generatorNode.imageGenerator.outputCount),
       );
@@ -3058,6 +3061,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         simulation: options?.simulation,
         canvasGraphContext: resolvedExecutionContext ?? undefined,
         imageGeneratorContext: graphContext.generatorContext,
+        cameraShotSetContext: graphContext.generatorContext.cameraShotSet,
       };
 
       const response = await authedFetch(client, `/api/projects/${params.projectId}/ai-jobs`, {
