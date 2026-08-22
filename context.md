@@ -94,9 +94,10 @@ Context and camera nodes:
   roll preserve the richer rig. Orbit mode uses a separate Three.js viewport
   with the source image at the center and shot cameras constrained to spherical
   `rotate`/`tilt`/`distance` coordinates while the editor view orbits
-  independently. It exposes one typed text output for
-  Assistant/Image Generator; it is planning context, not a completed
-  multi-angle generation family yet.
+  independently. It exposes one typed text output for Assistant and a
+  structured camera-shot context for Image Generator. Image Generator binds
+  the shot set's connected source image, compiles one prompt per visible shot,
+  and fans out one image request per shot while preserving layout/object locks.
 
 ## 4. Preset system: current mental model
 
