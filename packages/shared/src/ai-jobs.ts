@@ -8,6 +8,7 @@
 import type { CanvasReferenceRole, CanvasSnapshotDocument } from "./snapshot";
 import type { ImageGeneratorAspectRatio } from "./image-generator";
 import type {
+  CameraShotDirective,
   ExecutionDecision,
   ExecutionRevalidationContract,
   GenerationPromptResultV2,
@@ -81,7 +82,13 @@ export type ImageGeneratorTextReference = {
   nodeId: string;
   title: string;
   content: string;
-  sourceKind: "text" | "assistant";
+  sourceKind: "text" | "assistant" | "camera-shot-set";
+};
+
+export type CameraShotGenerationContext = {
+  shotSetNodeId: string;
+  source: Omit<CanvasGenerationTarget, "prompt"> & { prompt?: string | null };
+  shots: CameraShotDirective[];
 };
 
 export type ImageGeneratorGraphContext = {
@@ -90,6 +97,7 @@ export type ImageGeneratorGraphContext = {
   imageReferences: CanvasGenerationImageReference[];
   presetReferences: CanvasGenerationPresetReference[];
   textReferences: ImageGeneratorTextReference[];
+  cameraShotSet?: CameraShotGenerationContext;
   connectionSummary: string;
 };
 
@@ -112,6 +120,7 @@ export type PersistedGeneratedImage = {
   assetId?: string;
   mimeType?: string;
   provider?: string;
+  cameraShot?: Pick<CameraShotDirective, "shotSetNodeId" | "shotId" | "shotName" | "order" | "mode">;
 };
 
 export type RuntimeGeneratedImage = Omit<PersistedGeneratedImage, "imageUrl"> & {
@@ -235,6 +244,7 @@ export type CreateAiJobRequest = {
   mask?: CreateAiJobMaskInput;
   canvasGraphContext?: CanvasGenerationContext;
   imageGeneratorContext?: ImageGeneratorGraphContext;
+  cameraShotSetContext?: CameraShotGenerationContext;
   simulation?: CarverAiJobSimulationConfig;
 };
 
@@ -265,6 +275,7 @@ export type CarverAiJobPayload = {
   maskAssetId?: string;
   canvasGraphContext?: CanvasGenerationContext;
   imageGeneratorContext?: ImageGeneratorGraphContext;
+  cameraShotSetContext?: CameraShotGenerationContext;
   simulation?: CarverAiJobSimulationConfig;
   promptEngine?: {
     contextRevision: number;

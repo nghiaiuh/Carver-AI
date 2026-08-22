@@ -2,6 +2,33 @@ import type { CanvasReferenceRole, SpatialLock } from "./snapshot";
 
 export type PromptExecutionMode = "text_to_image" | "image_edit" | "region_edit";
 
+/** A trusted, explicit camera override for one generated image. */
+export type CameraShotDirective = {
+  shotSetNodeId: string;
+  shotId: string;
+  shotName: string;
+  order: number;
+  mode: "plan" | "orbit";
+  plan?: {
+    u: number;
+    v: number;
+    targetU: number;
+    targetV: number;
+    height: number;
+    targetHeight?: number;
+    lens: number;
+    pitch: number;
+    roll?: number;
+    viewDirection: "auto" | "look-at-target" | "manual";
+  };
+  orbit?: {
+    rotate: number;
+    tilt: number;
+    distance: number;
+    lens: number;
+  };
+};
+
 export type DecisionSource =
   | "system_policy"
   | "ownership_validation"
@@ -100,6 +127,7 @@ export type PlanConstraint = {
     | "preserve_camera"
     | "preserve_perspective"
     | "preserve_layout"
+    | "apply_camera_view"
     | "forbid_addition"
     | "forbid_removal"
     | "restrict_edit_scope";
@@ -221,6 +249,8 @@ export type PromptEngineTrustedContext = {
     avoid?: string[];
     changeOnly?: string[];
   };
+  /** Present only for an authorized multi-angle shot generation. */
+  cameraShot?: CameraShotDirective | null;
 };
 
 export type PromptInterpreterOperationDraft = {
@@ -259,6 +289,7 @@ export type PromptPlanV2 = {
   purpose: "enhance" | "generation";
   executionMode: PromptExecutionMode;
   rawGoal: string;
+  cameraShot?: CameraShotDirective | null;
   operations: PromptOperation[];
   target: ProvenancedDecision<TrustedTarget | null>;
   references: ValidatedReference[];

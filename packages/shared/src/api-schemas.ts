@@ -134,9 +134,41 @@ const imageGeneratorTextReferenceSchema = z
     nodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
     title: trimmedString.min(1).max(MAX_LABEL_LENGTH),
     content: trimmedString.min(1).max(MAX_PROMPT_LENGTH),
-    sourceKind: z.enum(["text", "assistant"]),
+    sourceKind: z.enum(["text", "assistant", "camera-shot-set"]),
   })
   .strict();
+
+const cameraShotDirectiveSchema = z.object({
+  shotSetNodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+  shotId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+  shotName: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+  order: z.number().int().min(0).max(16),
+  mode: z.enum(["plan", "orbit"]),
+  plan: z.object({
+    u: z.number().finite(), v: z.number().finite(), targetU: z.number().finite(), targetV: z.number().finite(),
+    height: z.number().finite(), targetHeight: z.number().finite().optional(), lens: z.number().finite(),
+    pitch: z.number().finite(), roll: z.number().finite().optional(), viewDirection: z.enum(["auto", "look-at-target", "manual"]),
+  }).strict().optional(),
+  orbit: z.object({
+    rotate: z.number().finite(), tilt: z.number().finite(), distance: z.number().finite(), lens: z.number().finite(),
+  }).strict().optional(),
+}).strict().superRefine((value, context) => {
+  const isValid = value.mode === "plan"
+    ? Boolean(value.plan) && !value.orbit
+    : Boolean(value.orbit) && !value.plan;
+  if (!isValid) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A camera shot must contain exactly the transform for its selected mode.",
+    });
+  }
+});
+
+const cameraShotSetContextSchema = z.object({
+  shotSetNodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+  source: generationTargetSchema,
+  shots: z.array(cameraShotDirectiveSchema).min(1).max(4),
+}).strict();
 
 const imageGeneratorContextSchema = z
   .object({
@@ -145,6 +177,7 @@ const imageGeneratorContextSchema = z
     imageReferences: z.array(generationImageReferenceSchema).max(16).default([]),
     presetReferences: z.array(generationPresetReferenceSchema).max(32).default([]),
     textReferences: z.array(imageGeneratorTextReferenceSchema).max(16).default([]),
+    cameraShotSet: cameraShotSetContextSchema.optional(),
     connectionSummary: trimmedString.max(4_000).default(""),
   })
   .strict();
@@ -190,6 +223,7 @@ export const createAiJobBodySchema = z
     mask: maskInputSchema.optional(),
     canvasGraphContext: canvasGenerationContextSchema.optional(),
     imageGeneratorContext: imageGeneratorContextSchema.optional(),
+    cameraShotSetContext: cameraShotSetContextSchema.optional(),
     simulation: simulationSchema.optional(),
     jobType: z.enum(CARVER_JOB_KIND_VALUES).optional(),
     canvasId: trimmedString.min(1).max(MAX_LABEL_LENGTH).optional(),
