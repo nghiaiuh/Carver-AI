@@ -30,7 +30,7 @@ export const buildPlanConstraints = (params: {
     });
   };
 
-  if (trustedContext.executionMode !== "text_to_image") {
+  if (trustedContext.executionMode !== "text_to_image" && !trustedContext.cameraShot) {
     pushConstraint({
       type: "preserve_camera",
       source: "system_policy",
@@ -54,8 +54,23 @@ export const buildPlanConstraints = (params: {
     });
   }
 
+  if (trustedContext.cameraShot) {
+    const shot = trustedContext.cameraShot;
+    pushConstraint({
+      type: "apply_camera_view",
+      source: "trusted_context",
+      severity: "hard",
+      subjectId: shot.shotId,
+      description: `Apply only camera shot ${shot.order + 1} (${shot.shotName}) in ${shot.mode} mode. This authorized shot replaces the source camera angle and perspective while preserving the scene layout.`,
+      evidence: [`camera-shot:${shot.shotSetNodeId}:${shot.shotId}`],
+    });
+  }
+
   for (const lock of trustedContext.locks) {
     if (lock.targetType === "camera") {
+      if (trustedContext.cameraShot) {
+        continue;
+      }
       pushConstraint({
         type: "preserve_camera",
         source: "trusted_context",

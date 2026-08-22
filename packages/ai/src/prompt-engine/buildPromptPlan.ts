@@ -247,6 +247,7 @@ export const buildPromptPlanV2 = (input: PromptPlanBuildInput): PromptPlanV2 => 
     purpose: input.purpose,
     executionMode: input.trustedContext.executionMode,
     rawGoal: input.rawPrompt.trim(),
+    cameraShot: input.trustedContext.cameraShot ?? null,
     operations,
     target,
     references,
