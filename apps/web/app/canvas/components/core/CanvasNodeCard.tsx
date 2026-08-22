@@ -47,10 +47,11 @@ import type {
   SketchGroup,
   SketchLine,
 } from "../../types/canvas";
-import { isCanvasImageOutputGalleryNode } from "../../types/canvas";
+import { isCanvasCameraShotSetNode, isCanvasImageOutputGalleryNode } from "../../types/canvas";
 import {
   ArrowUpRight,
   Box,
+  Camera,
   Check,
   ChevronDown,
   Expand,
@@ -218,6 +219,14 @@ type ConnectedGeneratorTextReference = {
   edgeId: string;
   sourceNodeId: string;
   text: string;
+};
+
+type ConnectedGeneratorCameraShotSet = {
+  edgeId: string;
+  sourceNodeId: string;
+  title: string;
+  mode: "plan" | "orbit";
+  shotNames: string[];
 };
 
 function sortInboundCanvasEdges(a: CanvasEdge, b: CanvasEdge) {
@@ -636,6 +645,7 @@ function ImageGeneratorNodeSurface({
 
     const imageReferences: ConnectedGeneratorImageReference[] = [];
     const textReferences: ConnectedGeneratorTextReference[] = [];
+    const cameraShotSets: ConnectedGeneratorCameraShotSet[] = [];
 
     inboundEdges.forEach((edge) => {
       const sourceNode = allNodes.find((candidate) => candidate.id === edge.sourceId);
@@ -704,6 +714,23 @@ function ImageGeneratorNodeSurface({
       }
 
       if (edge.targetPortId === "image-generator-input-text") {
+        if (isCanvasCameraShotSetNode(sourceNode)) {
+          const shotNames = sourceNode.cameraShotSet.cameras
+            .filter((camera) => camera.isVisible)
+            .map((camera) => camera.name);
+
+          if (shotNames.length > 0) {
+            cameraShotSets.push({
+              edgeId: edge.id,
+              sourceNodeId: sourceNode.id,
+              title: sourceNode.title,
+              mode: sourceNode.cameraShotSet.mode,
+              shotNames,
+            });
+          }
+          return;
+        }
+
         const text =
           sourceNode.kind === "text"
             ? sourceNode.text.content
@@ -723,7 +750,7 @@ function ImageGeneratorNodeSurface({
       }
     });
 
-    return { imageReferences, textReferences };
+    return { imageReferences, textReferences, cameraShotSets };
   }, [allNodes, edges, generatorAssetUrls, node.id]);
 
   const outputCards = React.useMemo(() => {
@@ -758,14 +785,24 @@ function ImageGeneratorNodeSurface({
     null;
 
   const isRunning = generator.status === "queued" || generator.status === "generating";
-  const hasPromptInput = generator.prompt.trim().length > 0 || connectedReferences.textReferences.length > 0;
+  const connectedCameraShotCount = connectedReferences.cameraShotSets.reduce(
+    (count, cameraShotSet) => count + cameraShotSet.shotNames.length,
+    0,
+  );
+  const hasCameraShotContext = connectedCameraShotCount > 0;
+  const hasPromptInput =
+    generator.prompt.trim().length > 0 ||
+    connectedReferences.textReferences.length > 0 ||
+    hasCameraShotContext;
   const hasGeneratedOutputs = outputCards.length > 0;
   const selectedOutput =
     outputCards.find((output) => output.assetId && output.assetId === activeOutputAssetId) ??
     outputCards[0] ??
     null;
   const showInteractiveChrome = isHovered || selected;
-  const showReferenceButton = connectedReferences.imageReferences.length > 0;
+  const showReferenceButton =
+    connectedReferences.imageReferences.length > 0 ||
+    hasCameraShotContext;
   const hoverMotionEase = [0.22, 1, 0.36, 1] as const;
   const revealTransition = (delay = 0, icon = false) => ({
     duration: showInteractiveChrome ? (icon ? 0.16 : 0.2) : 0.16,
@@ -924,10 +961,10 @@ function ImageGeneratorNodeSurface({
             }}
             transition={revealTransition(0.07, true)}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/8 bg-black/28 text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur-md transition hover:bg-black/38"
-            title={showReferenceButton ? "Show connected references" : "No connected image references yet"}
+            title={showReferenceButton ? "Show connected generation context" : "No connected image or camera context yet"}
             onClick={() => {
               if (!showReferenceButton) {
-                onToast("Connect one or more image nodes to preview generator references here.");
+                onToast("Connect image nodes or a Multi-Angles camera plan to preview generation context here.");
                 return;
               }
               setOpenMenu((current) => (current === "references" ? null : "references"));
@@ -947,22 +984,39 @@ function ImageGeneratorNodeSurface({
               className="absolute left-4 top-[58px] z-30 max-w-[240px] rounded-[20px] border border-white/10 bg-black/42 p-2.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.24)] backdrop-blur-xl"
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/66">
-                Connected references
+                Connected context
               </div>
-              <div className="flex max-w-full gap-2 overflow-x-auto pb-0.5">
-                {connectedReferences.imageReferences.map((reference) => (
-                  <div key={reference.edgeId} className="shrink-0" title={reference.title}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={reference.previewUrl}
-                      alt={reference.title}
-                      className="h-12 w-12 rounded-xl object-cover shadow-[0_4px_12px_rgba(0,0,0,0.24)]"
-                      draggable={false}
-                      decoding="async"
-                    />
+              {connectedReferences.imageReferences.length > 0 ? (
+                <div className="flex max-w-full gap-2 overflow-x-auto pb-0.5">
+                  {connectedReferences.imageReferences.map((reference) => (
+                    <div key={reference.edgeId} className="shrink-0" title={reference.title}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={reference.previewUrl}
+                        alt={reference.title}
+                        className="h-12 w-12 rounded-xl object-cover shadow-[0_4px_12px_rgba(0,0,0,0.24)]"
+                        draggable={false}
+                        decoding="async"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {connectedReferences.cameraShotSets.map((cameraShotSet) => (
+                <div
+                  key={cameraShotSet.edgeId}
+                  className="mt-2 rounded-xl border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-2"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold text-white/92">
+                    <Camera className="h-3 w-3 text-[var(--canvas-theme-connection-text)]" strokeWidth={2.2} />
+                    <span className="truncate">{cameraShotSet.title}</span>
+                    <span className="ml-auto shrink-0 text-white/64">{cameraShotSet.shotNames.length} shots</span>
                   </div>
-                ))}
-              </div>
+                  <p className="mt-1 truncate text-[10px] text-white/66">
+                    {cameraShotSet.mode === "plan" ? "Plan Surface" : "Orbit 360"}: {cameraShotSet.shotNames.join(", ")}
+                  </p>
+                </div>
+              ))}
             </motion.div>
           ) : null}
         </AnimatePresence>
@@ -976,6 +1030,18 @@ function ImageGeneratorNodeSurface({
           transition={{ duration: showInteractiveChrome ? 0.21 : 0.18, ease: hoverMotionEase }}
           className="absolute bottom-[72px] left-4 right-4 z-20"
         >
+          {hasCameraShotContext ? (
+            <div
+              className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-1 text-[10px] font-semibold text-[var(--canvas-theme-connection-text)] shadow-[0_6px_14px_rgba(0,0,0,0.14)]"
+              title={connectedReferences.cameraShotSets
+                .map((cameraShotSet) => `${cameraShotSet.title}: ${cameraShotSet.shotNames.join(", ")}`)
+                .join(" | ")}
+            >
+              <Camera className="h-3 w-3 shrink-0" strokeWidth={2.2} />
+              <span className="truncate">Camera plan connected</span>
+              <span className="shrink-0 opacity-80">{connectedCameraShotCount} shots</span>
+            </div>
+          ) : null}
           <textarea
             ref={textareaRef}
             value={generator.prompt}
@@ -988,7 +1054,9 @@ function ImageGeneratorNodeSurface({
             }
             onInput={resizePromptTextarea}
             placeholder={
-              connectedReferences.textReferences.length > 0
+              hasCameraShotContext
+                ? "Camera plan connected. Add optional design instructions..."
+                : connectedReferences.textReferences.length > 0
                 ? "Connected prompt. Use @ to add references or extra context"
                 : "Describe the image you want to generate..."
             }
@@ -1187,7 +1255,9 @@ function ImageGeneratorNodeSurface({
                     <div className="space-y-1">
                       <p className="font-semibold text-white/92">Generation settings</p>
                       <p>Model routing and aspect ratio are supported in phase 1.</p>
-                      <p>Connected references: {connectedReferences.imageReferences.length} image / {connectedReferences.textReferences.length} text.</p>
+                      <p>
+                        Connected context: {connectedReferences.imageReferences.length} image / {connectedReferences.textReferences.length} text / {connectedCameraShotCount} camera shots.
+                      </p>
                       {isDevelopment ? (
                         <button
                           type="button"
