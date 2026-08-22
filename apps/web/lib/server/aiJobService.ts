@@ -13,6 +13,7 @@ import type {
   CarverAiJobSimulationConfig,
   CarverAiJobSimulationScenario,
   CarverImageExecutionMode,
+  CanvasSnapshotDocument,
   CreateAiJobBody,
   CreateAiJobRequest,
 } from "@carver/shared";
@@ -202,6 +203,7 @@ const buildIdempotencyKey = (params: {
   aspectRatio?: string | null;
   outputCount?: number | null;
   simulationScenario?: string | null;
+  cameraShotSetContext?: unknown;
 }) =>
   createHash("sha256")
     .update(
@@ -218,6 +220,7 @@ const buildIdempotencyKey = (params: {
         aspectRatio: params.aspectRatio ?? null,
         outputCount: params.outputCount ?? 1,
         simulationScenario: params.simulationScenario ?? null,
+        cameraShotSetContext: params.cameraShotSetContext ?? null,
       }),
     )
     .digest("hex")
@@ -269,6 +272,54 @@ function maskValue(value: unknown) {
     height: typeof source.height === "number" ? source.height : undefined,
     selectionRatio: typeof source.selectionRatio === "number" ? source.selectionRatio : undefined,
   };
+}
+
+function validateCameraShotSetContextAgainstSnapshot(
+  snapshot: CanvasSnapshotDocument,
+  context: NonNullable<CreateAiJobRequest["cameraShotSetContext"]>,
+) {
+  const shotSetNode = snapshot.graph.nodes.find(
+    (node) => node.id === context.shotSetNodeId && node.kind === "camera-shot-set",
+  );
+  if (!shotSetNode?.cameraShotSet) {
+    return "Multi-angle camera set is not present in the canvas snapshot.";
+  }
+  const sourceEdge = snapshot.graph.edges.find((edge) => edge.targetId === context.shotSetNodeId);
+  if (!sourceEdge || sourceEdge.sourceId !== context.source.nodeId) {
+    return "Multi-angle source image does not match the canvas connection.";
+  }
+  const sourceNode = snapshot.graph.nodes.find((node) => node.id === sourceEdge.sourceId);
+  if (!sourceNode) {
+    return "Multi-angle source image is not present in the canvas snapshot.";
+  }
+  if (sourceNode.sourceImage?.assetId && context.source.assetId !== sourceNode.sourceImage.assetId) {
+    return "Multi-angle source asset does not match the canvas snapshot.";
+  }
+
+  const shotIds = new Set<string>();
+  const visibleCameraIds = shotSetNode.cameraShotSet.cameras
+    .filter((camera) => camera.isVisible)
+    .map((camera) => camera.id);
+
+  for (const shot of context.shots) {
+    if (shotIds.has(shot.shotId)) {
+      return "Multi-angle camera context contains the same shot more than once.";
+    }
+    shotIds.add(shot.shotId);
+    const camera = shotSetNode.cameraShotSet.cameras.find((candidate) => candidate.id === shot.shotId);
+    if (!camera || shot.shotSetNodeId !== shotSetNode.id || shot.mode !== shotSetNode.cameraShotSet.mode || !camera.isVisible) {
+      return "Multi-angle camera shot is not an active camera in the canvas snapshot.";
+    }
+    if (shot.order !== visibleCameraIds.indexOf(shot.shotId)) {
+      return "Multi-angle camera order does not match the canvas filmstrip.";
+    }
+    const expectedTransform = shot.mode === "plan" ? camera.plan : camera.orbit;
+    const receivedTransform = shot.mode === "plan" ? shot.plan : shot.orbit;
+    if (JSON.stringify(expectedTransform) !== JSON.stringify(receivedTransform)) {
+      return "Multi-angle camera coordinates changed before job submission. Refresh and try again.";
+    }
+  }
+  return null;
 }
 
 function isInlineImageUrl(imageUrl: string) {
@@ -369,6 +420,7 @@ export async function createProjectAiJob(params: {
   const outputCount = body.outputCount ?? 1;
   const canvasGraphContext = objectValue(body.canvasGraphContext);
   const imageGeneratorContext = objectValue(body.imageGeneratorContext);
+  const cameraShotSetContext = body.cameraShotSetContext;
   const maskInput = maskValue(body.mask);
   const clientSnapshot = snapshotValue(body.snapshot ?? body.canvasSnapshot);
   const simulation = normalizeSimulation(body.simulation);
@@ -392,6 +444,22 @@ export async function createProjectAiJob(params: {
 
   if (targetType === "image-generator" && !targetNodeId) {
     return { ok: false, response: badRequest("Image generator jobs require a targetNodeId.") };
+  }
+
+  if (cameraShotSetContext) {
+    const cameraTarget = objectValue(canvasGraphContext?.target);
+    if (targetType !== "image-generator" || !canvasGraphContext) {
+      return { ok: false, response: badRequest("Multi-angle generation requires an Image Generator target and source image.") };
+    }
+    if (outputCount !== 1) {
+      return { ok: false, response: badRequest("Multi-angle generation creates one image per visible camera. Set outputCount to 1.") };
+    }
+    if (
+      cameraShotSetContext.source.nodeId !== cameraTarget?.nodeId ||
+      cameraShotSetContext.shotSetNodeId !== cameraShotSetContext.shots[0]?.shotSetNodeId
+    ) {
+      return { ok: false, response: badRequest("Multi-angle camera context does not match its generation target.") };
+    }
   }
 
   if (requestedModel !== "auto" && requestedModel !== OPENAI_IMAGE_MODEL) {
@@ -456,6 +524,16 @@ export async function createProjectAiJob(params: {
   const snapshotValidationError = validateCanvasSnapshotDocument(mergedSnapshot);
   if (snapshotValidationError) {
     return { ok: false, response: badRequest(snapshotValidationError) };
+  }
+
+  if (cameraShotSetContext) {
+    const cameraShotSnapshotError = validateCameraShotSetContextAgainstSnapshot(
+      mergedSnapshot,
+      cameraShotSetContext,
+    );
+    if (cameraShotSnapshotError) {
+      return { ok: false, response: badRequest(cameraShotSnapshotError) };
+    }
   }
 
   const snapshotOwnershipError = await validateSnapshotAssetOwnership({
@@ -701,6 +779,7 @@ export async function createProjectAiJob(params: {
       aspectRatio,
       outputCount,
       simulationScenario: simulation?.scenario ?? null,
+      cameraShotSetContext,
     });
 
   const sanitizedCanvasGraphContext = canvasGraphContext
@@ -716,6 +795,14 @@ export async function createProjectAiJob(params: {
         ...imageGeneratorContext,
         imageReferences: sanitizedImageReferences,
         presetReferences: sanitizedPresetReferences,
+      }
+    : null;
+  const sanitizedCameraShotSetContext = cameraShotSetContext
+    ? {
+        ...cameraShotSetContext,
+        source: sanitizedTarget
+          ? { ...cameraShotSetContext.source, ...sanitizedTarget }
+          : cameraShotSetContext.source,
       }
     : null;
 
@@ -808,7 +895,7 @@ export async function createProjectAiJob(params: {
 
   const generationCreditCost =
     (jobType === "refine_concept" ? AI_CREDIT_COSTS.refineConcept : AI_CREDIT_COSTS.generateConcept) *
-    Math.max(1, outputCount);
+    Math.max(1, outputCount) * Math.max(1, sanitizedCameraShotSetContext?.shots.length ?? 1);
 
   const jobPayload = {
     executionMode,
@@ -837,6 +924,7 @@ export async function createProjectAiJob(params: {
     maskAssetId: resolvedMaskAssetId ?? null,
     canvasGraphContext: sanitizedCanvasGraphContext,
     imageGeneratorContext: sanitizedImageGeneratorContext,
+    cameraShotSetContext: sanitizedCameraShotSetContext,
   } as const;
 
   const rpcClient = adminSupabase as unknown as AiJobCheckpointRpcClient;

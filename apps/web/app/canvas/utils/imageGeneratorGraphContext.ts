@@ -2,6 +2,7 @@ import type {
   CanvasGenerationContext,
   CanvasGenerationImageReference,
   CanvasGenerationPresetReference,
+  CameraShotGenerationContext,
   ImageGeneratorGraphContext,
   ImageGeneratorTextReference,
 } from "@carver/shared";
@@ -25,6 +26,7 @@ type InboundEdge = {
   targetId: string;
   sourcePresetChildId?: string | null;
   sourcePortId?: string;
+  targetPortId?: string;
   createdAt?: string;
   role?: string;
 };
@@ -86,6 +88,54 @@ function getConnectedTextContent(node: CanvasNode) {
   }
 
   return "";
+}
+
+function buildCameraShotSetContext(params: {
+  node: Extract<CanvasNode, { kind: "camera-shot-set" }>;
+  nodes: CanvasNode[];
+  edges: InboundEdge[];
+  prompt: string;
+}): CameraShotGenerationContext | null {
+  const inputEdge = sortEdges(params.edges.filter((edge) => edge.targetId === params.node.id))[0];
+  const sourceNode = inputEdge ? params.nodes.find((node) => node.id === inputEdge.sourceId) : null;
+  if (!sourceNode || isCanvasTextNode(sourceNode) || isAssistantNode(sourceNode) || isCanvasCameraShotSetNode(sourceNode)) {
+    return null;
+  }
+
+  const imageUrl = sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
+  const assetId = resolveConnectedImageAssetId({
+    imageUrl,
+    sourceImageUrl: sourceNode.sourceImage?.url,
+    assetId: sourceNode.sourceImage?.assetId,
+  });
+  if (!imageUrl && !assetId) return null;
+
+  const shots = params.node.cameraShotSet.cameras
+    .filter((camera) => camera.isVisible)
+    .map((camera, order) => ({
+      shotSetNodeId: params.node.id,
+      shotId: camera.id,
+      shotName: camera.name,
+      order,
+      mode: params.node.cameraShotSet.mode,
+      ...(params.node.cameraShotSet.mode === "plan"
+        ? { plan: { ...camera.plan } }
+        : { orbit: { ...camera.orbit } }),
+    }));
+  if (shots.length === 0) return null;
+
+  return {
+    shotSetNodeId: params.node.id,
+    source: {
+      nodeId: sourceNode.id,
+      title: sourceNode.title,
+      imageUrl,
+      assetId,
+      role: "direct_edit_target",
+      prompt: params.prompt.trim() || null,
+    },
+    shots,
+  };
 }
 
 function appendPresetReferences(
@@ -165,6 +215,7 @@ export function buildImageGeneratorGraphContext(
   const seenImageKeys = new Set<string>();
   const seenPresetKeys = new Set<string>();
   const seenTextKeys = new Set<string>();
+  let cameraShotSet: CameraShotGenerationContext | null = null;
 
   for (const edge of getInboundEdgesForGenerator(generatorNodeId, edges)) {
     const sourceNodes = getCanvasEdgeSourceNodes(nodes, edge);
@@ -183,8 +234,20 @@ export function buildImageGeneratorGraphContext(
         nodeId: sourceNode.id,
         title: sourceNode.title,
         content,
-        sourceKind: isCanvasTextNode(sourceNode) ? "text" : "assistant",
+        sourceKind: isCanvasTextNode(sourceNode)
+          ? "text"
+          : isCanvasCameraShotSetNode(sourceNode)
+            ? "camera-shot-set"
+            : "assistant",
       });
+      if (isCanvasCameraShotSetNode(sourceNode) && !cameraShotSet) {
+        cameraShotSet = buildCameraShotSetContext({
+          node: sourceNode,
+          nodes,
+          edges,
+          prompt: generatorNode.imageGenerator.prompt,
+        });
+      }
       continue;
     }
 
@@ -254,7 +317,10 @@ export function buildImageGeneratorGraphContext(
     }
   }
 
-  const executionTarget = imageReferences[0] ?? null;
+  const executionTarget = cameraShotSet?.source ?? imageReferences[0] ?? null;
+  const executionImageReferences = cameraShotSet
+    ? imageReferences.filter((reference) => reference.assetId !== cameraShotSet.source.assetId && reference.nodeId !== cameraShotSet.source.nodeId)
+    : imageReferences;
   const executionContext = executionTarget
     ? {
         target: {
@@ -265,10 +331,10 @@ export function buildImageGeneratorGraphContext(
           role: "direct_edit_target",
           prompt: generatorNode.imageGenerator.prompt.trim() || null,
         },
-        imageReferences: imageReferences.slice(1),
+        imageReferences: executionImageReferences.filter((reference) => reference.nodeId !== executionTarget.nodeId),
         presetReferences,
         preserveRules: [],
-        referenceSummary: `Connected ${imageReferences.length} image reference(s), ${presetReferences.length} preset reference(s), and ${textReferences.length} text reference(s).`,
+        referenceSummary: `Connected ${executionImageReferences.length} image reference(s), ${presetReferences.length} preset reference(s), and ${textReferences.length} text reference(s).`,
         connectionSummary: buildConnectionSummary({ imageReferences, presetReferences, textReferences }),
       }
     : null;
@@ -280,6 +346,7 @@ export function buildImageGeneratorGraphContext(
       imageReferences,
       presetReferences,
       textReferences,
+      ...(cameraShotSet ? { cameraShotSet } : {}),
       connectionSummary: buildConnectionSummary({ imageReferences, presetReferences, textReferences }),
     },
     executionContext,

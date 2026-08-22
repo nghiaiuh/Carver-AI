@@ -48,6 +48,27 @@ const generator: CanvasNode = {
   },
 };
 
+const sourceImage: CanvasNode = {
+  id: "source-image",
+  kind: "image",
+  x: 0,
+  y: 0,
+  width: 240,
+  height: 180,
+  imageUrl: "/api/assets/11111111-1111-4111-8111-111111111111/content",
+  title: "Source garden",
+  prompt: null,
+  role: "layout",
+  inputPorts: [],
+  sourceImage: {
+    assetId: "11111111-1111-4111-8111-111111111111",
+    url: "/api/assets/11111111-1111-4111-8111-111111111111/content",
+    width: 240,
+    height: 180,
+    quality: "original",
+  },
+};
+
 test("multi-angles emits every ordered camera shot for downstream generation", () => {
   const prompt = getCameraShotSetPrompt(cameraPlan);
 
@@ -100,8 +121,14 @@ test("plan camera prompt includes camera origin, target, and roll", () => {
 test("image generator receives a connected camera plan as text context", () => {
   const context = buildImageGeneratorGraphContext(
     generator.id,
-    [cameraPlan, generator],
+    [sourceImage, cameraPlan, generator],
     [{
+      id: "source-to-camera",
+      sourceId: sourceImage.id,
+      targetId: cameraPlan.id,
+      targetPortId: "camera-shot-set-input-image",
+      sourcePortId: "image-output",
+    }, {
       id: "camera-to-generator",
       sourceId: cameraPlan.id,
       targetId: generator.id,
@@ -113,6 +140,10 @@ test("image generator receives a connected camera plan as text context", () => {
   assert.equal(context.generatorContext.textReferences.length, 1);
   assert.equal(context.generatorContext.textReferences[0]?.title, "Camera Shot Set #1");
   assert.match(context.generatorContext.textReferences[0]?.content ?? "", /MULTI-ANGLES/);
+  assert.equal(context.generatorContext.textReferences[0]?.sourceKind, "camera-shot-set");
+  assert.equal(context.generatorContext.cameraShotSet?.source.assetId, sourceImage.sourceImage?.assetId);
+  assert.equal(context.generatorContext.cameraShotSet?.shots.length, 2);
+  assert.equal(context.executionContext?.target.nodeId, sourceImage.id);
 });
 
 test("camera shot state equality ignores reconstructed but unchanged pointer updates", () => {

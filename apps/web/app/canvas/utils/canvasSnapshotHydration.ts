@@ -314,6 +314,17 @@ function sanitizeImageGeneratorOutput(value: unknown): CanvasImageGeneratorOutpu
     height: typeof source?.height === "number" ? source.height : null,
     mimeType: stringValue(source?.mimeType) ?? undefined,
     provider: stringValue(source?.provider) ?? undefined,
+    cameraShot: (() => {
+      const shot = objectValue(source?.cameraShot);
+      const mode = shot?.mode;
+      const shotSetNodeId = stringValue(shot?.shotSetNodeId);
+      const shotId = stringValue(shot?.shotId);
+      const shotName = stringValue(shot?.shotName);
+      if (!shotSetNodeId || !shotId || !shotName || (mode !== "plan" && mode !== "orbit") || typeof shot?.order !== "number") {
+        return undefined;
+      }
+      return { shotSetNodeId, shotId, shotName, order: shot.order, mode };
+    })(),
   };
 }
 

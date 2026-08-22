@@ -294,6 +294,13 @@ export type CanvasImageGeneratorOutput = {
   height: number | null;
   mimeType?: string;
   provider?: string;
+  cameraShot?: {
+    shotSetNodeId: string;
+    shotId: string;
+    shotName: string;
+    order: number;
+    mode: "plan" | "orbit";
+  };
 };
 
 export type CanvasAssistantState = {
