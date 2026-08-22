@@ -6,6 +6,7 @@ import type { OpenAiGeneratedImage } from "../providers/openai/generate-image";
 import type { PersistedGeneratedOutput } from "./asset-persistence-service";
 import {
   buildImageGeneratorPrompt,
+  buildCameraShotPrompt,
   executeGeneratedImageJob,
   getExactCenterCropDimensions,
   type PreparedGenerationState,
@@ -68,6 +69,79 @@ test("image generator prevents an unprompted list from being blended into one im
   assert.match(prompt, /No direct direction was entered/);
   assert.match(prompt, /choose one coherent option for this image/);
   assert.match(prompt, /do not blend contradictory options together/);
+});
+
+test("a multi-angle provider prompt contains one authorized camera shot only", () => {
+  const prompt = buildCameraShotPrompt("Render the koi garden.", {
+    shotSetNodeId: "camera-set-1",
+    shotId: "camera-2",
+    shotName: "Left corner",
+    order: 1,
+    mode: "orbit",
+    orbit: { rotate: -42, tilt: -18, distance: 7.5, lens: 28 },
+  });
+
+  assert.match(prompt, /Generate exactly shot 2: Left corner/);
+  assert.match(prompt, /azimuth -42 degrees/);
+  assert.match(prompt, /Change only camera viewpoint/);
+  assert.doesNotMatch(prompt, /Camera 01/);
+});
+
+test("multi-angle generation persists a camera-labelled output with n=1", async () => {
+  const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
+  const shot = {
+    shotSetNodeId: "camera-set-1",
+    shotId: "camera-1",
+    shotName: "Front",
+    order: 0,
+    mode: "orbit" as const,
+    orbit: { rotate: 0, tilt: 0, distance: 7.5, lens: 35 },
+  };
+  let providerCalls = 0;
+  const result = await executeGeneratedImageJob({
+    jobId: "job-camera-1",
+    projectId: "project-1",
+    userId: "user-1",
+    targetType: "image-generator",
+    executionMode: "image_edit",
+    outputCount: 1,
+    aspectRatio: "1:1",
+    cameraShotSetContext: {
+      shotSetNodeId: shot.shotSetNodeId,
+      source: { nodeId: "source", title: "Source", imageUrl: "", assetId: "asset-source", role: "direct_edit_target", prompt: null },
+      shots: [shot],
+    },
+  } as CarverAiJobPayload, {
+    editBrief: {} as CarverEditBrief,
+    compiledPromptMeta: null,
+    compiledPromptV2: null,
+    finalPrompt: "Camera prompt",
+    cameraShot: shot,
+  }, {
+    dependencies: {
+      findReusableGeneratedImageAsset: async () => null,
+      findReusableGeneratedImageAssets: async () => [],
+      resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
+      resolveGenerationReferenceImages: async () => [],
+      resolveGenerationMaskImage: async () => null,
+      generateImagesFromPrompt: async (params) => {
+        providerCalls += 1;
+        assert.equal(params.outputCount, 1);
+        return [{ buffer: imageBuffer, mimeType: "image/png", width: 1, height: 1, revisedPrompt: null, provider: "fixture" }];
+      },
+      persistGeneratedImageAsset: async (params) => ({
+        assetId: "asset-camera-1",
+        generatedImage: {
+          id: "asset-camera-1", assetId: "asset-camera-1", title: params.title, imageUrl: "", width: 1, height: 1,
+          prompt: params.prompt, mimeType: "image/png", provider: "fixture", cameraShot: params.cameraShot,
+        },
+      }),
+    },
+  });
+
+  assert.equal(providerCalls, 1);
+  assert.equal(result.jobResult.generatedImages[0]?.cameraShot?.shotId, shot.shotId);
+  assert.match(result.jobResult.generatedImages[0]?.title ?? "", /Camera 01 - Front/);
 });
 
 test("image generator worker persists every fake provider output without OpenAI, R2, or Supabase", async () => {

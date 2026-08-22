@@ -18,6 +18,7 @@ import type {
   CarverAiJobResult,
   CarverCompiledPromptMeta,
   CarverEditBrief,
+  CameraShotDirective,
   GenerationPromptResultV2,
 } from "@carver/shared";
 import {
@@ -30,6 +31,7 @@ import { buildGeneratedJobResult, buildPreparedJobResult } from "../mappers/buil
 import { generateImagesFromPrompt } from "../providers/openai/generate-image";
 import {
   findReusableGeneratedImageAsset,
+  findReusableGeneratedImageAssets,
   persistGeneratedImageAsset,
   type PersistedGeneratedOutput,
 } from "./asset-persistence-service";
@@ -58,6 +60,7 @@ export type PreparedGenerationState = {
   compiledPromptMeta: CarverCompiledPromptMeta | null;
   compiledPromptV2: GenerationPromptResultV2 | null;
   finalPrompt: string | null;
+  cameraShot?: CameraShotDirective | null;
 };
 
 export type PreparedGenerationJobResult = {
@@ -86,7 +89,10 @@ const toCanvasReferenceRole = (role: unknown): CanvasReferenceRole | null =>
     ? (role as CanvasReferenceRole)
     : null;
 
-const buildTrustedContextForJob = (job: CarverAiJobPayload): PromptEngineTrustedContext => {
+const buildTrustedContextForJob = (
+  job: CarverAiJobPayload,
+  cameraShot?: CameraShotDirective | null,
+): PromptEngineTrustedContext => {
   const target = job.canvasGraphContext?.target
     ? {
         contextId: job.canvasGraphContext.target.nodeId,
@@ -141,6 +147,7 @@ const buildTrustedContextForJob = (job: CarverAiJobPayload): PromptEngineTrusted
     explicitConstraints: {
       preserve: job.canvasGraphContext?.preserveRules ?? [],
     },
+    cameraShot: cameraShot ?? null,
   };
 };
 
@@ -172,6 +179,7 @@ const buildRequiredAssetIds = (job: CarverAiJobPayload) => {
 
 export type GenerationServiceDependencies = {
   findReusableGeneratedImageAsset: typeof findReusableGeneratedImageAsset;
+  findReusableGeneratedImageAssets: typeof findReusableGeneratedImageAssets;
   persistGeneratedImageAsset: typeof persistGeneratedImageAsset;
   resolveGenerationTargetImage: typeof resolveGenerationTargetImage;
   resolveGenerationReferenceImages: typeof resolveGenerationReferenceImages;
@@ -182,6 +190,7 @@ export type GenerationServiceDependencies = {
 
 const defaultGenerationServiceDependencies: GenerationServiceDependencies = {
   findReusableGeneratedImageAsset,
+  findReusableGeneratedImageAssets,
   persistGeneratedImageAsset,
   resolveGenerationTargetImage,
   resolveGenerationReferenceImages,
@@ -241,7 +250,9 @@ export async function cropGeneratedImageToAspectRatio(params: {
 
 export const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: string) => {
   const primaryDirection = basePrompt.trim();
-  const textReferences = job.imageGeneratorContext?.textReferences ?? [];
+  const textReferences = (job.imageGeneratorContext?.textReferences ?? []).filter(
+    (reference) => reference.sourceKind !== "camera-shot-set",
+  );
   if (textReferences.length === 0) {
     return primaryDirection;
   }
@@ -266,13 +277,49 @@ export const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: s
   ].join("\n");
 };
 
+export const buildCameraShotPrompt = (basePrompt: string, shot: CameraShotDirective) => {
+  const describeOrbitPosition = (rotate: number) => {
+    const angle = ((rotate + 180) % 360 + 360) % 360 - 180;
+    if (angle >= -22.5 && angle < 22.5) return "in front of the scene";
+    if (angle >= 22.5 && angle < 67.5) return "at the front-right corner of the scene";
+    if (angle >= 67.5 && angle < 112.5) return "on the right side of the scene";
+    if (angle >= 112.5 && angle < 157.5) return "at the rear-right corner of the scene";
+    if (angle <= -22.5 && angle > -67.5) return "at the front-left corner of the scene";
+    if (angle <= -67.5 && angle > -112.5) return "on the left side of the scene";
+    if (angle <= -112.5 && angle > -157.5) return "at the rear-left corner of the scene";
+    return "behind the scene";
+  };
+  const cameraLines = shot.mode === "plan" && shot.plan
+    ? [
+        `Generate exactly shot ${shot.order + 1}: ${shot.shotName}.`,
+        `Use the plan-surface camera at normalized position (${shot.plan.u.toFixed(2)}, ${shot.plan.v.toFixed(2)}) looking at (${shot.plan.targetU.toFixed(2)}, ${shot.plan.targetV.toFixed(2)}).`,
+        `Camera height ${shot.plan.height.toFixed(1)} m, lens ${shot.plan.lens} mm, pitch ${shot.plan.pitch} degrees, roll ${(shot.plan.roll ?? 0).toFixed(0)} degrees.`,
+      ]
+    : [
+        `Generate exactly shot ${shot.order + 1}: ${shot.shotName}.`,
+        `Use an orbit camera at azimuth ${shot.orbit?.rotate ?? 0} degrees, elevation ${shot.orbit?.tilt ?? 0} degrees, distance ${(shot.orbit?.distance ?? 0).toFixed(1)} m, and ${(shot.orbit?.lens ?? 35)} mm lens, aimed at scene center.`,
+        `This places the camera ${describeOrbitPosition(shot.orbit?.rotate ?? 0)}.`,
+      ];
+
+  return [
+    basePrompt.trim() || "Generate a controlled landscape concept from the connected source image.",
+    "",
+    "AUTHORIZED CAMERA SHOT",
+    ...cameraLines,
+    "Change only camera viewpoint, perspective, and framing. Preserve the site layout, object positions, scale, materials, and scene identity.",
+    "Do not mirror, rotate, relocate, or redesign the scene to imitate the requested viewpoint.",
+  ].join("\n");
+};
+
 export const prepareGenerationState = async (
   job: CarverAiJobPayload,
+  cameraShot?: CameraShotDirective | null,
 ): Promise<PreparedGenerationState> => {
-  const promptWithTextReferences =
+  const basePrompt =
     job.targetType === "image-generator"
       ? buildImageGeneratorPrompt(job, job.prompt)
       : job.prompt;
+  const promptWithTextReferences = cameraShot ? buildCameraShotPrompt(basePrompt, cameraShot) : basePrompt;
   const snapshotBrief = buildSnapshotAwareEditBrief(job);
   const editBrief = job.canvasGraphContext
     ? buildConnectedGenerationBrief(snapshotBrief, job.canvasGraphContext)
@@ -283,7 +330,7 @@ export const prepareGenerationState = async (
     ? await runGenerationStage("prompt_compile", () =>
         compileGenerationPromptV2({
           rawPrompt: promptWithTextReferences,
-          trustedContext: buildTrustedContextForJob(job),
+          trustedContext: buildTrustedContextForJob(job, cameraShot),
           requiredAssetIds: buildRequiredAssetIds(job),
           parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
         }),
@@ -295,6 +342,7 @@ export const prepareGenerationState = async (
     compiledPromptMeta: compiledPromptV2 ? mapGenerationResultToLegacyMeta(compiledPromptV2) : null,
     compiledPromptV2,
     finalPrompt: compiledPromptV2?.providerPrompt ?? null,
+    cameraShot: cameraShot ?? null,
   };
 };
 
@@ -320,18 +368,35 @@ export const executeGeneratedImageJob = async (
   if (!state.finalPrompt) {
     throw new Error("Image-generating jobs require a compiled prompt.");
   }
-  const finalPrompt = state.finalPrompt;
   const dependencies = { ...defaultGenerationServiceDependencies, ...options?.dependencies };
+  const cameraShots = job.cameraShotSetContext?.shots ?? [];
+  const isMultiAngleJob = cameraShots.length > 0;
 
-  const reusableOutput = await runGenerationStage("asset_persistence", () =>
-    dependencies.findReusableGeneratedImageAsset({
-      jobId: job.jobId,
-      projectId: job.projectId,
-      ownerId: job.userId,
-    }),
+  const reusableOutput = isMultiAngleJob
+    ? null
+    : await runGenerationStage("asset_persistence", () =>
+        dependencies.findReusableGeneratedImageAsset({
+          jobId: job.jobId,
+          projectId: job.projectId,
+          ownerId: job.userId,
+        }),
+      );
+  const reusableShotOutputs = isMultiAngleJob
+    ? await runGenerationStage("asset_persistence", () =>
+        dependencies.findReusableGeneratedImageAssets({
+          jobId: job.jobId,
+          projectId: job.projectId,
+          ownerId: job.userId,
+        }),
+      )
+    : [];
+  const reusableShotOutputIds = new Set(
+    reusableShotOutputs
+      .map((output) => output.generatedImage.cameraShot?.shotId)
+      .filter((shotId): shotId is string => Boolean(shotId)),
   );
-  let persistedOutputs: PersistedGeneratedOutput[] = [];
-  const requestedOutputCount = Math.min(Math.max(job.outputCount ?? 1, 1), 4);
+  let persistedOutputs: PersistedGeneratedOutput[] = reusableShotOutputs;
+  const requestedOutputCount = isMultiAngleJob ? 1 : Math.min(Math.max(job.outputCount ?? 1, 1), 4);
   const shouldPersistChatMessage = job.targetType !== "image-generator";
 
   if (reusableOutput && requestedOutputCount === 1) {
@@ -381,69 +446,105 @@ export const executeGeneratedImageJob = async (
         })
       : null;
 
-    const providerImages = job.simulation
-      ? await Promise.all(
-          Array.from({ length: requestedOutputCount }, () =>
-            generateSimulatedImage({
-              job,
-              prompt: finalPrompt,
-              currentAttempt: options?.currentAttempt ?? 1,
+    const generationBatches: Array<{
+      prompt: string;
+      cameraShot: CameraShotDirective | null;
+      images: Awaited<ReturnType<typeof dependencies.generateImagesFromPrompt>>;
+    }> = [];
+    const shotsToGenerate = isMultiAngleJob
+      ? cameraShots.filter((shot) => !reusableShotOutputIds.has(shot.shotId))
+      : [null];
+
+    for (const shot of shotsToGenerate) {
+      const shotState = shot && state.cameraShot?.shotId !== shot.shotId
+        ? await prepareGenerationState(job, shot)
+        : state;
+      if (!shotState.finalPrompt) {
+        throw new Error("Multi-angle shot is missing a compiled prompt.");
+      }
+      const images = job.simulation
+        ? await Promise.all(
+            Array.from({ length: requestedOutputCount }, () =>
+              generateSimulatedImage({
+                job,
+                prompt: shotState.finalPrompt!,
+                currentAttempt: options?.currentAttempt ?? 1,
+              }),
+            ),
+          )
+        : await runGenerationStage("provider_request", () =>
+            dependencies.generateImagesFromPrompt({
+              prompt: shotState.finalPrompt!,
+              mode: job.executionMode,
+              model: job.model && job.model !== "auto" ? job.model : undefined,
+              size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
+              outputCount: requestedOutputCount,
+              targetImage,
+              referenceImages,
+              maskImage,
             }),
-          ),
-        )
-      : await runGenerationStage("provider_request", () =>
-          dependencies.generateImagesFromPrompt({
-            prompt: finalPrompt,
-            mode: job.executionMode,
-            model: job.model && job.model !== "auto" ? job.model : undefined,
-            size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
-            outputCount: requestedOutputCount,
-            targetImage,
-            referenceImages,
-            maskImage,
+          );
+      generationBatches.push({ prompt: shotState.finalPrompt, cameraShot: shot, images });
+    }
+
+    let outputIndex = 0;
+    for (const batch of generationBatches) {
+      for (const providerImage of batch.images) {
+        const persistedOutputIndex = batch.cameraShot?.order ?? outputIndex;
+        logger.info("generation provider image received", {
+          jobId: job.jobId,
+          projectId: job.projectId,
+          outputIndex: persistedOutputIndex,
+          mimeType: providerImage.mimeType,
+          width: providerImage.width,
+          height: providerImage.height,
+          provider: providerImage.provider,
+        });
+
+        const normalizedImage = generatorAspectRatio
+          ? await runGenerationStage("output_normalization", () =>
+              cropGeneratedImageToAspectRatio({
+                buffer: providerImage.buffer,
+                mimeType: providerImage.mimeType,
+                ratio: generatorAspectRatio,
+              }),
+            )
+          : providerImage;
+
+        const persisted = await runGenerationStage("asset_persistence", () =>
+          dependencies.persistGeneratedImageAsset({
+            jobId: job.jobId,
+            projectId: job.projectId,
+            ownerId: job.userId,
+            prompt: providerImage.revisedPrompt ?? batch.prompt,
+            title: batch.cameraShot
+              ? `Camera ${String(batch.cameraShot.order + 1).padStart(2, "0")} - ${batch.cameraShot.shotName}`
+              : requestedOutputCount > 1
+                ? `Generated concept ${outputIndex + 1}`
+                : "Generated concept",
+            outputIndex: persistedOutputIndex,
+            cameraShot: batch.cameraShot
+              ? {
+                  shotSetNodeId: batch.cameraShot.shotSetNodeId,
+                  shotId: batch.cameraShot.shotId,
+                  shotName: batch.cameraShot.shotName,
+                  order: batch.cameraShot.order,
+                  mode: batch.cameraShot.mode,
+                }
+              : undefined,
+            buffer: normalizedImage.buffer,
+            mimeType: providerImage.mimeType,
+            width: normalizedImage.width,
+            height: normalizedImage.height,
+            provider: providerImage.provider,
           }),
         );
 
-    for (const [outputIndex, providerImage] of providerImages.entries()) {
-
-      logger.info("generation provider image received", {
-        jobId: job.jobId,
-        projectId: job.projectId,
-        executionMode: job.executionMode,
-        outputIndex,
-        mimeType: providerImage.mimeType,
-        width: providerImage.width,
-        height: providerImage.height,
-        provider: providerImage.provider,
-      });
-
-      const normalizedImage = generatorAspectRatio
-        ? await runGenerationStage("output_normalization", () =>
-            cropGeneratedImageToAspectRatio({
-              buffer: providerImage.buffer,
-              mimeType: providerImage.mimeType,
-              ratio: generatorAspectRatio,
-            }),
-          )
-        : providerImage;
-
-      const persisted = await runGenerationStage("asset_persistence", () =>
-        dependencies.persistGeneratedImageAsset({
-          jobId: job.jobId,
-          projectId: job.projectId,
-          ownerId: job.userId,
-          prompt: providerImage.revisedPrompt ?? finalPrompt,
-          title: requestedOutputCount > 1 ? `Generated concept ${outputIndex + 1}` : "Generated concept",
-          outputIndex,
-          buffer: normalizedImage.buffer,
-          mimeType: providerImage.mimeType,
-          width: normalizedImage.width,
-          height: normalizedImage.height,
-          provider: providerImage.provider,
-        }),
-      );
-
-      persistedOutputs.push(persisted);
+        persistedOutputs.push(persisted);
+        if (!batch.cameraShot) {
+          outputIndex += 1;
+        }
+      }
     }
 
     // Exercise the dangerous retry boundary without paying a provider: the
@@ -461,6 +562,14 @@ export const executeGeneratedImageJob = async (
 
   if (persistedOutputs.length === 0 || persistedOutputs.some((output) => !output.assetId)) {
     throw new Error("Generated image persistence did not return an asset id.");
+  }
+
+  if (isMultiAngleJob) {
+    persistedOutputs.sort(
+      (left, right) =>
+        (left.generatedImage.cameraShot?.order ?? Number.MAX_SAFE_INTEGER) -
+        (right.generatedImage.cameraShot?.order ?? Number.MAX_SAFE_INTEGER),
+    );
   }
 
   const assistantContent =

@@ -59,6 +59,7 @@ export type StaleRunningJob = {
 
 export function readPersistedGenerationOptions(payload: Record<string, unknown>) {
   const imageGeneratorContext = objectValue(payload.imageGeneratorContext);
+  const cameraShotSetContext = objectValue(payload.cameraShotSetContext);
   const targetType: CarverAiJobPayload["targetType"] =
     payload.targetType === "canvas-node"
       ? "canvas-node"
@@ -82,6 +83,13 @@ export function readPersistedGenerationOptions(payload: Record<string, unknown>)
       Array.isArray(imageGeneratorContext.presetReferences) &&
       Array.isArray(imageGeneratorContext.textReferences)
         ? (imageGeneratorContext as CreateAiJobRequest["imageGeneratorContext"])
+        : undefined,
+    cameraShotSetContext:
+      typeof cameraShotSetContext.shotSetNodeId === "string" &&
+      cameraShotSetContext.source &&
+      Array.isArray(cameraShotSetContext.shots) &&
+      cameraShotSetContext.shots.length > 0
+        ? (cameraShotSetContext as CreateAiJobRequest["cameraShotSetContext"])
         : undefined,
   };
 }
@@ -267,6 +275,7 @@ const loadForProcessing = async (
         ? (canvasGraphContext as CreateAiJobRequest["canvasGraphContext"])
         : undefined,
       imageGeneratorContext: generationOptions.imageGeneratorContext,
+      cameraShotSetContext: generationOptions.cameraShotSetContext,
       promptEngine: {
         contextRevision: snapshotVersion ?? snapshot.snapshotVersion,
         snapshotId:

@@ -15,7 +15,7 @@ export const handleGenerateConceptJob = async (
     currentAttempt?: number;
   },
 ): Promise<PreparedGenerationJobResult> => {
-  const preparedState = await prepareGenerationState(job);
+  const preparedState = await prepareGenerationState(job, job.cameraShotSetContext?.shots[0] ?? null);
 
   return executeGeneratedImageJob(job, preparedState, options);
 };

@@ -49,6 +49,75 @@ const generatedMetadata = (value: unknown) =>
     ? (value as Record<string, unknown>)
     : {};
 
+const cameraShotFromMetadata = (metadata: Record<string, unknown>): PersistedGeneratedImage["cameraShot"] => {
+  const value = generatedMetadata(metadata.cameraShot);
+  const mode = value.mode;
+  if (
+    typeof value.shotSetNodeId !== "string" ||
+    typeof value.shotId !== "string" ||
+    typeof value.shotName !== "string" ||
+    typeof value.order !== "number" ||
+    (mode !== "plan" && mode !== "orbit")
+  ) {
+    return undefined;
+  }
+  return {
+    shotSetNodeId: value.shotSetNodeId,
+    shotId: value.shotId,
+    shotName: value.shotName,
+    order: value.order,
+    mode,
+  };
+};
+
+const toPersistedGeneratedOutput = async (data: PersistedGeneratedAsset): Promise<PersistedGeneratedOutput | null> => {
+  if (!data.storage_path) return null;
+  const mimeType = imageMimeType(data.mime_type);
+  if (!mimeType || !data.width || !data.height) return null;
+  try {
+    await getR2ObjectBuffer(data.storage_path);
+  } catch {
+    return null;
+  }
+  const metadata = generatedMetadata(data.metadata);
+  const title = typeof metadata.title === "string" && metadata.title.trim() ? metadata.title : "Generated concept";
+  const prompt = typeof metadata.prompt === "string" ? metadata.prompt : "";
+  const provider = typeof metadata.provider === "string" && metadata.provider.trim() ? metadata.provider : "carver-worker";
+  return {
+    assetId: data.id,
+    generatedImage: {
+      id: data.id,
+      title,
+      imageUrl: "",
+      width: data.width,
+      height: data.height,
+      prompt,
+      assetId: data.id,
+      mimeType,
+      provider,
+      ...(cameraShotFromMetadata(metadata) ? { cameraShot: cameraShotFromMetadata(metadata) } : {}),
+    },
+  };
+};
+
+export const findReusableGeneratedImageAssets = async (params: {
+  jobId: string;
+  projectId: string;
+  ownerId: string;
+}): Promise<PersistedGeneratedOutput[]> => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("assets")
+    .select("id, storage_path, mime_type, width, height, metadata")
+    .eq("source_job_id", params.jobId)
+    .eq("project_id", params.projectId)
+    .eq("owner_id", params.ownerId)
+    .eq("kind", "generated");
+  if (error) throw error;
+  const resolved = await Promise.all((data ?? []).map((asset) => toPersistedGeneratedOutput(asset as PersistedGeneratedAsset)));
+  return resolved.filter((output): output is PersistedGeneratedOutput => output !== null);
+};
+
 /**
  * Provider calls are not transactional with R2 or Postgres. When an earlier
  * attempt persisted a deterministic output successfully but failed later in
@@ -74,45 +143,7 @@ export const findReusableGeneratedImageAsset = async (params: {
   if (error) {
     throw error;
   }
-  if (!data?.storage_path) {
-    return null;
-  }
-
-  const mimeType = imageMimeType(data.mime_type);
-  if (!mimeType || !data.width || !data.height) {
-    return null;
-  }
-
-  try {
-    // Verify R2 object existence before trusting metadata left by a partial write.
-    await getR2ObjectBuffer(data.storage_path);
-  } catch {
-    return null;
-  }
-
-  const metadata = generatedMetadata((data as PersistedGeneratedAsset).metadata);
-  const title = typeof metadata.title === "string" && metadata.title.trim()
-    ? metadata.title
-    : "Generated concept";
-  const prompt = typeof metadata.prompt === "string" ? metadata.prompt : "";
-  const provider = typeof metadata.provider === "string" && metadata.provider.trim()
-    ? metadata.provider
-    : "carver-worker";
-
-  return {
-    assetId: data.id,
-    generatedImage: {
-      id: data.id,
-      title,
-      imageUrl: "",
-      width: data.width,
-      height: data.height,
-      prompt,
-      assetId: data.id,
-      mimeType,
-      provider,
-    } satisfies PersistedGeneratedImage,
-  };
+  return data ? toPersistedGeneratedOutput(data as PersistedGeneratedAsset) : null;
 };
 
 export const persistGeneratedImageAsset = async (params: {
@@ -123,6 +154,7 @@ export const persistGeneratedImageAsset = async (params: {
   title: string;
   assetId?: string;
   outputIndex?: number;
+  cameraShot?: PersistedGeneratedImage["cameraShot"];
   buffer: Buffer;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
@@ -168,6 +200,7 @@ export const persistGeneratedImageAsset = async (params: {
         title: params.title,
         prompt: params.prompt,
         provider: params.provider,
+        ...(params.cameraShot ? { cameraShot: params.cameraShot } : {}),
       },
     });
   } catch (error) {
@@ -202,6 +235,7 @@ export const persistGeneratedImageAsset = async (params: {
     assetId: asset.id,
     mimeType: params.mimeType,
     provider: params.provider,
+    ...(params.cameraShot ? { cameraShot: params.cameraShot } : {}),
   };
 
   return {
