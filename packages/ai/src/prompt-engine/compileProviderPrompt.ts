@@ -1,5 +1,6 @@
 import type { CompiledPromptV2, GenerationPromptResultV2, PromptInterpreterMeta, PromptPlanV2 } from "@carver/shared";
 import { buildPlanHash, canonicalizeCompiledPrompt, canonicalizePromptPlan } from "./canonicalizePlan";
+import { buildChangeAnglePrompt, toChangeAngleOperation } from "./novelViewReconstruction";
 
 const describeOperation = (operation: PromptPlanV2["operations"][number]) => {
   switch (operation.type) {
@@ -27,6 +28,26 @@ const describeOperation = (operation: PromptPlanV2["operations"][number]) => {
 const renderSection = (title: string, lines: string[]) =>
   `${title}\n${lines.map((line) => `- ${line}`).join("\n")}`;
 
+const buildNovelViewAdditionalInstruction = (plan: PromptPlanV2) => {
+  const descriptions = Array.from(
+    new Set(
+      plan.constraints
+        .filter(
+          (constraint) =>
+            (constraint.source === "user_explicit" || constraint.source === "model_interpretation") &&
+            (constraint.type === "preserve_layout" || constraint.type === "forbid_addition") &&
+            !/\b(camera|perspective)\b/i.test(constraint.description),
+        )
+        .map((constraint) => constraint.description.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  return descriptions.length > 0
+    ? ["Preserve these additional user-requested constraints:", ...descriptions.map((value) => `- ${value}`)].join("\n")
+    : null;
+};
+
 const describeCameraShot = (shot: NonNullable<PromptPlanV2["cameraShot"]>) => {
   if (shot.mode === "plan" && shot.plan) {
     const plan = shot.plan;
@@ -46,6 +67,22 @@ const describeCameraShot = (shot: NonNullable<PromptPlanV2["cameraShot"]>) => {
 
 export const compileProviderPromptV2 = (plan: PromptPlanV2): string => {
   const canonicalPlan = canonicalizePromptPlan(plan);
+  const changeAngleOperation = canonicalPlan.cameraShot
+    ? toChangeAngleOperation({
+        shot: canonicalPlan.cameraShot,
+        targetId: canonicalPlan.target.value?.contextId ?? "scene-center",
+        targetName: canonicalPlan.target.value?.title,
+      })
+    : null;
+
+  if (changeAngleOperation) {
+    return buildChangeAnglePrompt({
+      shot: changeAngleOperation.shot,
+      sceneName: changeAngleOperation.scene.targetName,
+      additionalUserInstruction: buildNovelViewAdditionalInstruction(canonicalPlan),
+    });
+  }
+
   const sections = [
     renderSection("MAIN GOAL", [canonicalPlan.rawGoal]),
     renderSection(

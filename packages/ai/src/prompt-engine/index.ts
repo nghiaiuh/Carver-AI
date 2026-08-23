@@ -13,5 +13,6 @@ export * from "./fallback";
 export * from "./compare";
 export * from "./telemetry";
 export * from "./compat";
+export * from "./novelViewReconstruction";
 export type { EnhanceMode } from "./enhance-prompt/enhanceTypes";
 export * from "./generate";
