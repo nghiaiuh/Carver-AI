@@ -7,7 +7,9 @@
 
 import { buildConnectedGenerationBrief, buildSnapshotAwareEditBrief } from "@carver/ai";
 import {
+  buildNovelViewGenerationRequest,
   mapGenerationResultToLegacyMeta,
+  toChangeAngleOperation,
   type PromptEngineTrustedContext,
   type RequestedReferenceRole,
 } from "@carver/ai/prompt-engine";
@@ -20,6 +22,7 @@ import type {
   CarverEditBrief,
   CameraShotDirective,
   GenerationPromptResultV2,
+  ImageGenerationRequest,
 } from "@carver/shared";
 import {
   getImageGeneratorProviderSize,
@@ -44,6 +47,24 @@ import { runGenerationStage } from "../errors/generation-stage-error";
 const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
   jobType === "generate_concept" || jobType === "refine_concept";
+const isLocalPromptDebugEnabled = () =>
+  process.env.NODE_ENV !== "production" &&
+  process.env.CARVER_DEBUG_GENERATION_PROMPTS === "true";
+
+const logProviderDebugPrompt = (params: {
+  jobId: string;
+  cameraShot: CameraShotDirective | null;
+  prompt: string;
+}) => {
+  if (!isLocalPromptDebugEnabled()) return;
+
+  const shot = params.cameraShot
+    ? `shotId=${params.cameraShot.shotId} mode=${params.cameraShot.mode} order=${params.cameraShot.order}`
+    : "shot=none";
+  process.stdout.write(
+    `\n[carver:debug:image-provider:input jobId=${params.jobId} ${shot}]\n${params.prompt}\n[/carver:debug:image-provider:input]\n`,
+  );
+};
 
 const CANVAS_REFERENCE_ROLES: CanvasReferenceRole[] = [
   "direct_edit_target",
@@ -61,6 +82,7 @@ export type PreparedGenerationState = {
   compiledPromptV2: GenerationPromptResultV2 | null;
   finalPrompt: string | null;
   cameraShot?: CameraShotDirective | null;
+  novelViewRequest?: ImageGenerationRequest | null;
 };
 
 export type PreparedGenerationJobResult = {
@@ -277,49 +299,18 @@ export const buildImageGeneratorPrompt = (job: CarverAiJobPayload, basePrompt: s
   ].join("\n");
 };
 
-export const buildCameraShotPrompt = (basePrompt: string, shot: CameraShotDirective) => {
-  const describeOrbitPosition = (rotate: number) => {
-    const angle = ((rotate + 180) % 360 + 360) % 360 - 180;
-    if (angle >= -22.5 && angle < 22.5) return "in front of the scene";
-    if (angle >= 22.5 && angle < 67.5) return "at the front-right corner of the scene";
-    if (angle >= 67.5 && angle < 112.5) return "on the right side of the scene";
-    if (angle >= 112.5 && angle < 157.5) return "at the rear-right corner of the scene";
-    if (angle <= -22.5 && angle > -67.5) return "at the front-left corner of the scene";
-    if (angle <= -67.5 && angle > -112.5) return "on the left side of the scene";
-    if (angle <= -112.5 && angle > -157.5) return "at the rear-left corner of the scene";
-    return "behind the scene";
-  };
-  const cameraLines = shot.mode === "plan" && shot.plan
-    ? [
-        `Generate exactly shot ${shot.order + 1}: ${shot.shotName}.`,
-        `Use the plan-surface camera at normalized position (${shot.plan.u.toFixed(2)}, ${shot.plan.v.toFixed(2)}) looking at (${shot.plan.targetU.toFixed(2)}, ${shot.plan.targetV.toFixed(2)}).`,
-        `Camera height ${shot.plan.height.toFixed(1)} m, lens ${shot.plan.lens} mm, pitch ${shot.plan.pitch} degrees, roll ${(shot.plan.roll ?? 0).toFixed(0)} degrees.`,
-      ]
-    : [
-        `Generate exactly shot ${shot.order + 1}: ${shot.shotName}.`,
-        `Use an orbit camera at azimuth ${shot.orbit?.rotate ?? 0} degrees, elevation ${shot.orbit?.tilt ?? 0} degrees, distance ${(shot.orbit?.distance ?? 0).toFixed(1)} m, and ${(shot.orbit?.lens ?? 35)} mm lens, aimed at scene center.`,
-        `This places the camera ${describeOrbitPosition(shot.orbit?.rotate ?? 0)}.`,
-      ];
-
-  return [
-    basePrompt.trim() || "Generate a controlled landscape concept from the connected source image.",
-    "",
-    "AUTHORIZED CAMERA SHOT",
-    ...cameraLines,
-    "Change only camera viewpoint, perspective, and framing. Preserve the site layout, object positions, scale, materials, and scene identity.",
-    "Do not mirror, rotate, relocate, or redesign the scene to imitate the requested viewpoint.",
-  ].join("\n");
-};
-
 export const prepareGenerationState = async (
   job: CarverAiJobPayload,
   cameraShot?: CameraShotDirective | null,
 ): Promise<PreparedGenerationState> => {
+  if (cameraShot && job.executionMode !== "image_edit") {
+    throw new Error("Camera-shot generation requires image_edit execution mode.");
+  }
+
   const basePrompt =
     job.targetType === "image-generator"
       ? buildImageGeneratorPrompt(job, job.prompt)
       : job.prompt;
-  const promptWithTextReferences = cameraShot ? buildCameraShotPrompt(basePrompt, cameraShot) : basePrompt;
   const snapshotBrief = buildSnapshotAwareEditBrief(job);
   const editBrief = job.canvasGraphContext
     ? buildConnectedGenerationBrief(snapshotBrief, job.canvasGraphContext)
@@ -329,20 +320,40 @@ export const prepareGenerationState = async (
   const compiledPromptV2 = shouldCompilePrompt
     ? await runGenerationStage("prompt_compile", () =>
         compileGenerationPromptV2({
-          rawPrompt: promptWithTextReferences,
+          rawPrompt: basePrompt,
           trustedContext: buildTrustedContextForJob(job, cameraShot),
           requiredAssetIds: buildRequiredAssetIds(job),
           parentEngineRunId: job.promptEngine?.parentEngineRunId ?? null,
         }),
       )
     : null;
+  const changeAngleOperation = cameraShot && job.canvasGraphContext?.target
+    ? toChangeAngleOperation({
+        shot: cameraShot,
+        targetId: job.canvasGraphContext.target.nodeId,
+        targetName: job.canvasGraphContext.target.title,
+      })
+    : null;
+  const sourceImageId =
+    job.cameraShotSetContext?.source.assetId ??
+    job.canvasGraphContext?.target.assetId ??
+    job.cameraShotSetContext?.source.nodeId ??
+    job.canvasGraphContext?.target.nodeId;
+  const novelViewRequest = compiledPromptV2 && changeAngleOperation && sourceImageId
+    ? buildNovelViewGenerationRequest({
+        operation: changeAngleOperation,
+        sourceImageId,
+        prompt: compiledPromptV2.providerPrompt,
+      })
+    : null;
 
   return {
     editBrief,
     compiledPromptMeta: compiledPromptV2 ? mapGenerationResultToLegacyMeta(compiledPromptV2) : null,
     compiledPromptV2,
-    finalPrompt: compiledPromptV2?.providerPrompt ?? null,
+    finalPrompt: novelViewRequest?.prompt ?? compiledPromptV2?.providerPrompt ?? null,
     cameraShot: cameraShot ?? null,
+    novelViewRequest,
   };
 };
 
@@ -459,22 +470,33 @@ export const executeGeneratedImageJob = async (
       const shotState = shot && state.cameraShot?.shotId !== shot.shotId
         ? await prepareGenerationState(job, shot)
         : state;
-      if (!shotState.finalPrompt) {
+      if (shot?.mode === "orbit" && !shotState.novelViewRequest) {
+        throw new Error("Orbit camera generation is missing its structured novel-view prompt.");
+      }
+      const providerPrompt = shot?.mode === "orbit"
+        ? shotState.novelViewRequest!.prompt
+        : shotState.finalPrompt;
+      if (!providerPrompt) {
         throw new Error("Multi-angle shot is missing a compiled prompt.");
       }
+      logProviderDebugPrompt({
+        jobId: job.jobId,
+        cameraShot: shot,
+        prompt: providerPrompt,
+      });
       const images = job.simulation
         ? await Promise.all(
             Array.from({ length: requestedOutputCount }, () =>
               generateSimulatedImage({
                 job,
-                prompt: shotState.finalPrompt!,
+                prompt: providerPrompt,
                 currentAttempt: options?.currentAttempt ?? 1,
               }),
             ),
           )
         : await runGenerationStage("provider_request", () =>
             dependencies.generateImagesFromPrompt({
-              prompt: shotState.finalPrompt!,
+              prompt: providerPrompt,
               mode: job.executionMode,
               model: job.model && job.model !== "auto" ? job.model : undefined,
               size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
@@ -484,7 +506,7 @@ export const executeGeneratedImageJob = async (
               maskImage,
             }),
           );
-      generationBatches.push({ prompt: shotState.finalPrompt, cameraShot: shot, images });
+      generationBatches.push({ prompt: providerPrompt, cameraShot: shot, images });
     }
 
     let outputIndex = 0;
