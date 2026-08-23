@@ -15,6 +15,14 @@ import { PROMPT_INTERPRETATION_JSON_SCHEMA, validatePromptInterpreterResult } fr
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_PROMPT_ENGINE_MODEL = process.env.CARVER_PROMPT_ENGINE_MODEL ?? "gpt-5-mini";
+const isLocalPromptDebugEnabled = () =>
+  process.env.NODE_ENV !== "production" &&
+  process.env.CARVER_DEBUG_GENERATION_PROMPTS === "true";
+
+const logInterpreterDebugPrompt = (prompt: string) => {
+  if (!isLocalPromptDebugEnabled()) return;
+  process.stdout.write(`\n[carver:debug:prompt-interpreter:input]\n${prompt}\n[/carver:debug:prompt-interpreter:input]\n`);
+};
 
 type InterpreterTransportPayload = {
   output_text?: string;
@@ -112,6 +120,9 @@ const callPromptInterpreter = async (params: {
     });
   }
 
+  const interpreterPrompt = buildInterpreterPrompt(params);
+  logInterpreterDebugPrompt(interpreterPrompt);
+
   const response = await (params.transport ?? fetch)(OPENAI_RESPONSES_URL, {
     method: "POST",
     headers: {
@@ -126,7 +137,7 @@ const callPromptInterpreter = async (params: {
           content: [
             {
               type: "input_text",
-              text: buildInterpreterPrompt(params),
+              text: interpreterPrompt,
             },
           ],
         },
@@ -270,8 +281,31 @@ const buildPlanFromRuntime = async (params: {
 }> => {
   const engineRunId = randomUUID();
   const warnings: PromptWarning[] = [];
+  const isCameraOnlyGeneration =
+    params.purpose === "generation" &&
+    Boolean(params.trustedContext.cameraShot) &&
+    !params.rawPrompt.trim();
   const shouldUseModel = params.forceModel || params.useModel !== false;
-  const interpreterOutcome = shouldUseModel
+  const interpreterOutcome = isCameraOnlyGeneration
+    ? {
+        interpretation: {
+          executionMode: params.trustedContext.executionMode,
+          targetHint: params.trustedContext.target?.contextId ?? null,
+          operations: [],
+          references: [],
+          preserveRequests: [],
+          avoidRequests: [],
+          notes: ["camera-shot-only"],
+        } satisfies PromptInterpreterResult,
+        fallbackReason: null,
+        interpreter: {
+          model: null,
+          latencyMs: 0,
+          attemptCount: 0,
+          fallbackReason: null,
+        } satisfies PromptInterpreterMeta,
+      }
+    : shouldUseModel
     ? await interpretWithRetry({
         rawPrompt: params.rawPrompt,
         trustedContext: params.trustedContext,
