@@ -393,8 +393,8 @@ export default function CanvasWorkspace({ projectId }: { projectId?: string }) {
           <MultiAngleModal
             open={modals.showMultiAngleModal}
             onClose={() => actions.setShowMultiAngleModal(false)}
-            onGenerate={(shotIds) => {
-              actions.addCameraShotSetNode(shotIds);
+            onGenerate={(shotIds, mode) => {
+              actions.addCameraShotSetNode(shotIds, mode);
               actions.setShowMultiAngleModal(false);
             }}
           />

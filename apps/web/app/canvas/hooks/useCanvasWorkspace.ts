@@ -58,6 +58,7 @@ import {
   type PresetGroupCategory,
   type CanvasContextGroupKind,
   type CanvasCameraShotPreset,
+  type CanvasMultiAnglesMode,
   type CanvasCameraShotSetState,
   inferObjectTypeFromTag,
 } from "../types/canvas";
@@ -2751,7 +2752,10 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
     );
   };
 
-  const addCameraShotSetNode = (selectedShotIds: CanvasCameraShotPreset[] = ["eye-level"]) => {
+  const addCameraShotSetNode = (
+    selectedShotIds: CanvasCameraShotPreset[] = ["eye-level"],
+    mode: CanvasMultiAnglesMode = "orbit",
+  ) => {
     const selectedNode =
       selectedItem.type === "node" || selectedItem.type === "image"
         ? nodes.find((node) => node.id === selectedItem.id)
@@ -2774,7 +2778,7 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
         prompt: null,
         role: "reference",
         inputPorts: getCameraShotSetInputPorts(),
-        cameraShotSet: createCameraShotSet(selectedShotIds),
+        cameraShotSet: createCameraShotSet(selectedShotIds, mode),
       },
     ]);
     setSelectedItem({ type: "node", id });
