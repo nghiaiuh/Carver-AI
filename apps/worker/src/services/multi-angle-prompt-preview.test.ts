@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compileProviderPromptV2 } from "@carver/ai/prompt-engine";
 import type { CameraShotDirective, PromptPlanV2 } from "@carver/shared";
-import { buildCameraShotPrompt } from "./generation-service";
 
 const baseDirection = "Render a contemporary tropical courtyard with a reflective pond, pale limestone paving, and layered planting.";
 
@@ -24,7 +23,7 @@ const buildPreviewPlan = (): PromptPlanV2 => ({
   schemaVersion: 2,
   purpose: "generation",
   executionMode: "image_edit",
-  rawGoal: buildCameraShotPrompt(baseDirection, shot),
+  rawGoal: baseDirection,
   cameraShot: shot,
   operations: [],
   target: {
@@ -62,14 +61,17 @@ const buildPreviewPlan = (): PromptPlanV2 => ({
   degraded: false,
 });
 
-test("multi-angle preview renders a single provider-ready camera prompt", () => {
+test("multi-angle preview renders a semantic novel-view reconstruction prompt", () => {
   const providerPrompt = compileProviderPromptV2(buildPreviewPlan());
 
-  assert.match(providerPrompt, /Generate exactly shot 2: Left corner/);
-  assert.match(providerPrompt, /azimuth -42 degrees/);
-  assert.match(providerPrompt, /AUTHORIZED CAMERA SHOT/);
-  assert.match(providerPrompt, /apply_camera_view/);
+  assert.match(providerPrompt, /VIEWPOINT RECONSTRUCTION/);
+  assert.match(providerPrompt, /front-left three-quarter view/);
+  assert.match(providerPrompt, /azimuth -42°/);
+  assert.match(providerPrompt, /slightly low-angle view/);
   assert.doesNotMatch(providerPrompt, /Camera 01/);
+  assert.doesNotMatch(providerPrompt, /Left corner/);
+  assert.doesNotMatch(providerPrompt, /AUTHORIZED CAMERA SHOT/);
+  assert.doesNotMatch(providerPrompt, /Generate exactly shot/);
 
   if (process.env.CARVER_PRINT_MULTI_ANGLE_PROMPT === "true") {
     process.stdout.write(`\n--- Multi-angle provider prompt preview ---\n${providerPrompt}\n--- End preview ---\n`);
