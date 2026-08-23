@@ -90,6 +90,27 @@ function getConnectedTextContent(node: CanvasNode) {
   return "";
 }
 
+function resolveGeneratedNodeOutput(sourceNode: CanvasNode, nodes: CanvasNode[]) {
+  const generatorNode = isCanvasImageGeneratorNode(sourceNode)
+    ? sourceNode
+    : isCanvasImageOutputGalleryNode(sourceNode)
+      ? nodes.find(
+          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
+            candidate.id === sourceNode.imageOutputGallery.generatorNodeId &&
+            isCanvasImageGeneratorNode(candidate),
+        )
+      : null;
+  if (!generatorNode) return null;
+
+  const selectedAssetId = isCanvasImageOutputGalleryNode(sourceNode)
+    ? sourceNode.imageOutputGallery.selectedOutputAssetId
+    : generatorNode.imageGenerator.selectedOutputAssetId;
+
+  return generatorNode.imageGenerator.outputs.find((output) => output.assetId === selectedAssetId)
+    ?? generatorNode.imageGenerator.outputs[0]
+    ?? null;
+}
+
 function buildCameraShotSetContext(params: {
   node: Extract<CanvasNode, { kind: "camera-shot-set" }>;
   nodes: CanvasNode[];
@@ -102,11 +123,12 @@ function buildCameraShotSetContext(params: {
     return null;
   }
 
-  const imageUrl = sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
+  const generatedOutput = resolveGeneratedNodeOutput(sourceNode, params.nodes);
+  const imageUrl = generatedOutput?.imageUrl || sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
   const assetId = resolveConnectedImageAssetId({
     imageUrl,
     sourceImageUrl: sourceNode.sourceImage?.url,
-    assetId: sourceNode.sourceImage?.assetId,
+    assetId: generatedOutput?.assetId ?? sourceNode.sourceImage?.assetId,
   });
   if (!imageUrl && !assetId) return null;
 
@@ -273,22 +295,7 @@ export function buildImageGeneratorGraphContext(
       continue;
     }
 
-    const galleryGeneratorNodeId = isCanvasImageOutputGalleryNode(sourceNode)
-      ? sourceNode.imageOutputGallery.generatorNodeId
-      : null;
-    const gallerySelectedOutputAssetId = isCanvasImageOutputGalleryNode(sourceNode)
-      ? sourceNode.imageOutputGallery.selectedOutputAssetId
-      : undefined;
-    const galleryGenerator = galleryGeneratorNodeId
-      ? nodes.find(
-          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
-            candidate.id === galleryGeneratorNodeId &&
-            isCanvasImageGeneratorNode(candidate),
-        )
-      : null;
-    const galleryOutput = galleryGenerator?.imageGenerator.outputs.find(
-      (output) => output.assetId === gallerySelectedOutputAssetId,
-    ) ?? galleryGenerator?.imageGenerator.outputs[0];
+    const galleryOutput = resolveGeneratedNodeOutput(sourceNode, nodes);
 
     const key = `${sourceNode.id}:${edge.sourcePresetChildId ?? "node"}:${edge.sourcePortId ?? "image"}`;
     if (seenImageKeys.has(key)) {
