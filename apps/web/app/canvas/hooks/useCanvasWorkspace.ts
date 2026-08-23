@@ -3002,6 +3002,16 @@ export function useCanvasWorkspace(params: { projectId?: string } = {}) {
 
     const prompt = generatorNode.imageGenerator.prompt.trim();
     const hasTextContext = graphContext.generatorContext.textReferences.length > 0;
+    const hasCameraShotReference = graphContext.generatorContext.textReferences.some(
+      (reference) => reference.sourceKind === "camera-shot-set",
+    );
+    if (hasCameraShotReference && !graphContext.generatorContext.cameraShotSet) {
+      updateImageGeneratorNode(nodeId, {
+        status: "error",
+        errorMessage: "Multi-Angles needs one connected source image with an available asset before generation.",
+      });
+      return;
+    }
     if (!prompt && !hasTextContext) {
       updateImageGeneratorNode(nodeId, {
         status: "error",
