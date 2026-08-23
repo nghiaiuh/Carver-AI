@@ -5,6 +5,7 @@ import {
   createSafeLogger,
   coerceCanvasSnapshotDocument,
   formatZodError,
+  NOVEL_VIEW_PROMPT_COMPILER_VERSION,
   OPENAI_IMAGE_MODEL,
 } from "@carver/shared";
 import type {
@@ -204,6 +205,7 @@ const buildIdempotencyKey = (params: {
   outputCount?: number | null;
   simulationScenario?: string | null;
   cameraShotSetContext?: unknown;
+  cameraPromptCompilerVersion?: string | null;
 }) =>
   createHash("sha256")
     .update(
@@ -221,6 +223,7 @@ const buildIdempotencyKey = (params: {
         outputCount: params.outputCount ?? 1,
         simulationScenario: params.simulationScenario ?? null,
         cameraShotSetContext: params.cameraShotSetContext ?? null,
+        cameraPromptCompilerVersion: params.cameraPromptCompilerVersion ?? null,
       }),
     )
     .digest("hex")
@@ -568,6 +571,10 @@ export async function createProjectAiJob(params: {
         ? "image_edit"
         : "text_to_image");
 
+  if (cameraShotSetContext && executionMode !== "image_edit") {
+    return { ok: false, response: badRequest("Multi-angle generation requires image_edit execution mode.") };
+  }
+
   if (executionMode !== "text_to_image" && !normalizedTarget) {
     return { ok: false, response: badRequest("Image edit jobs require a target image.") };
   }
@@ -780,6 +787,9 @@ export async function createProjectAiJob(params: {
       outputCount,
       simulationScenario: simulation?.scenario ?? null,
       cameraShotSetContext,
+      cameraPromptCompilerVersion: cameraShotSetContext
+        ? NOVEL_VIEW_PROMPT_COMPILER_VERSION
+        : null,
     });
 
   const sanitizedCanvasGraphContext = canvasGraphContext
@@ -925,6 +935,9 @@ export async function createProjectAiJob(params: {
     canvasGraphContext: sanitizedCanvasGraphContext,
     imageGeneratorContext: sanitizedImageGeneratorContext,
     cameraShotSetContext: sanitizedCameraShotSetContext,
+    cameraPromptCompilerVersion: sanitizedCameraShotSetContext
+      ? NOVEL_VIEW_PROMPT_COMPILER_VERSION
+      : null,
   } as const;
 
   const rpcClient = adminSupabase as unknown as AiJobCheckpointRpcClient;
