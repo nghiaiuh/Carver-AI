@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TEST_PNG_BASE64 } from "@carver/shared/testing/openaiTransport";
-import type { CarverAiJobPayload, CarverEditBrief, PersistedGeneratedImage } from "@carver/shared";
+import {
+  createEmptyCanvasSnapshotDocument,
+  type CarverAiJobPayload,
+  type CarverEditBrief,
+  type PersistedGeneratedImage,
+} from "@carver/shared";
+import { buildNovelViewGenerationRequest, toChangeAngleOperation } from "@carver/ai/prompt-engine";
 import type { OpenAiGeneratedImage } from "../providers/openai/generate-image";
 import type { PersistedGeneratedOutput } from "./asset-persistence-service";
 import {
   buildImageGeneratorPrompt,
-  buildCameraShotPrompt,
   executeGeneratedImageJob,
   getExactCenterCropDimensions,
+  prepareGenerationState,
   type PreparedGenerationState,
 } from "./generation-service";
 
@@ -71,20 +77,137 @@ test("image generator prevents an unprompted list from being blended into one im
   assert.match(prompt, /do not blend contradictory options together/);
 });
 
-test("a multi-angle provider prompt contains one authorized camera shot only", () => {
-  const prompt = buildCameraShotPrompt("Render the koi garden.", {
+test("camera-shot generation rejects any execution mode other than image_edit", async () => {
+  await assert.rejects(
+    prepareGenerationState(
+      {
+        jobType: "generate_concept",
+        executionMode: "text_to_image",
+      } as CarverAiJobPayload,
+      {
+        shotSetNodeId: "camera-set-1",
+        shotId: "shot-01",
+        shotName: "Camera 01",
+        order: 0,
+        mode: "orbit",
+        orbit: { rotate: -42, tilt: 0, distance: 7.5, lens: 35 },
+      },
+    ),
+    /requires image_edit execution mode/,
+  );
+});
+
+test("orbit prompt reaches the image provider prompt field", async () => {
+  const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
+  const shot = {
     shotSetNodeId: "camera-set-1",
-    shotId: "camera-2",
-    shotName: "Left corner",
-    order: 1,
-    mode: "orbit",
-    orbit: { rotate: -42, tilt: -18, distance: 7.5, lens: 28 },
+    shotId: "shot-01",
+    shotName: "Camera 01",
+    order: 0,
+    mode: "orbit" as const,
+    orbit: { rotate: -41.96062127060776, tilt: -0.06290910766336777, distance: 7.5, lens: 35 },
+  };
+  const source = {
+    nodeId: "source-image",
+    title: "Existing courtyard",
+    imageUrl: "",
+    assetId: "asset-source",
+    role: "direct_edit_target",
+    prompt: null,
+  };
+  const job: CarverAiJobPayload = {
+    jobId: "job-orbit-prompt",
+    projectId: "project-1",
+    userId: "user-1",
+    jobType: "generate_concept",
+    executionMode: "image_edit",
+    targetType: "image-generator",
+    prompt: "",
+    promptMode: "auto",
+    inputSnapshotId: null,
+    snapshot: createEmptyCanvasSnapshotDocument(),
+    referenceAssetIds: [],
+    inputAssetIds: ["asset-source"],
+    outputCount: 1,
+    canvasGraphContext: {
+      target: source,
+      imageReferences: [],
+      presetReferences: [],
+      preserveRules: [],
+      referenceSummary: "Camera source image.",
+      connectionSummary: "Orbit camera connected.",
+    },
+    imageGeneratorContext: {
+      nodeId: "generator-1",
+      nodeTitle: "Image Generator",
+      imageReferences: [],
+      presetReferences: [],
+      textReferences: [{
+        nodeId: shot.shotSetNodeId,
+        title: "Multi-Angles",
+        content: "Application camera metadata",
+        sourceKind: "camera-shot-set",
+      }],
+      cameraShotSet: {
+        shotSetNodeId: shot.shotSetNodeId,
+        source,
+        shots: [shot],
+      },
+      connectionSummary: "Orbit camera connected.",
+    },
+    cameraShotSetContext: {
+      shotSetNodeId: shot.shotSetNodeId,
+      source,
+      shots: [shot],
+    },
+  };
+  const state = await prepareGenerationState(job, shot);
+
+  assert.ok(state.novelViewRequest);
+  assert.match(state.finalPrompt ?? "", /front-left three-quarter view/);
+  assert.match(state.finalPrompt ?? "", /azimuth -42°/);
+  assert.doesNotMatch(state.finalPrompt ?? "", /Camera 01/);
+
+  let providerPrompt = "";
+  await executeGeneratedImageJob(job, state, {
+    dependencies: {
+      findReusableGeneratedImageAsset: async () => null,
+      findReusableGeneratedImageAssets: async () => [],
+      resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
+      resolveGenerationReferenceImages: async () => [],
+      resolveGenerationMaskImage: async () => null,
+      generateImagesFromPrompt: async (params) => {
+        providerPrompt = params.prompt;
+        return [{
+          buffer: imageBuffer,
+          mimeType: "image/png",
+          width: 1,
+          height: 1,
+          revisedPrompt: null,
+          provider: "fixture",
+        }];
+      },
+      persistGeneratedImageAsset: async (params) => ({
+        assetId: "asset-output",
+        generatedImage: {
+          id: "asset-output",
+          assetId: "asset-output",
+          title: params.title,
+          imageUrl: "",
+          width: 1,
+          height: 1,
+          prompt: params.prompt,
+          mimeType: "image/png",
+          provider: "fixture",
+          cameraShot: params.cameraShot,
+        },
+      }),
+    },
   });
 
-  assert.match(prompt, /Generate exactly shot 2: Left corner/);
-  assert.match(prompt, /azimuth -42 degrees/);
-  assert.match(prompt, /Change only camera viewpoint/);
-  assert.doesNotMatch(prompt, /Camera 01/);
+  assert.equal(providerPrompt, state.novelViewRequest.prompt);
+  assert.match(providerPrompt, /VIEWPOINT RECONSTRUCTION/);
+  assert.match(providerPrompt, /azimuth -42°/);
 });
 
 test("multi-angle generation persists a camera-labelled output with n=1", async () => {
@@ -97,6 +220,17 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
     mode: "orbit" as const,
     orbit: { rotate: 0, tilt: 0, distance: 7.5, lens: 35 },
   };
+  const operation = toChangeAngleOperation({
+    shot,
+    targetId: "source",
+    targetName: "Source",
+  });
+  assert.ok(operation);
+  const novelViewRequest = buildNovelViewGenerationRequest({
+    operation,
+    sourceImageId: "asset-source",
+    prompt: "Camera prompt",
+  });
   let providerCalls = 0;
   const result = await executeGeneratedImageJob({
     jobId: "job-camera-1",
@@ -117,6 +251,7 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
     compiledPromptV2: null,
     finalPrompt: "Camera prompt",
     cameraShot: shot,
+    novelViewRequest,
   }, {
     dependencies: {
       findReusableGeneratedImageAsset: async () => null,
