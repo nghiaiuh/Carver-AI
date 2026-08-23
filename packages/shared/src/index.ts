@@ -13,6 +13,7 @@ export * from "./api-schemas";
 export * from "./assistant-output";
 export * from "./constants";
 export * from "./image-generator";
+export * from "./novel-view";
 export type { OpenAIHttpTransport } from "./openai-transport";
 export * from "./safe-logger";
 export * from "./operational-alert";
