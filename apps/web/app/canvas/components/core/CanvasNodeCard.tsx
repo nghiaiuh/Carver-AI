@@ -39,6 +39,7 @@ import type {
   CanvasEdge,
   CanvasImageGeneratorNode,
   CanvasImageOutputGalleryNode,
+  CanvasCameraShotSetState,
   CanvasNode,
   CanvasTextNode,
   EditorTool,
@@ -227,6 +228,7 @@ type ConnectedGeneratorCameraShotSet = {
   title: string;
   mode: "plan" | "orbit";
   shotNames: string[];
+  cameraShotSet: CanvasCameraShotSetState;
 };
 
 function sortInboundCanvasEdges(a: CanvasEdge, b: CanvasEdge) {
@@ -635,6 +637,10 @@ function ImageGeneratorNodeSurface({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [openMenu, setOpenMenu] = useState<"model" | "aspect" | "settings" | "references" | null>(null);
+  const [cameraPlanEditor, setCameraPlanEditor] = useState<{
+    mode: "plan" | "orbit";
+    selectedCameraIds: string[];
+  } | null>(null);
   const [useSimulation, setUseSimulation] = useState(false);
   const isDevelopment = process.env.NODE_ENV === "development";
 
@@ -726,6 +732,7 @@ function ImageGeneratorNodeSurface({
               title: sourceNode.title,
               mode: sourceNode.cameraShotSet.mode,
               shotNames,
+              cameraShotSet: sourceNode.cameraShotSet,
             });
           }
           return;
@@ -790,6 +797,10 @@ function ImageGeneratorNodeSurface({
     0,
   );
   const hasCameraShotContext = connectedCameraShotCount > 0;
+  const editableCameraShotSet = connectedReferences.cameraShotSets[0] ?? null;
+  const cameraPlanSummary = connectedReferences.cameraShotSets
+    .map((cameraShotSet) => `${cameraShotSet.mode === "plan" ? "Plan Surface" : "Orbit"}: ${cameraShotSet.shotNames.join(", ")}`)
+    .join(" | ");
   const hasPromptInput =
     generator.prompt.trim().length > 0 ||
     connectedReferences.textReferences.length > 0 ||
@@ -842,12 +853,14 @@ function ImageGeneratorNodeSurface({
     const handlePointerDown = (event: PointerEvent) => {
       if (!surfaceRef.current?.contains(event.target as Node)) {
         setOpenMenu(null);
+        setCameraPlanEditor(null);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpenMenu(null);
+        setCameraPlanEditor(null);
       }
     };
 
@@ -1030,18 +1043,113 @@ function ImageGeneratorNodeSurface({
           transition={{ duration: showInteractiveChrome ? 0.21 : 0.18, ease: hoverMotionEase }}
           className="absolute bottom-[72px] left-4 right-4 z-20"
         >
-          {hasCameraShotContext ? (
-            <div
-              className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-1 text-[10px] font-semibold text-[var(--canvas-theme-connection-text)] shadow-[0_6px_14px_rgba(0,0,0,0.14)]"
-              title={connectedReferences.cameraShotSets
-                .map((cameraShotSet) => `${cameraShotSet.title}: ${cameraShotSet.shotNames.join(", ")}`)
-                .join(" | ")}
+          {hasCameraShotContext && editableCameraShotSet ? (
+            <button
+              type="button"
+              className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-1 text-left text-[10px] font-semibold text-[var(--canvas-theme-connection-text)] shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-selection)]"
+              title="Edit connected camera plan"
+              onClick={() => setCameraPlanEditor({
+                mode: editableCameraShotSet.mode,
+                selectedCameraIds: editableCameraShotSet.cameraShotSet.cameras
+                  .filter((camera) => camera.isVisible)
+                  .map((camera) => camera.id),
+              })}
             >
               <Camera className="h-3 w-3 shrink-0" strokeWidth={2.2} />
-              <span className="truncate">Camera plan connected</span>
-              <span className="shrink-0 opacity-80">{connectedCameraShotCount} shots</span>
-            </div>
+              <span className="truncate">{cameraPlanSummary}</span>
+            </button>
           ) : null}
+          <AnimatePresence>
+            {cameraPlanEditor && editableCameraShotSet ? (
+              <motion.div
+                initial={{ opacity: 0, y: 5, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute bottom-[30px] left-0 z-30 w-[min(100%,280px)] rounded-2xl border border-white/10 bg-black/52 p-2.5 text-white shadow-[0_16px_36px_rgba(0,0,0,0.26)] backdrop-blur-xl"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/64">Generate cameras</span>
+                  <button
+                    type="button"
+                    onClick={() => setCameraPlanEditor(null)}
+                    className="text-[10px] font-medium text-white/60 transition hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  {([
+                    { value: "orbit", label: "Orbit" },
+                    { value: "plan", label: "Plan Surface" },
+                  ] as const).map((option) => {
+                    const selected = cameraPlanEditor.mode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setCameraPlanEditor((current) => current ? { ...current, mode: option.value } : current)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${selected ? "bg-[var(--canvas-theme-selection)] text-white" : "bg-white/10 text-white/68 hover:bg-white/16"}`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {editableCameraShotSet.cameraShotSet.cameras.map((camera) => {
+                    const selected = cameraPlanEditor.selectedCameraIds.includes(camera.id);
+                    return (
+                      <button
+                        key={camera.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setCameraPlanEditor((current) => {
+                          if (!current) return current;
+                          return selected
+                            ? current.selectedCameraIds.length > 1
+                              ? { ...current, selectedCameraIds: current.selectedCameraIds.filter((id) => id !== camera.id) }
+                              : current
+                            : { ...current, selectedCameraIds: [...current.selectedCameraIds, camera.id] };
+                        })}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${selected ? "bg-white text-[#1A1A1A]" : "bg-white/10 text-white/62 hover:bg-white/16"}`}
+                      >
+                        <Camera className="h-2.5 w-2.5" strokeWidth={2.2} />
+                        {camera.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const selectedCameraIdSet = new Set(cameraPlanEditor.selectedCameraIds);
+                    onUpdateNode(editableCameraShotSet.sourceNodeId, (current) =>
+                      isCanvasCameraShotSetNode(current)
+                        ? {
+                            ...current,
+                            cameraShotSet: {
+                              ...current.cameraShotSet,
+                              mode: cameraPlanEditor.mode,
+                              cameras: current.cameraShotSet.cameras.map((camera) => ({
+                                ...camera,
+                                isVisible: selectedCameraIdSet.has(camera.id),
+                              })),
+                            },
+                          }
+                        : current,
+                    );
+                    setCameraPlanEditor(null);
+                  }}
+                  className="mt-2 inline-flex h-6 items-center gap-1 rounded-full bg-[var(--canvas-theme-active)] px-2.5 text-[10px] font-semibold text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
+                >
+                  <Check className="h-3 w-3" strokeWidth={2.3} />
+                  Done
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
           <textarea
             ref={textareaRef}
             value={generator.prompt}
