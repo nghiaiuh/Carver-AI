@@ -98,6 +98,15 @@ Context and camera nodes:
   structured camera-shot context for Image Generator. Image Generator binds
   the shot set's connected source image, compiles one prompt per visible shot,
   and fans out one image request per shot while preserving layout/object locks.
+  Orbit shots use a deterministic camera semantic compiler: raw rotate/tilt/
+  distance/lens state remains structured metadata, while the provider prompt
+  describes a controlled novel-view reconstruction in semantic viewpoint terms.
+  Camera instructions bypass the language Prompt Interpreter and are combined
+  later by the trusted generation compiler. Shot names and reconstruction-risk
+  labels remain application metadata instead of provider prose. Multi-Angles
+  resolves a connected Image Generator or output-gallery source through its
+  selected stable output asset; failure to resolve that source blocks the run
+  instead of silently falling back to ordinary text-to-image generation.
 
 ## 4. Preset system: current mental model
 
