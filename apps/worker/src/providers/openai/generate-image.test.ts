@@ -89,6 +89,7 @@ test("image edit request carries target, references, mask, and output count in m
 
   const body = fake.requests[0]?.init.body;
   assert.ok(body instanceof FormData);
+  assert.equal(body.get("prompt"), "Add autumn planting.");
   assert.equal(body.get("n"), "2");
   assert.equal(body.getAll("image[]").length, 2);
   assert.ok(body.get("mask"));
