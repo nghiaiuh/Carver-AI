@@ -102,3 +102,91 @@ test("prompt interpreter provider failures degrade safely without exposing the r
   assert.doesNotMatch(result.interpreter.fallbackReason ?? "", /provider private detail/);
   assert.ok(result.warnings.some((warning) => warning.code === "INTERPRETER_FALLBACK"));
 });
+
+test("camera metadata bypasses the language interpreter and is compiled afterward", async () => {
+  const fake = createQueuedOpenAITransport([
+    interpreterResponse({
+      ...validInterpretation,
+      executionMode: "image_edit",
+      operations: [],
+      preserveRequests: ["Keep the pond unchanged."],
+    }),
+  ]);
+  const cameraContext: PromptEngineTrustedContext = {
+    ...trustedContext,
+    executionMode: "image_edit",
+    target: {
+      contextId: "site-image",
+      title: "Existing courtyard",
+      source: "canvas_target",
+    },
+    availableTargets: [],
+    cameraShot: {
+      shotSetNodeId: "camera-set-1",
+      shotId: "shot-01",
+      shotName: "Camera 01",
+      order: 0,
+      mode: "orbit",
+      orbit: {
+        rotate: -41.96062127060776,
+        tilt: -0.06290910766336777,
+        distance: 7.5,
+        lens: 35,
+      },
+    },
+  };
+
+  const result = await compileGenerationPromptV2({
+    rawPrompt: "Keep the pond unchanged.",
+    trustedContext: cameraContext,
+    forceModel: true,
+    transport: fake.transport,
+  });
+  const body = JSON.parse(String(fake.requests[0]?.init.body)) as {
+    input: Array<{ content: Array<{ text: string }> }>;
+  };
+  const interpreterPrompt = body.input[0]!.content[0]!.text;
+
+  assert.match(interpreterPrompt, /Raw prompt: Keep the pond unchanged\./);
+  assert.doesNotMatch(interpreterPrompt, /AUTHORIZED CAMERA SHOT/);
+  assert.doesNotMatch(interpreterPrompt, /azimuth/i);
+  assert.doesNotMatch(interpreterPrompt, /-41\.96062127060776/);
+  assert.match(result.providerPrompt, /front-left three-quarter view/);
+  assert.match(result.providerPrompt, /azimuth -42°/);
+  assert.match(result.providerPrompt, /Preserve these additional user-requested constraints:/);
+  assert.match(result.providerPrompt, /Keep the pond unchanged\./);
+  assert.doesNotMatch(result.providerPrompt, /Camera 01/);
+});
+
+test("camera-only generation skips the language interpreter and compiles the orbit prompt", async () => {
+  const fake = createQueuedOpenAITransport([]);
+  const result = await compileGenerationPromptV2({
+    rawPrompt: "",
+    trustedContext: {
+      ...trustedContext,
+      executionMode: "image_edit",
+      target: {
+        contextId: "site-image",
+        title: "Existing courtyard",
+        source: "canvas_target",
+      },
+      availableTargets: [],
+      cameraShot: {
+        shotSetNodeId: "camera-set-1",
+        shotId: "shot-01",
+        shotName: "Camera 01",
+        order: 0,
+        mode: "orbit",
+        orbit: { rotate: -42, tilt: 0, distance: 7.5, lens: 35 },
+      },
+    },
+    forceModel: true,
+    transport: fake.transport,
+  });
+
+  assert.equal(fake.requests.length, 0);
+  assert.equal(result.plan.degraded, false);
+  assert.equal(result.interpreter.attemptCount, 0);
+  assert.match(result.providerPrompt, /VIEWPOINT RECONSTRUCTION/);
+  assert.match(result.providerPrompt, /front-left three-quarter view/);
+});
