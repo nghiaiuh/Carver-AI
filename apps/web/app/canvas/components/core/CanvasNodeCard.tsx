@@ -635,6 +635,13 @@ function ImageGeneratorNodeSurface({
   const generator = node.imageGenerator;
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const cameraChipScrollerRef = useRef<HTMLDivElement | null>(null);
+  const cameraChipDragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startScrollLeft: number;
+  } | null>(null);
+  const cameraChipDidDragRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const [openMenu, setOpenMenu] = useState<"model" | "aspect" | "settings" | "references" | null>(null);
   const [cameraPlanEditor, setCameraPlanEditor] = useState<{
@@ -882,6 +889,48 @@ function ImageGeneratorNodeSurface({
     setOpenMenu(null);
   };
 
+  const handleCameraChipPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    event.stopPropagation();
+    const scroller = event.currentTarget;
+    cameraChipDidDragRef.current = false;
+
+    if (scroller.scrollWidth <= scroller.clientWidth) return;
+
+    cameraChipDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startScrollLeft: scroller.scrollLeft,
+    };
+  };
+
+  const handleCameraChipPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = cameraChipDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startClientX;
+    if (Math.abs(deltaX) > 3) {
+      if (!cameraChipDidDragRef.current) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      cameraChipDidDragRef.current = true;
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX;
+    }
+  };
+
+  const finishCameraChipDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = cameraChipDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    cameraChipDragRef.current = null;
+  };
+
   return (
     <div
       ref={surfaceRef}
@@ -1044,41 +1093,49 @@ function ImageGeneratorNodeSurface({
           className="absolute bottom-[72px] left-4 right-4 z-20"
         >
           {hasCameraShotContext && editableCameraShotSet ? (
-            <button
-              type="button"
-              className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-1 text-left text-[10px] font-semibold text-[var(--canvas-theme-connection-text)] shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-selection)]"
-              title="Edit connected camera plan"
-              onClick={() => setCameraPlanEditor({
-                mode: editableCameraShotSet.mode,
-                selectedCameraIds: editableCameraShotSet.cameraShotSet.cameras
-                  .filter((camera) => camera.isVisible)
-                  .map((camera) => camera.id),
-              })}
+            <div
+              ref={cameraChipScrollerRef}
+              className="camera-chip-drag-scroll mb-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5 select-none"
+              onPointerDown={handleCameraChipPointerDown}
+              onPointerMove={handleCameraChipPointerMove}
+              onPointerUp={finishCameraChipDrag}
+              onPointerCancel={(event) => {
+                cameraChipDidDragRef.current = false;
+                finishCameraChipDrag(event);
+              }}
+              onClickCapture={(event) => {
+                if (!cameraChipDidDragRef.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+                cameraChipDidDragRef.current = false;
+              }}
             >
-              <Camera className="h-3 w-3 shrink-0" strokeWidth={2.2} />
-              <span className="truncate">{cameraPlanSummary}</span>
-            </button>
-          ) : null}
-          <AnimatePresence>
-            {cameraPlanEditor && editableCameraShotSet ? (
-              <motion.div
-                initial={{ opacity: 0, y: 5, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 4, scale: 0.98 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute bottom-[30px] left-0 z-30 w-[min(100%,280px)] rounded-2xl border border-white/10 bg-black/52 p-2.5 text-white shadow-[0_16px_36px_rgba(0,0,0,0.26)] backdrop-blur-xl"
+              <button
+                type="button"
+                aria-expanded={cameraPlanEditor !== null}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--canvas-theme-connection-text)] bg-[var(--canvas-theme-connection-text-soft)] px-2.5 py-1 text-left text-[10px] font-semibold text-[var(--canvas-theme-connection-text)] shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--canvas-theme-selection)] ${cameraPlanEditor ? "max-w-[42%]" : "max-w-full"}`}
+                title="Edit connected camera plan"
+                onClick={() => setCameraPlanEditor((current) => current ? null : {
+                  mode: editableCameraShotSet.mode,
+                  selectedCameraIds: editableCameraShotSet.cameraShotSet.cameras
+                    .filter((camera) => camera.isVisible)
+                    .map((camera) => camera.id),
+                })}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/64">Generate cameras</span>
-                  <button
-                    type="button"
-                    onClick={() => setCameraPlanEditor(null)}
-                    className="text-[10px] font-medium text-white/60 transition hover:text-white"
+                <Camera className="h-3 w-3 shrink-0" strokeWidth={2.2} />
+                <span className="truncate">{cameraPlanSummary}</span>
+              </button>
+              <AnimatePresence>
+                {cameraPlanEditor ? (
+                  <motion.div
+                    initial={{ opacity: 0, x: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: -5, scale: 0.98 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    role="group"
+                    aria-label="Choose cameras for generation"
+                    className="flex shrink-0 items-center gap-1.5"
                   >
-                    Cancel
-                  </button>
-                </div>
-                <div className="mt-2 flex gap-1.5">
                   {([
                     { value: "orbit", label: "Orbit" },
                     { value: "plan", label: "Plan Surface" },
@@ -1090,14 +1147,12 @@ function ImageGeneratorNodeSurface({
                         type="button"
                         aria-pressed={selected}
                         onClick={() => setCameraPlanEditor((current) => current ? { ...current, mode: option.value } : current)}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${selected ? "bg-[var(--canvas-theme-selection)] text-white" : "bg-white/10 text-white/68 hover:bg-white/16"}`}
+                        className={`inline-flex h-6 items-center rounded-full border border-[var(--canvas-theme-warning)] bg-[var(--canvas-theme-warning-soft)] px-2 text-[10px] font-semibold text-[var(--canvas-theme-warning)] shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition ${selected ? "ring-2 ring-[var(--canvas-theme-warning)]" : "hover:brightness-95"}`}
                       >
                         {option.label}
                       </button>
                     );
                   })}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
                   {editableCameraShotSet.cameraShotSet.cameras.map((camera) => {
                     const selected = cameraPlanEditor.selectedCameraIds.includes(camera.id);
                     return (
@@ -1113,43 +1168,44 @@ function ImageGeneratorNodeSurface({
                               : current
                             : { ...current, selectedCameraIds: [...current.selectedCameraIds, camera.id] };
                         })}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${selected ? "bg-white text-[#1A1A1A]" : "bg-white/10 text-white/62 hover:bg-white/16"}`}
+                        className={`inline-flex h-6 items-center gap-1 rounded-full border border-[var(--canvas-theme-connection-text)] px-2 text-[10px] font-semibold shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition ${selected ? "bg-[var(--canvas-theme-connection-text)] text-[var(--canvas-theme-active-text)]" : "bg-[var(--canvas-theme-connection-text-soft)] text-[var(--canvas-theme-connection-text)] hover:brightness-95"}`}
                       >
                         <Camera className="h-2.5 w-2.5" strokeWidth={2.2} />
                         {camera.name}
                       </button>
                     );
                   })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const selectedCameraIdSet = new Set(cameraPlanEditor.selectedCameraIds);
-                    onUpdateNode(editableCameraShotSet.sourceNodeId, (current) =>
-                      isCanvasCameraShotSetNode(current)
-                        ? {
-                            ...current,
-                            cameraShotSet: {
-                              ...current.cameraShotSet,
-                              mode: cameraPlanEditor.mode,
-                              cameras: current.cameraShotSet.cameras.map((camera) => ({
-                                ...camera,
-                                isVisible: selectedCameraIdSet.has(camera.id),
-                              })),
-                            },
-                          }
-                        : current,
-                    );
-                    setCameraPlanEditor(null);
-                  }}
-                  className="mt-2 inline-flex h-6 items-center gap-1 rounded-full bg-[var(--canvas-theme-active)] px-2.5 text-[10px] font-semibold text-[var(--canvas-theme-active-text)] transition hover:bg-[var(--canvas-theme-selection-hover)]"
-                >
-                  <Check className="h-3 w-3" strokeWidth={2.3} />
-                  Done
-                </button>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectedCameraIdSet = new Set(cameraPlanEditor.selectedCameraIds);
+                        onUpdateNode(editableCameraShotSet.sourceNodeId, (current) =>
+                          isCanvasCameraShotSetNode(current)
+                            ? {
+                                ...current,
+                                cameraShotSet: {
+                                  ...current.cameraShotSet,
+                                  mode: cameraPlanEditor.mode,
+                                  cameras: current.cameraShotSet.cameras.map((camera) => ({
+                                    ...camera,
+                                    isVisible: selectedCameraIdSet.has(camera.id),
+                                  })),
+                                },
+                              }
+                            : current,
+                        );
+                        setCameraPlanEditor(null);
+                      }}
+                      className="inline-flex h-6 items-center gap-1 rounded-full border border-[var(--canvas-theme-success)] bg-[var(--canvas-theme-success-soft)] px-2 text-[10px] font-semibold text-[var(--canvas-theme-success)] shadow-[0_6px_14px_rgba(0,0,0,0.14)] transition hover:brightness-95"
+                    >
+                      <Check className="h-3 w-3" strokeWidth={2.3} />
+                      Done
+                    </button>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          ) : null}
           <textarea
             ref={textareaRef}
             value={generator.prompt}

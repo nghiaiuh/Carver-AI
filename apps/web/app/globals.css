@@ -106,6 +106,16 @@
     background-color: rgba(0, 0, 0, 0.15);
   }
 
+  .camera-chip-drag-scroll {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    touch-action: pan-y;
+  }
+
+  .camera-chip-drag-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   .assistant-result-scroll {
     scrollbar-width: thin;
     scrollbar-color: var(--canvas-theme-border-strong) transparent;
