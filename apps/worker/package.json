@@ -20,7 +20,7 @@
     "@carver/shared": "*",
     "@carver/storage": "*",
     "bullmq": "^5.81.2",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",
