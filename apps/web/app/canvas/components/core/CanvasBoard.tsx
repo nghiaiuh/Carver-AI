@@ -97,6 +97,8 @@ import {
   cloneCanvasNodeForPaste,
   extractCanvasImageUrlFromClipboard as extractImageUrlFromClipboardData,
   getClipboardImageBlob,
+  getDroppedCanvasImageFiles,
+  hasCanvasFileDrop,
   getPastedCanvasImageSize as getPastedImageNodeSize,
   loadCanvasImageDimensions as loadImageDimensions,
 } from "../../utils/canvasClipboard";
@@ -275,6 +277,7 @@ const WHEEL_ZOOM_COMMIT_DEBOUNCE_MS = 160;
 const MINIMAP_WORLD_PADDING = 48;
 const MARQUEE_SELECTION_THRESHOLD = 5;
 const MULTI_SELECT_TOOLBAR_MIN_SELECTION = 2;
+const MAX_CANVAS_DROP_IMAGE_COUNT = 10;
 const MIN_POINT_DISTANCE = 1.5;
 const MIN_GEOMETRY_SIZE = 4;
 const ERASER_BASE_SIZE = 18;
@@ -411,6 +414,7 @@ export default function CanvasBoard({
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const isPanning = useRef(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const [isFileDropActive, setIsFileDropActive] = useState(false);
   const wheelZoomTimeout = useRef<number | null>(null);
   const wheelZoomRafRef = useRef<number | null>(null);
   const pendingWheelDeltaRef = useRef(0);
@@ -812,7 +816,12 @@ export default function CanvasBoard({
   }, [onReplacePenStrokes, onSelect, penEraseRedoStack]);
 
   const addImageNode = useCallback(
-    async (imageUrl: string, title = "Pasted Image", sourceMetadata: ImageSourceMetadata = {}) => {
+    async (
+      imageUrl: string,
+      title = "Pasted Image",
+      sourceMetadata: ImageSourceMetadata = {},
+      placement?: Point,
+    ) => {
       const pastePan = pan;
       const pasteZoom = zoom;
       const dimensions =
@@ -826,7 +835,7 @@ export default function CanvasBoard({
         const rect = containerRef.current?.getBoundingClientRect();
         const viewportCenterX = rect ? rect.width / 2 : 0;
         const viewportCenterY = rect ? rect.height / 2 : 0;
-        const pasteWorldCenter = getWorldPointFromPointer({
+        const pasteWorldCenter = placement ?? getWorldPointFromPointer({
           point: { x: viewportCenterX, y: viewportCenterY },
           pan: pastePan,
           zoom: pasteZoom,
@@ -865,8 +874,13 @@ export default function CanvasBoard({
   );
 
   const addLocalImageNode = useCallback(
-    async (blob: Blob, title: string, sourceMetadata: ImageSourceMetadata = {}) => {
-      onToast("Uploading pasted image...");
+    async (
+      blob: Blob,
+      title: string,
+      sourceMetadata: ImageSourceMetadata = {},
+      placement?: Point,
+    ) => {
+      onToast("Uploading image...");
       const localPreviewUrl = URL.createObjectURL(blob);
 
       try {
@@ -891,7 +905,7 @@ export default function CanvasBoard({
           width: dimensions?.width ?? sourceMetadata.width ?? null,
           height: dimensions?.height ?? sourceMetadata.height ?? null,
           preserveTitle: persisted.preserveTitle,
-        });
+        }, placement);
       } finally {
         URL.revokeObjectURL(localPreviewUrl);
       }
@@ -1013,6 +1027,61 @@ export default function CanvasBoard({
     window.addEventListener("copy", handleCopy);
     return () => window.removeEventListener("copy", handleCopy);
   }, [copySelectedCanvasNode]);
+
+  const handleCanvasDragEnter = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!hasCanvasFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    setIsFileDropActive(true);
+  }, []);
+
+  const handleCanvasDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!hasCanvasFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsFileDropActive(true);
+  }, []);
+
+  const handleCanvasDragLeave = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setIsFileDropActive(false);
+  }, []);
+
+  const handleCanvasDrop = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const files = getDroppedCanvasImageFiles(event.dataTransfer).slice(0, MAX_CANVAS_DROP_IMAGE_COUNT);
+    if (!hasCanvasFileDrop(event.dataTransfer) && files.length === 0) return;
+
+    event.preventDefault();
+    setIsFileDropActive(false);
+    if (files.length === 0) {
+      onToast("Drop an image file to add it to the canvas.");
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const dropPoint = getWorldPointFromPointer({
+      point: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      pan,
+      zoom,
+    });
+
+    void (async () => {
+      for (const [index, file] of files.entries()) {
+        const title = file.name.replace(/\.[^.]+$/, "") || "Dropped Image";
+        const offset = (index * 36) / Math.max(zoom, 0.0001);
+        try {
+          await addLocalImageNode(file, title, {
+            mimeType: file.type,
+            name: file.name,
+            sizeBytes: file.size,
+          }, {
+            x: dropPoint.x + offset,
+            y: dropPoint.y + offset,
+          });
+        } catch (error) {
+          onToast(error instanceof Error ? error.message : `Unable to add ${file.name}.`);
+        }
+      }
+    })();
+  }, [addLocalImageNode, onToast, pan, zoom]);
 
   useEffect(() => {
     if (!pendingLibraryInsertAsset) return;
@@ -2405,6 +2474,10 @@ export default function CanvasBoard({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onDragEnter={handleCanvasDragEnter}
+      onDragOver={handleCanvasDragOver}
+      onDragLeave={handleCanvasDragLeave}
+      onDrop={handleCanvasDrop}
       onPointerLeave={(event) => {
         if (activeTool === "cut") {
           setCutCursorPoint(null);
@@ -2689,6 +2762,14 @@ export default function CanvasBoard({
           />
         ) : null}
       </div>
+
+      {isFileDropActive ? (
+        <div className="pointer-events-none absolute inset-5 z-[175] grid place-items-center rounded-[20px] border-2 border-dashed border-[var(--canvas-theme-selection)] bg-[var(--canvas-theme-selection-soft)]">
+          <p className="rounded-xl bg-[var(--canvas-theme-surface-panel)] px-4 py-2 text-sm font-medium text-[var(--canvas-theme-selection)] shadow-[0_8px_20px_var(--canvas-theme-shadow)]">
+            Drop image to add it to the canvas
+          </p>
+        </div>
+      ) : null}
 
       {activeTool === "cut" && cutCursorPoint ? (
         <div

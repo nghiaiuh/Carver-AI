@@ -50,6 +50,16 @@ export function getClipboardImageBlob(data: DataTransfer | null) {
   return null;
 }
 
+/** Returns only image files dragged from the operating system into the canvas. */
+export function getDroppedCanvasImageFiles(data: DataTransfer | null) {
+  return Array.from(data?.files ?? []).filter((file) => file.type.startsWith("image/"));
+}
+
+/** File metadata remains available while the browser protects the file list during dragover. */
+export function hasCanvasFileDrop(data: Pick<DataTransfer, "types"> | null) {
+  return Array.from(data?.types ?? []).includes("Files");
+}
+
 export function extractCanvasImageUrlFromClipboard(data: DataTransfer | null) {
   if (!data) return null;
   const uriList = data.getData("text/uri-list").trim();
