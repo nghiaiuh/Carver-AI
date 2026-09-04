@@ -26,12 +26,12 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
-    "eslint": "9.39.4",
+    "eslint": "10.9.1",
     "supabase": "^2.109.1",
     "turbo": "latest"
   },
   "overrides": {
-    "eslint": "9.39.4"
+    "eslint": "10.9.1"
   },
   "engines": {
     "node": ">=20.9.0"
