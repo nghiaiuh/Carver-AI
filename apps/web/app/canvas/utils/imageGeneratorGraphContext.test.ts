@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasNode } from "../types/canvas";
-import { buildImageGeneratorGraphContext, resolveConnectedImageAssetId } from "./imageGeneratorGraphContext";
+import {
+  buildImageGeneratorGraphContext,
+  resolveConnectedImageAssetId,
+  resolveGeneratedNodeOutput,
+} from "./imageGeneratorGraphContext";
 
 test("recovers the current asset ID from a refreshed gateway URL", () => {
   const currentAssetId = "11111111-1111-4111-8111-111111111111";
@@ -132,4 +136,35 @@ test("multi-angles resolves the selected Image Generator gallery output as its s
   assert.equal(context.generatorContext.cameraShotSet.source.assetId, selectedAssetId);
   assert.equal(context.executionContext?.target.assetId, selectedAssetId);
   assert.equal(context.generatorContext.cameraShotSet.shots[0]?.orbit?.rotate, -42);
+});
+
+test("resolves the selected Generator output for the Multi-Angles preview", () => {
+  const selectedAssetId = "55555555-5555-4555-8555-555555555555";
+  const generator = {
+    id: "source-generator",
+    kind: "image-generator",
+    title: "Source Generator",
+    imageGenerator: {
+      prompt: "",
+      model: "auto",
+      aspectRatio: "1:1",
+      outputCount: 1,
+      status: "completed",
+      outputAssetIds: [selectedAssetId],
+      selectedOutputAssetId: selectedAssetId,
+      outputs: [{
+        assetId: selectedAssetId,
+        title: "Selected source",
+        prompt: "",
+        imageUrl: `/api/assets/${selectedAssetId}/content`,
+        width: 1024,
+        height: 1024,
+      }],
+    },
+  } as unknown as CanvasNode;
+
+  assert.equal(
+    resolveGeneratedNodeOutput(generator, [generator])?.imageUrl,
+    `/api/assets/${selectedAssetId}/content`,
+  );
 });

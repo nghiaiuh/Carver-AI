@@ -112,6 +112,7 @@ import {
   getGroupSemanticPortPoint,
   GROUP_OUTPUT_IMAGE_PORT_ID,
 } from "../../utils/canvasGroupPorts";
+import { resolveGeneratedNodeOutput } from "../../utils/imageGeneratorGraphContext";
 
 type CanvasBoardProps = {
   projectId?: string;
@@ -2581,7 +2582,10 @@ export default function CanvasBoard({
                   }) === "camera-shot-set-input-image",
                 );
                 const inputNode = inputEdge ? nodes.find((candidate) => candidate.id === inputEdge.sourceId) : null;
-                return inputNode?.sourceImage?.url ?? inputNode?.imageUrl ?? null;
+                const generatedOutput = inputNode
+                  ? resolveGeneratedNodeOutput(inputNode, nodes)
+                  : null;
+                return generatedOutput?.imageUrl ?? inputNode?.sourceImage?.url ?? inputNode?.imageUrl ?? null;
               })()}
               onUpdateCameraShotSet={onUpdateCameraShotSet}
               onStartConnection={handleConnectionHandlePointerDown}

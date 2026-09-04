@@ -54,7 +54,7 @@ export default function CanvasSemanticPortHandles({
           }) === port.id
         : edge.sourceId === node.id && edge.sourcePortId === port.id,
     ).length;
-    if (!selected && count === 0) return [];
+    if (!selected && !isConnectionTarget && count === 0) return [];
 
     const sameSidePorts = getPortsBySide(node, port.side);
     const portIndex = sameSidePorts.findIndex((candidate) => candidate.id === port.id);

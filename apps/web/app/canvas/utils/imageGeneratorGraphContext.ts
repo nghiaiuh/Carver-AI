@@ -90,7 +90,12 @@ function getConnectedTextContent(node: CanvasNode) {
   return "";
 }
 
-function resolveGeneratedNodeOutput(sourceNode: CanvasNode, nodes: CanvasNode[]) {
+/**
+ * Resolves the output currently selected on an Image Generator or its gallery.
+ * Canvas consumers use this instead of looking for image-node fields that these
+ * derived nodes intentionally do not persist.
+ */
+export function resolveGeneratedNodeOutput(sourceNode: CanvasNode, nodes: CanvasNode[]) {
   const generatorNode = isCanvasImageGeneratorNode(sourceNode)
     ? sourceNode
     : isCanvasImageOutputGalleryNode(sourceNode)
