@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -w",
-    "test": "tsx --test src/security-contracts.test.ts src/canvas-draft.test.ts src/image-generator.test.ts src/assistant-output.test.ts",
+    "test": "tsx --test src/security-contracts.test.ts src/canvas-draft.test.ts src/image-generator.test.ts src/assistant-output.test.ts src/camera-normalization.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

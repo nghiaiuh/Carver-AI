@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { IMAGE_GENERATOR_ASPECT_RATIO_VALUES } from "./image-generator";
+import {
+  CAMERA_NORMALIZATION_VERSION,
+  CAMERA_SPEC_CONVENTION,
+  CAMERA_SPEC_SCHEMA_VERSION,
+} from "./novel-view";
 
 const MAX_PROMPT_LENGTH = 12_000;
 const MAX_LABEL_LENGTH = 240;
@@ -7,6 +12,60 @@ const MAX_INLINE_IMAGE_URL_LENGTH = 4 * 1024 * 1024 * 1.4;
 const trimmedString = z.string().trim();
 const optionalTrimmedString = trimmedString.min(1).max(MAX_LABEL_LENGTH).optional();
 const uuidLikeString = trimmedString.uuid();
+const finiteNumber = z.number().finite();
+
+const cameraVector3Schema = z.tuple([finiteNumber, finiteNumber, finiteNumber]);
+const cameraVector2Schema = z.tuple([finiteNumber, finiteNumber]);
+
+export const cameraSpecSchema = z.object({
+  schemaVersion: z.literal(CAMERA_SPEC_SCHEMA_VERSION),
+  normalizationVersion: z.literal(CAMERA_NORMALIZATION_VERSION),
+  convention: z.literal(CAMERA_SPEC_CONVENTION),
+  coordinateSpace: z.enum(["source_relative", "plan_world"]),
+  pose: z.object({
+    position: cameraVector3Schema,
+    target: cameraVector3Schema,
+    up: cameraVector3Schema,
+  }).strict(),
+  projection: z.object({
+    model: z.literal("pinhole"),
+    horizontalFovDeg: finiteNumber.gt(0).lt(180),
+    aspectRatio: finiteNumber.positive(),
+    principalPointUv: cameraVector2Schema.refine(
+      ([u, v]) => u >= 0 && u <= 1 && v >= 0 && v <= 1,
+      "principalPointUv must stay within [0, 1]",
+    ),
+  }).strict(),
+  framingMode: z.enum(["preserve_subject", "preserve_footprint", "custom"]),
+  virtualScale: z.object({
+    unit: z.literal("relative"),
+    calibration: z.literal("uncalibrated"),
+    reference: z.enum(["source_frame", "plan_frame"]),
+  }).strict(),
+  authored: z.object({
+    azimuthDeltaDeg: finiteNumber.optional(),
+    elevationDeltaDeg: finiteNumber.optional(),
+    distanceRatio: finiteNumber.positive().optional(),
+    focalLengthEquivalentMm: finiteNumber.positive().optional(),
+    rollDeg: finiteNumber.optional(),
+  }).strict().optional(),
+  provenance: z.object({
+    origin: z.enum(["user_authored", "captured", "model_estimate", "geometric_derivation", "generated"]),
+    inputAssetIds: z.array(uuidLikeString).max(32),
+    method: trimmedString.min(1).max(MAX_LABEL_LENGTH),
+    version: trimmedString.min(1).max(120),
+    assumptions: z.array(trimmedString.min(1).max(2_000)).max(32),
+  }).strict(),
+}).strict().superRefine((value, context) => {
+  const expectedReference = value.coordinateSpace === "source_relative" ? "source_frame" : "plan_frame";
+  if (value.virtualScale.reference !== expectedReference) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["virtualScale", "reference"],
+      message: "virtualScale.reference must match coordinateSpace.",
+    });
+  }
+});
 
 export const CHAT_IMAGE_SOURCE_VALUES = [
   "attachment",
