@@ -468,14 +468,10 @@ export const executeGeneratedImageJob = async (
         })
       : null;
 
-    const generationBatches: Array<{
-      prompt: string;
-      cameraShot: CameraShotDirective | null;
-      images: Awaited<ReturnType<typeof dependencies.generateImagesFromPrompt>>;
-    }> = [];
     const shotsToGenerate = isMultiAngleJob
       ? cameraShots.filter((shot) => !reusableShotOutputIds.has(shot.shotId))
       : [null];
+    let outputIndex = 0;
 
     for (const shot of shotsToGenerate) {
       const shotState = shot && state.cameraShot?.shotId !== shot.shotId
@@ -518,13 +514,10 @@ export const executeGeneratedImageJob = async (
               maskImage,
             }),
           );
-      generationBatches.push({ prompt: providerPrompt, cameraShot: shot, images });
-    }
-
-    let outputIndex = 0;
-    for (const batch of generationBatches) {
-      for (const providerImage of batch.images) {
-        const persistedOutputIndex = batch.cameraShot?.order ?? outputIndex;
+      // Persist each camera shot before advancing to the next provider call.
+      // A later-shot failure can then replay only the missing shot on retry.
+      for (const providerImage of images) {
+        const persistedOutputIndex = shot?.order ?? outputIndex;
         logger.info("generation provider image received", {
           jobId: job.jobId,
           projectId: job.projectId,
@@ -550,20 +543,20 @@ export const executeGeneratedImageJob = async (
             jobId: job.jobId,
             projectId: job.projectId,
             ownerId: job.userId,
-            prompt: providerImage.revisedPrompt ?? batch.prompt,
-            title: batch.cameraShot
-              ? `Camera ${String(batch.cameraShot.order + 1).padStart(2, "0")} - ${batch.cameraShot.shotName}`
+            prompt: providerImage.revisedPrompt ?? providerPrompt,
+            title: shot
+              ? `Camera ${String(shot.order + 1).padStart(2, "0")} - ${shot.shotName}`
               : requestedOutputCount > 1
                 ? `Generated concept ${outputIndex + 1}`
                 : "Generated concept",
             outputIndex: persistedOutputIndex,
-            cameraShot: batch.cameraShot
+            cameraShot: shot
               ? {
-                  shotSetNodeId: batch.cameraShot.shotSetNodeId,
-                  shotId: batch.cameraShot.shotId,
-                  shotName: batch.cameraShot.shotName,
-                  order: batch.cameraShot.order,
-                  mode: batch.cameraShot.mode,
+                  shotSetNodeId: shot.shotSetNodeId,
+                  shotId: shot.shotId,
+                  shotName: shot.shotName,
+                  order: shot.order,
+                  mode: shot.mode,
                 }
               : undefined,
             buffer: normalizedImage.buffer,
@@ -575,7 +568,7 @@ export const executeGeneratedImageJob = async (
         );
 
         persistedOutputs.push(persisted);
-        if (!batch.cameraShot) {
+        if (!shot) {
           outputIndex += 1;
         }
       }

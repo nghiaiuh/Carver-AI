@@ -320,6 +320,148 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
   assert.match(result.jobResult.generatedImages[0]?.title ?? "", /Camera 01 - Front/);
 });
 
+test("a second-shot failure replays only the missing camera shot", async () => {
+  const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
+  const shots = [
+    {
+      shotSetNodeId: "camera-set-replay",
+      shotId: "shot-first",
+      shotName: "Front",
+      order: 0,
+      mode: "orbit" as const,
+      orbit: { rotate: 0, tilt: 0, distance: 7.5, lens: 35 },
+    },
+    {
+      shotSetNodeId: "camera-set-replay",
+      shotId: "shot-second",
+      shotName: "Left corner",
+      order: 1,
+      mode: "orbit" as const,
+      orbit: { rotate: -42, tilt: -18, distance: 7.5, lens: 35 },
+    },
+  ];
+  const source = {
+    nodeId: "source-replay",
+    title: "Source image",
+    imageUrl: "",
+    assetId: "asset-source-replay",
+    role: "direct_edit_target",
+    prompt: null,
+  };
+  const firstOperation = toChangeAngleOperation({
+    shot: shots[0]!,
+    targetId: source.nodeId,
+    targetName: source.title,
+  });
+  assert.ok(firstOperation);
+  const firstNovelViewRequest = buildNovelViewGenerationRequest({
+    operation: firstOperation,
+    sourceImageId: source.assetId,
+    prompt: "Front camera prompt",
+  });
+  const job = {
+    jobId: "job-multi-angle-replay",
+    projectId: "project-1",
+    userId: "user-1",
+    jobType: "generate_concept",
+    executionMode: "image_edit",
+    targetType: "image-generator",
+    prompt: "Render controlled camera views.",
+    promptMode: "auto",
+    inputSnapshotId: null,
+    snapshot: createEmptyCanvasSnapshotDocument(),
+    referenceAssetIds: [],
+    inputAssetIds: [source.assetId],
+    outputCount: 1,
+    canvasGraphContext: {
+      target: source,
+      imageReferences: [],
+      presetReferences: [],
+      preserveRules: [],
+      referenceSummary: "Camera source image.",
+      connectionSummary: "Two camera shots connected.",
+    },
+    cameraShotSetContext: {
+      shotSetNodeId: "camera-set-replay",
+      source,
+      shots,
+    },
+  } as CarverAiJobPayload;
+  const state: PreparedGenerationState = {
+    editBrief: {} as CarverEditBrief,
+    compiledPromptMeta: null,
+    compiledPromptV2: null,
+    finalPrompt: firstNovelViewRequest.prompt,
+    cameraShot: shots[0],
+    novelViewRequest: firstNovelViewRequest,
+  };
+  const persistedByShot = new Map<string, PersistedGeneratedOutput>();
+  const providerCalls: string[] = [];
+  let failSecondShot = true;
+  const dependencies = {
+    findReusableGeneratedImageAssets: async () => [...persistedByShot.values()],
+    resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
+    resolveGenerationReferenceImages: async () => [],
+    resolveGenerationMaskImage: async () => null,
+    generateImagesFromPrompt: async (params: { prompt: string }) => {
+      const shotId = params.prompt.includes("Front camera prompt") ? "shot-first" : "shot-second";
+      providerCalls.push(shotId);
+      if (shotId === "shot-second" && failSecondShot) {
+        throw new Error("simulated second-shot provider failure");
+      }
+      return [{
+        buffer: imageBuffer,
+        mimeType: "image/png" as const,
+        width: 1,
+        height: 1,
+        revisedPrompt: null,
+        provider: "fixture",
+      }];
+    },
+    persistGeneratedImageAsset: async (params: {
+      cameraShot?: { shotId: string; shotName: string; order: number; mode: "plan" | "orbit"; shotSetNodeId: string };
+      title: string;
+      prompt: string;
+      width: number;
+      height: number;
+      mimeType: string;
+      provider: string;
+    }): Promise<PersistedGeneratedOutput> => {
+      const cameraShot = params.cameraShot;
+      assert.ok(cameraShot);
+      const output: PersistedGeneratedOutput = {
+        assetId: `asset-${cameraShot.shotId}`,
+        generatedImage: {
+          id: `asset-${cameraShot.shotId}`,
+          assetId: `asset-${cameraShot.shotId}`,
+          title: params.title,
+          imageUrl: "",
+          width: params.width,
+          height: params.height,
+          mimeType: params.mimeType,
+          prompt: params.prompt,
+          provider: params.provider,
+          cameraShot,
+        },
+      };
+      persistedByShot.set(cameraShot.shotId, output);
+      return output;
+    },
+  };
+
+  await assert.rejects(
+    executeGeneratedImageJob(job, state, { dependencies }),
+    /provider_request/,
+  );
+  assert.deepEqual([...persistedByShot.keys()], ["shot-first"]);
+
+  failSecondShot = false;
+  const replay = await executeGeneratedImageJob(job, state, { dependencies });
+
+  assert.deepEqual(providerCalls, ["shot-first", "shot-second", "shot-second"]);
+  assert.deepEqual(replay.jobResult.outputAssetIds, ["asset-shot-first", "asset-shot-second"]);
+});
+
 test("image generator worker persists every fake provider output without OpenAI, R2, or Supabase", async () => {
   const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
   const providerImages: OpenAiGeneratedImage[] = [0, 1].map((index) => ({

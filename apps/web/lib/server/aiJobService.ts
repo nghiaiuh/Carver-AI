@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   createAiJobBodySchema,
   createSafeLogger,
@@ -28,6 +28,7 @@ import {
   extractAssetIdFromGatewayUrl,
   resolveAiJobResultAssetUrls,
 } from "./assetService";
+import { buildTerminalRetryIdentity } from "./aiJobRetryIdentity";
 import {
   validateCanvasSnapshotDocument,
   validateSnapshotAssetOwnership,
@@ -232,8 +233,6 @@ const buildIdempotencyKey = (params: {
     )
     .digest("hex")
     .slice(0, 48);
-
-const createRetryIdempotencyKey = (baseKey: string) => `${baseKey}-retry-${randomUUID()}`;
 
 const isRetryableTerminalJobStatus = (status: string) =>
   status === "failed" || status === "cancelled" || status === "enqueue_failed";
@@ -748,6 +747,7 @@ export async function createProjectAiJob(params: {
         ? NOVEL_VIEW_PROMPT_COMPILER_VERSION
         : null,
     });
+  let creditIdempotencyKey = `generation:${idempotencyKey}`;
 
   const sanitizedCanvasGraphContext = canvasGraphContext
     ? {
@@ -825,6 +825,79 @@ export async function createProjectAiJob(params: {
         }),
       },
     };
+  }
+
+  if (existingJob) {
+    const baseKey = idempotencyKey;
+    const retryFamily = buildTerminalRetryIdentity({
+      baseKey,
+      previousJobId: existingJob.id,
+    });
+    const { data: latestRetryJob, error: latestRetryJobError } = await adminSupabase
+      .from("ai_jobs")
+      .select("id, project_id, thread_id, status, job_type, prompt, input_snapshot_id, output_snapshot_id, output_asset_ids, provider, error_code, error_message, last_error_code, last_error_message, last_attempt_at, created_at, updated_at, job_result")
+      .eq("project_id", projectId)
+      .eq("created_by", user.id)
+      .like("idempotency_key", `${retryFamily.familyPrefix}%`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRetryJobError) {
+      logger.error("terminal retry lookup failed", {
+        requestId: context.requestId,
+        projectId,
+        userId: user.id,
+        databaseCode: latestRetryJobError.code ?? null,
+        error: latestRetryJobError,
+      });
+      return {
+        ok: false,
+        response: getAiJobDatabaseFailure({
+          error: latestRetryJobError,
+          requestId: context.requestId,
+          message: "Unable to check an earlier AI job retry",
+          fallbackCode: "AI_JOB_LOOKUP_FAILED",
+        }),
+      };
+    }
+
+    if (latestRetryJob && !isRetryableTerminalJobStatus(latestRetryJob.status)) {
+      await deletePersistedProjectImageAssets({
+        supabase,
+        projectId,
+        ownerId: user.id,
+        assets: persistedInputAssets,
+      }).catch(() => undefined);
+      return {
+        ok: true,
+        data: {
+          created: false,
+          idempotent: true,
+          job: await mapAiJobRecord(latestRetryJob, {
+            requestUrl: request.url,
+            supabase,
+            userId: user.id,
+            projectId,
+          }),
+        },
+      };
+    }
+
+    const retryOf = latestRetryJob ?? existingJob;
+    const retryIdentity = buildTerminalRetryIdentity({
+      baseKey,
+      previousJobId: retryOf.id,
+    });
+    idempotencyKey = retryIdentity.idempotencyKey;
+    creditIdempotencyKey = retryIdentity.creditIdempotencyKey;
+    logger.info("creating AI job retry after terminal failure", {
+      requestId: context.requestId,
+      projectId,
+      userId: user.id,
+      previousJobId: retryOf.id,
+      previousStatus: retryOf.status,
+    });
   }
 
   const { count: activeJobCount, error: activeJobError } = await adminSupabase
@@ -916,7 +989,7 @@ export async function createProjectAiJob(params: {
     checkpoint_snapshot_json: clientSnapshot ? mergedSnapshot : null,
     checkpoint_document_hash: clientSnapshot ? mergedSnapshotHash : null,
     target_credit_amount: simulation ? 0 : generationCreditCost,
-    target_credit_idempotency_key: simulation ? null : `generation:${idempotencyKey}`,
+    target_credit_idempotency_key: simulation ? null : creditIdempotencyKey,
   });
   const aiJob = createdRows?.[0] ?? null;
 
@@ -1002,20 +1075,6 @@ export async function createProjectAiJob(params: {
         creditsRemaining: aiJob.credits_remaining ?? undefined,
       },
     };
-  }
-
-  if (existingJob) {
-    // Canvas requests use a deterministic key to collapse accidental duplicate
-    // clicks. A terminal failure is a completed attempt, not a successful run,
-    // so a later user-initiated Run needs a new job and credit reservation.
-    idempotencyKey = createRetryIdempotencyKey(idempotencyKey);
-    logger.info("creating AI job retry after terminal failure", {
-      requestId: context.requestId,
-      projectId,
-      userId: user.id,
-      previousJobId: existingJob.id,
-      previousStatus: existingJob.status,
-    });
   }
 
   return {
