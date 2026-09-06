@@ -3,6 +3,7 @@ import test from "node:test";
 import { TEST_PNG_BASE64 } from "@carver/shared/testing/openaiTransport";
 import {
   createEmptyCanvasSnapshotDocument,
+  normalizeCameraShotDirective,
   type CarverAiJobPayload,
   type CarverEditBrief,
   type PersistedGeneratedImage,
@@ -135,14 +136,17 @@ test("camera-shot generation rejects any execution mode other than image_edit", 
 
 test("orbit prompt reaches the image provider prompt field", async () => {
   const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
-  const shot = {
-    shotSetNodeId: "camera-set-1",
-    shotId: "shot-01",
-    shotName: "Camera 01",
-    order: 0,
-    mode: "orbit" as const,
-    orbit: { rotate: -41.96062127060776, tilt: -0.06290910766336777, distance: 7.5, lens: 35 },
-  };
+  const shot = normalizeCameraShotDirective({
+    shot: {
+      shotSetNodeId: "camera-set-1",
+      shotId: "shot-01",
+      shotName: "Camera 01",
+      order: 0,
+      mode: "orbit" as const,
+      orbit: { rotate: -41.96062127060776, tilt: -0.06290910766336777, distance: 7.5, lens: 35 },
+    },
+    inputAssetIds: ["asset-source"],
+  });
   const source = {
     nodeId: "source-image",
     title: "Existing courtyard",
@@ -200,6 +204,7 @@ test("orbit prompt reaches the image provider prompt field", async () => {
   const state = await prepareGenerationState(job, shot);
 
   assert.ok(state.novelViewRequest);
+  assert.deepEqual(state.novelViewRequest.cameraSpec, shot.cameraSpec);
   assert.match(state.finalPrompt ?? "", /front-left three-quarter view/);
   assert.match(state.finalPrompt ?? "", /azimuth -42°/);
   assert.doesNotMatch(state.finalPrompt ?? "", /Camera 01/);

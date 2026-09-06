@@ -5,6 +5,7 @@ import type {
   CanvasGraphNodeSnapshot,
   CanvasSnapshotDocument,
 } from "@carver/shared";
+import { normalizeCameraShotDirective } from "@carver/shared";
 
 type CanonicalMultiAngleRequest = {
   source: CameraShotGenerationContext["source"];
@@ -95,17 +96,28 @@ function resolveCanonicalSourceAssetId(node: CanvasGraphNodeSnapshot, nodes: Can
   });
 }
 
+function resolveCanonicalSourceAspectRatio(node: CanvasGraphNodeSnapshot, nodes: CanvasGraphNodeSnapshot[]) {
+  const generatedOutput = resolveSelectedGeneratorOutput(node, nodes);
+  const width = generatedOutput?.width ?? node.sourceImage?.width;
+  const height = generatedOutput?.height ?? node.sourceImage?.height;
+  return typeof width === "number" && Number.isFinite(width) && width > 0 &&
+    typeof height === "number" && Number.isFinite(height) && height > 0
+    ? width / height
+    : 1;
+}
+
 function toCanonicalShot(
   node: CanvasGraphNodeSnapshot,
   cameraId: string,
   order: number,
+  params: { sourceAssetId: string; sourceAspectRatio: number },
 ): CameraShotDirective | null {
   const camera = node.cameraShotSet?.cameras.find((candidate) => candidate.id === cameraId);
   if (!camera || !node.cameraShotSet) {
     return null;
   }
 
-  return node.cameraShotSet.mode === "plan"
+  const shot: CameraShotDirective = node.cameraShotSet.mode === "plan"
     ? {
         shotSetNodeId: node.id,
         shotId: camera.id,
@@ -122,6 +134,14 @@ function toCanonicalShot(
         mode: "orbit",
         orbit: { ...camera.orbit },
       };
+
+  // Do not trust a browser or persisted CameraSpec. The snapshot's editable
+  // transform is the compatibility boundary and is rebuilt deterministically.
+  return normalizeCameraShotDirective({
+    shot,
+    aspectRatio: params.sourceAspectRatio,
+    inputAssetIds: [params.sourceAssetId],
+  });
 }
 
 /**
@@ -164,6 +184,8 @@ export function rebuildCanonicalMultiAngleRequest(params: {
     return { ok: false, error: "Multi-angle source asset does not match the canvas snapshot." };
   }
 
+  const sourceAspectRatio = resolveCanonicalSourceAspectRatio(sourceNode, params.snapshot.graph.nodes);
+
   const visibleCameras = shotSetNode.cameraShotSet.cameras.filter((camera) => camera.isVisible);
   if (params.requestedContext.shots.length !== visibleCameras.length) {
     return { ok: false, error: "Multi-angle camera context does not include every visible camera." };
@@ -182,7 +204,15 @@ export function rebuildCanonicalMultiAngleRequest(params: {
       return { ok: false, error: "Multi-angle camera order does not match the canvas filmstrip." };
     }
 
-    const shot = toCanonicalShot(shotSetNode, camera.id, order);
+    let shot: CameraShotDirective | null;
+    try {
+      shot = toCanonicalShot(shotSetNode, camera.id, order, {
+        sourceAssetId: assetId,
+        sourceAspectRatio,
+      });
+    } catch {
+      return { ok: false, error: "Multi-angle camera shot could not be normalized from the canvas snapshot." };
+    }
     if (!shot) {
       return { ok: false, error: "Multi-angle camera shot is not available in the canvas snapshot." };
     }

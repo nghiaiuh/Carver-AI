@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChangeAngleOperation } from "@carver/shared";
+import { adaptLegacyCameraShot, type ChangeAngleOperation } from "@carver/shared";
 import {
   buildChangeAnglePrompt,
   buildNovelViewGenerationRequest,
@@ -74,15 +74,23 @@ test("orbit metadata maps to a structured novel-view generation request", () => 
   });
 
   assert.ok(operation);
+  const cameraSpec = adaptLegacyCameraShot({
+    mode: "orbit",
+    orbit: { rotate: shot.azimuthDeg, tilt: shot.elevationDeg, distance: 7.5, lens: 35 },
+  }, {
+    inputAssetIds: ["11111111-1111-4111-8111-111111111111"],
+  });
   const request = buildNovelViewGenerationRequest({
     operation,
     sourceImageId: "asset-source",
     prompt: "compiled prompt",
+    cameraSpec,
   });
 
   assert.equal(request.operation, "novel_view_reconstruction");
   assert.equal(request.shotId, "shot-01");
   assert.equal(request.camera.target, "scene_center");
+  assert.deepEqual(request.cameraSpec, cameraSpec);
   assert.deepEqual(request.policy, {
     preserveSceneIdentity: true,
     preserveLayout: true,

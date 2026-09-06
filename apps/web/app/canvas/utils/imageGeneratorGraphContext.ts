@@ -6,6 +6,7 @@ import type {
   ImageGeneratorGraphContext,
   ImageGeneratorTextReference,
 } from "@carver/shared";
+import { normalizeCameraShotDirective } from "@carver/shared";
 import type { CanvasNode, CanvasPresetGroupNode } from "../types/canvas";
 import {
   isCanvasImageGeneratorNode,
@@ -139,7 +140,15 @@ function buildCameraShotSetContext(params: {
   // from a transient URL alone.
   if (!assetId) return null;
 
-  const shots = params.node.cameraShotSet.cameras
+  const sourceWidth = generatedOutput?.width ?? sourceNode.sourceImage?.width;
+  const sourceHeight = generatedOutput?.height ?? sourceNode.sourceImage?.height;
+  const aspectRatio =
+    typeof sourceWidth === "number" && Number.isFinite(sourceWidth) && sourceWidth > 0 &&
+    typeof sourceHeight === "number" && Number.isFinite(sourceHeight) && sourceHeight > 0
+      ? sourceWidth / sourceHeight
+      : 1;
+
+  const rawShots = params.node.cameraShotSet.cameras
     .filter((camera) => camera.isVisible)
     .map((camera, order) => ({
       shotSetNodeId: params.node.id,
@@ -151,7 +160,19 @@ function buildCameraShotSetContext(params: {
         ? { plan: { ...camera.plan } }
         : { orbit: { ...camera.orbit } }),
     }));
-  if (shots.length === 0) return null;
+  if (rawShots.length === 0) return null;
+
+  let shots: CameraShotGenerationContext["shots"];
+  try {
+    shots = rawShots.map((shot) => normalizeCameraShotDirective({
+      shot,
+      aspectRatio,
+      inputAssetIds: [assetId],
+    }));
+  } catch {
+    // The worker must never receive a partially normalized camera transform.
+    return null;
+  }
 
   return {
     shotSetNodeId: params.node.id,

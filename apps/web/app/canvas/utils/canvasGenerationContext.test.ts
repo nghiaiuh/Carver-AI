@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasContextGroupNode, CanvasNode } from "../types/canvas";
-import { getContextGroupInputPorts } from "./canvasNodePorts";
+import { getCameraShotSetInputPorts, getContextGroupInputPorts } from "./canvasNodePorts";
 import { buildCanvasSnapshotWithGraph, resolveConnectedImageReferences } from "./canvasGenerationContext";
 import { hydrateCanvasStateFromSnapshot } from "./canvasSnapshotHydration";
 
@@ -174,4 +174,88 @@ test("a lightweight group and its role edge survive the snapshot round trip", ()
   assert.equal(hydrated.nodes[0]?.groupLabel, "Site views");
   assert.equal(hydrated.nodes[0]?.groupColor, "sage");
   assert.equal(hydrated.edges[0]?.sourceGroupId, "site-views");
+});
+
+test("camera snapshots persist normalized specs while legacy camera snapshots still hydrate", () => {
+  const cameraNode: CanvasNode = {
+    id: "camera-set",
+    kind: "camera-shot-set",
+    x: 700,
+    y: 40,
+    width: 860,
+    height: 680,
+    imageUrl: "",
+    title: "Multi-Angles",
+    prompt: null,
+    role: "reference",
+    inputPorts: getCameraShotSetInputPorts(),
+    cameraShotSet: {
+      mode: "orbit",
+      selectedCameraId: "camera-1",
+      cameraDisplayMode: "ghost",
+      cameras: [{
+        id: "camera-1",
+        name: "Camera 01",
+        isVisible: true,
+        plan: {
+          u: 0.5,
+          v: 0.2,
+          targetU: 0.5,
+          targetV: 0.55,
+          height: 2.8,
+          lens: 28,
+          pitch: 0,
+          roll: 0,
+          viewDirection: "look-at-target",
+        },
+        orbit: { rotate: -42, tilt: -18, distance: 7.5, lens: 35 },
+      }],
+    },
+  };
+  const snapshot = buildCanvasSnapshotWithGraph({
+    nodes: [siteImage, cameraNode],
+    edges: [{
+      id: "site-to-camera",
+      sourceId: "site-image",
+      targetId: "camera-set",
+      sourcePortId: "source-right-image",
+      targetPortId: "camera-shot-set-input-image",
+      kind: "image",
+      label: "",
+    }],
+    activeGenerationTargetId: null,
+  });
+  const cameraSnapshot = snapshot.graph.nodes.find((node) => node.id === "camera-set");
+  assert.equal(cameraSnapshot?.cameraShotSet?.cameras[0]?.cameraSpec?.schemaVersion, 1);
+  assert.equal(cameraSnapshot?.cameraShotSet?.cameras[0]?.cameraSpec?.projection.aspectRatio, 1.52380952381);
+
+  const hydrated = hydrateCanvasStateFromSnapshot(snapshot);
+  const hydratedCamera = hydrated.nodes.find((node) => node.id === "camera-set");
+  assert.equal(hydratedCamera?.kind, "camera-shot-set");
+  if (hydratedCamera?.kind !== "camera-shot-set") return;
+  assert.equal(hydratedCamera.cameraShotSet.cameras[0]?.cameraSpec?.schemaVersion, 1);
+
+  const legacySnapshot = {
+    ...snapshot,
+    graph: {
+      ...snapshot.graph,
+      nodes: snapshot.graph.nodes.map((node) => node.id === "camera-set"
+        ? {
+            ...node,
+            cameraShotSet: node.cameraShotSet
+              ? {
+                  ...node.cameraShotSet,
+                  cameras: node.cameraShotSet.cameras.map(({ cameraSpec: _cameraSpec, ...camera }) => camera),
+                }
+              : undefined,
+          }
+        : node),
+    },
+  };
+  const hydratedLegacy = hydrateCanvasStateFromSnapshot(legacySnapshot);
+  const legacyCamera = hydratedLegacy.nodes.find((node) => node.id === "camera-set");
+  assert.equal(legacyCamera?.kind, "camera-shot-set");
+  if (legacyCamera?.kind !== "camera-shot-set") return;
+  assert.equal(legacyCamera.cameraShotSet.cameras[0]?.orbit.rotate, -42);
+  assert.equal(legacyCamera.cameraShotSet.cameras[0]?.cameraSpec, undefined);
 });

@@ -1,4 +1,5 @@
 import type {
+  CameraSpec,
   CameraShotDirective,
   ChangeAngleOperation,
   ImageGenerationRequest,
@@ -400,6 +401,7 @@ export function buildNovelViewGenerationRequest(params: {
   operation: ChangeAngleOperation;
   sourceImageId: string;
   prompt: string;
+  cameraSpec?: CameraSpec;
 }): ImageGenerationRequest {
   return {
     operation: "novel_view_reconstruction",
@@ -413,6 +415,7 @@ export function buildNovelViewGenerationRequest(params: {
       lensMm: params.operation.shot.lensMm,
       target: "scene_center",
     },
+    cameraSpec: params.cameraSpec,
     prompt: params.prompt,
     policy: {
       preserveSceneIdentity: true,

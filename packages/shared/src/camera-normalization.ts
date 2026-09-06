@@ -11,10 +11,12 @@ import {
   type LegacyCameraShot,
   type LegacyPlanWorldSize,
 } from "./novel-view";
+import type { CameraShotDirective } from "./prompt-engine";
 
 const EPSILON = 0.000_001;
 const ROUNDING_PRECISION = 1_000_000_000_000;
 const DEFAULT_SENSOR_WIDTH_MM = 36;
+export const LEGACY_PLAN_WORLD_WIDTH = 12;
 
 export class CameraNormalizationError extends Error {
   constructor(message: string) {
@@ -132,6 +134,15 @@ export const horizontalToVerticalFov = (params: {
     (2 * Math.atan(Math.tan(degreesToRadians(horizontalFovDeg) / 2) / aspectRatio) * 180) / Math.PI,
     "verticalFovDeg",
   );
+};
+
+/** Matches the legacy Plan Surface viewport's explicit virtual frame. */
+export const getLegacyPlanWorldSize = (aspectRatio: number): LegacyPlanWorldSize => {
+  const normalizedAspectRatio = requirePositive(aspectRatio, "aspectRatio");
+  return {
+    width: LEGACY_PLAN_WORLD_WIDTH,
+    depth: canonicalNumber(LEGACY_PLAN_WORLD_WIDTH / normalizedAspectRatio, "planWorldSize.depth"),
+  };
 };
 
 /** Builds an orbit pose in the canonical right-handed, Y-up frame. */
@@ -414,4 +425,25 @@ export const adaptLegacyCameraShot = (
       ],
     }),
   });
+};
+
+/**
+ * Enriches a legacy-compatible directive with a canonical CameraSpec. Raw shot
+ * values remain intact for prompt compatibility while CameraSpec is the
+ * versioned geometry boundary used by jobs and workers.
+ */
+export const normalizeCameraShotDirective = (params: {
+  shot: CameraShotDirective;
+  aspectRatio?: number;
+  inputAssetIds?: readonly string[];
+}): CameraShotDirective => {
+  const aspectRatio = params.aspectRatio ?? 1;
+  return {
+    ...params.shot,
+    cameraSpec: adaptLegacyCameraShot(params.shot, {
+      aspectRatio,
+      planWorldSize: params.shot.mode === "plan" ? getLegacyPlanWorldSize(aspectRatio) : undefined,
+      inputAssetIds: params.inputAssetIds,
+    }),
+  };
 };

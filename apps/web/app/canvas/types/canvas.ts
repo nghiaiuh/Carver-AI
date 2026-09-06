@@ -1,4 +1,4 @@
-import type { CanvasGroupColor, ImageGeneratorAspectRatio } from "@carver/shared";
+import type { CameraSpec, CanvasGroupColor, ImageGeneratorAspectRatio } from "@carver/shared";
 
 /*
  * Shared canvas domain types.
@@ -417,6 +417,8 @@ export type CanvasMultiAngleCamera = {
   plan: CanvasPlanCameraTransform;
   orbit: CanvasOrbitCameraTransform;
   isVisible: boolean;
+  /** Recomputed from the editable transform whenever this state is persisted. */
+  cameraSpec?: CameraSpec;
 };
 
 export type CanvasCameraShotSetState = {

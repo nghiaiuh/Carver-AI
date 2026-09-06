@@ -1,4 +1,5 @@
 import type { CanvasReferenceRole, SpatialLock } from "./snapshot";
+import type { CameraSpec } from "./novel-view";
 
 export type PromptExecutionMode = "text_to_image" | "image_edit" | "region_edit";
 
@@ -27,6 +28,8 @@ export type CameraShotDirective = {
     distance: number;
     lens: number;
   };
+  /** Normalized canonical camera state. Omitted only by legacy snapshots/jobs. */
+  cameraSpec?: CameraSpec;
 };
 
 export type DecisionSource =

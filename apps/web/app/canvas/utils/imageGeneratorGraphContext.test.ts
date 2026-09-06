@@ -137,6 +137,12 @@ test("multi-angles resolves the selected Image Generator gallery output as its s
   assert.equal(context.generatorContext.cameraShotSet.source.imageUrl, "");
   assert.equal(context.executionContext?.target.assetId, selectedAssetId);
   assert.equal(context.generatorContext.cameraShotSet.shots[0]?.orbit?.rotate, -42);
+  assert.equal(context.generatorContext.cameraShotSet.shots[0]?.cameraSpec?.schemaVersion, 1);
+  assert.equal(context.generatorContext.cameraShotSet.shots[0]?.cameraSpec?.projection.aspectRatio, 1);
+  assert.deepEqual(
+    context.generatorContext.cameraShotSet.shots[0]?.cameraSpec?.provenance.inputAssetIds,
+    [selectedAssetId],
+  );
 });
 
 test("resolves the selected Generator output for the Multi-Angles preview", () => {

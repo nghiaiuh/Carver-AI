@@ -8,8 +8,11 @@
 import { getSupabaseAdmin } from "@carver/db/server";
 import type { Database } from "@carver/db";
 import {
+  cameraShotSetContextSchema,
   coerceCanvasSnapshotDocument,
   isImageGeneratorAspectRatio,
+  normalizeCameraShotDirective,
+  normalizeCameraSpec,
   type CarverAiJobPayload,
   type CarverAiJobSimulationConfig,
   type CreateAiJobRequest,
@@ -57,9 +60,45 @@ export type StaleRunningJob = {
   lastAttemptAt: string | null;
 };
 
+const aspectRatioValue = (value: CarverAiJobPayload["aspectRatio"] | undefined) => {
+  if (!value || value === "auto") return 1;
+  const [width, height] = value.split(":").map(Number);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? width / height
+    : 1;
+};
+
+const normalizePersistedCameraShotSetContext = (params: {
+  value: unknown;
+  aspectRatio?: CarverAiJobPayload["aspectRatio"];
+}): CreateAiJobRequest["cameraShotSetContext"] | undefined => {
+  const parsed = cameraShotSetContextSchema.safeParse(params.value);
+  if (!parsed.success) return undefined;
+
+  try {
+    const inputAssetIds = parsed.data.source.assetId ? [parsed.data.source.assetId] : [];
+    return {
+      ...parsed.data,
+      shots: parsed.data.shots.map((shot) => ({
+        ...shot,
+        // Legacy jobs have no CameraSpec. New jobs must carry one that the
+        // canonical normalizer accepts before the worker may use it.
+        cameraSpec: shot.cameraSpec
+          ? normalizeCameraSpec(shot.cameraSpec)
+          : normalizeCameraShotDirective({
+              shot,
+              aspectRatio: aspectRatioValue(params.aspectRatio),
+              inputAssetIds,
+            }).cameraSpec,
+      })),
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 export function readPersistedGenerationOptions(payload: Record<string, unknown>) {
   const imageGeneratorContext = objectValue(payload.imageGeneratorContext);
-  const cameraShotSetContext = objectValue(payload.cameraShotSetContext);
   const targetType: CarverAiJobPayload["targetType"] =
     payload.targetType === "canvas-node"
       ? "canvas-node"
@@ -70,11 +109,12 @@ export function readPersistedGenerationOptions(payload: Record<string, unknown>)
     typeof payload.outputCount === "number" && Number.isInteger(payload.outputCount)
       ? Math.min(Math.max(payload.outputCount, 1), 4)
       : undefined;
+  const aspectRatio = isImageGeneratorAspectRatio(payload.aspectRatio) ? payload.aspectRatio : undefined;
 
   return {
     targetType,
     model: typeof payload.model === "string" && payload.model.trim() ? payload.model.trim() : undefined,
-    aspectRatio: isImageGeneratorAspectRatio(payload.aspectRatio) ? payload.aspectRatio : undefined,
+    aspectRatio,
     outputCount,
     imageGeneratorContext:
       typeof imageGeneratorContext.nodeId === "string" &&
@@ -84,13 +124,10 @@ export function readPersistedGenerationOptions(payload: Record<string, unknown>)
       Array.isArray(imageGeneratorContext.textReferences)
         ? (imageGeneratorContext as CreateAiJobRequest["imageGeneratorContext"])
         : undefined,
-    cameraShotSetContext:
-      typeof cameraShotSetContext.shotSetNodeId === "string" &&
-      cameraShotSetContext.source &&
-      Array.isArray(cameraShotSetContext.shots) &&
-      cameraShotSetContext.shots.length > 0
-        ? (cameraShotSetContext as CreateAiJobRequest["cameraShotSetContext"])
-        : undefined,
+    cameraShotSetContext: normalizePersistedCameraShotSetContext({
+      value: payload.cameraShotSetContext,
+      aspectRatio,
+    }),
   };
 }
 

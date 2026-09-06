@@ -2,7 +2,7 @@ import type {
   CanvasGraphSourceImage,
   CanvasSnapshotDocument,
 } from "@carver/shared";
-import { isImageGeneratorAspectRatio } from "@carver/shared";
+import { cameraSpecSchema, isImageGeneratorAspectRatio } from "@carver/shared";
 import type {
   AddedObject,
   CanvasEdge,
@@ -432,6 +432,7 @@ function sanitizeCameraShotSetState(value: unknown): CanvasCameraShotSetState | 
         const id = stringValue(entry?.id);
         const name = stringValue(entry?.name);
         if (!id || !name || !plan || !orbit) return [];
+        const parsedCameraSpec = cameraSpecSchema.safeParse(entry?.cameraSpec);
         const viewDirection = plan.viewDirection === "auto" || plan.viewDirection === "manual"
           ? plan.viewDirection
           : "look-at-target";
@@ -457,6 +458,7 @@ function sanitizeCameraShotSetState(value: unknown): CanvasCameraShotSetState | 
             distance: numberValue(orbit.distance, 7.5),
             lens: numberValue(orbit.lens, 35),
           },
+          ...(parsedCameraSpec.success ? { cameraSpec: parsedCameraSpec.data } : {}),
         }];
       })
     : [];

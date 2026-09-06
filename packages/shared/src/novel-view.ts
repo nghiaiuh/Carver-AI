@@ -140,6 +140,8 @@ export type ImageGenerationRequest = {
     lensMm?: number;
     target: "scene_center";
   };
+  /** Canonical camera state carried with new requests; absent on legacy requests. */
+  cameraSpec?: CameraSpec;
   prompt: string;
   policy: NovelViewGenerationPolicy;
 };

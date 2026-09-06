@@ -165,6 +165,12 @@ test("rebuilds the multi-angle source and camera from the snapshot", () => {
     distance: 7.5,
     lens: 35,
   });
+  assert.equal(result.value.cameraShotSetContext.shots[0]?.cameraSpec?.schemaVersion, 1);
+  assert.equal(result.value.cameraShotSetContext.shots[0]?.cameraSpec?.projection.aspectRatio, 1.333333333333);
+  assert.deepEqual(
+    result.value.cameraShotSetContext.shots[0]?.cameraSpec?.provenance.inputAssetIds,
+    [SOURCE_ASSET_ID],
+  );
 });
 
 test("multi-angle request hash is unchanged when gateway URLs refresh", () => {

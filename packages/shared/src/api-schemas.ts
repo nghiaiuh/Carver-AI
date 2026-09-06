@@ -197,7 +197,7 @@ const imageGeneratorTextReferenceSchema = z
   })
   .strict();
 
-const cameraShotDirectiveSchema = z.object({
+export const cameraShotDirectiveSchema = z.object({
   shotSetNodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
   shotId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
   shotName: trimmedString.min(1).max(MAX_LABEL_LENGTH),
@@ -211,6 +211,7 @@ const cameraShotDirectiveSchema = z.object({
   orbit: z.object({
     rotate: z.number().finite(), tilt: z.number().finite(), distance: z.number().finite(), lens: z.number().finite(),
   }).strict().optional(),
+  cameraSpec: cameraSpecSchema.optional(),
 }).strict().superRefine((value, context) => {
   const isValid = value.mode === "plan"
     ? Boolean(value.plan) && !value.orbit
@@ -223,7 +224,7 @@ const cameraShotDirectiveSchema = z.object({
   }
 });
 
-const cameraShotSetContextSchema = z.object({
+export const cameraShotSetContextSchema = z.object({
   shotSetNodeId: trimmedString.min(1).max(MAX_LABEL_LENGTH),
   source: generationTargetSchema,
   shots: z.array(cameraShotDirectiveSchema).min(1).max(4),

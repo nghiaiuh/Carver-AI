@@ -8,6 +8,7 @@ import {
   focalLengthToHorizontalFov,
   horizontalToVerticalFov,
   normalizeAzimuthDeg,
+  normalizeCameraShotDirective,
   normalizeCameraSpec,
   orbitCamera,
 } from "./camera-normalization";
@@ -55,6 +56,28 @@ test("the adapter accepts the current snapshot-compatible camera directive shape
 
   const spec = adaptLegacyCameraShot(directive, { inputAssetIds: [ASSET_ID] });
   assert.equal(spec.authored?.azimuthDeltaDeg, 42);
+});
+
+test("a normalized directive carries the raw legacy transform and a schema-valid CameraSpec", () => {
+  const directive: CameraShotDirective = {
+    shotSetNodeId: "camera-set-1",
+    shotId: "camera-1",
+    shotName: "Camera 01",
+    order: 0,
+    mode: "orbit",
+    orbit: { rotate: -42, tilt: 10, distance: 7.5, lens: 35 },
+  };
+
+  const normalized = normalizeCameraShotDirective({
+    shot: directive,
+    aspectRatio: 16 / 9,
+    inputAssetIds: [ASSET_ID],
+  });
+
+  assert.deepEqual(normalized.orbit, directive.orbit);
+  assert.equal(normalized.cameraSpec?.projection.aspectRatio, 1.777777777778);
+  assert.deepEqual(normalized.cameraSpec?.provenance.inputAssetIds, [ASSET_ID]);
+  assert.equal(cameraSpecSchema.safeParse(normalized.cameraSpec).success, true);
 });
 
 test("azimuth normalization makes a full 360-degree orbit round-trip to the same pose", () => {

@@ -1,4 +1,5 @@
 import type { ImageGeneratorAspectRatio } from "./image-generator";
+import type { CameraSpec } from "./novel-view";
 
 /*
  * Flow: Defines the canonical canvas snapshot document.
@@ -248,6 +249,8 @@ export type CanvasGraphNodeSnapshot = {
         distance: number;
         lens: number;
       };
+      /** Optional for compatibility with snapshots created before CameraSpec v1. */
+      cameraSpec?: CameraSpec;
     }>;
     selectedCameraId?: string | null;
     cameraDisplayMode?: "show-all" | "ghost" | "selected-only";

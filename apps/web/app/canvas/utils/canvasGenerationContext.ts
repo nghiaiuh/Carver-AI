@@ -26,7 +26,7 @@ import type {
   CanvasGenerationPresetReference,
   CanvasSnapshotDocument,
 } from "@carver/shared";
-import { createEmptyCanvasSnapshotDocument } from "@carver/shared";
+import { createEmptyCanvasSnapshotDocument, normalizeCameraShotDirective } from "@carver/shared";
 import { isAssistantNode, isPresetGroupNode } from "./presetGroupHelpers";
 import { resolveContextGroupItems } from "./contextGroupHelpers";
 import { getCanvasEdgeSourceNodes } from "./canvasNodeGroups";
@@ -108,6 +108,88 @@ function sanitizeMaskHistoryForSnapshot(maskHistory: CanvasNode["maskHistory"]) 
   return {
     past: maskHistory.past.map(sanitizeMaskEntry).slice(-10),
     future: maskHistory.future.map(sanitizeMaskEntry).slice(-10),
+  };
+}
+
+function resolveSnapshotGeneratedOutput(sourceNode: CanvasNode, nodes: CanvasNode[]) {
+  const generatorNode = isCanvasImageGeneratorNode(sourceNode)
+    ? sourceNode
+    : isCanvasImageOutputGalleryNode(sourceNode)
+      ? nodes.find(
+          (candidate): candidate is Extract<CanvasNode, { kind: "image-generator" }> =>
+            candidate.id === sourceNode.imageOutputGallery.generatorNodeId &&
+            isCanvasImageGeneratorNode(candidate),
+        )
+      : null;
+  if (!generatorNode) return null;
+
+  const selectedAssetId = isCanvasImageOutputGalleryNode(sourceNode)
+    ? sourceNode.imageOutputGallery.selectedOutputAssetId
+    : generatorNode.imageGenerator.selectedOutputAssetId;
+  return generatorNode.imageGenerator.outputs.find((output) => output.assetId === selectedAssetId)
+    ?? generatorNode.imageGenerator.outputs[0]
+    ?? null;
+}
+
+function snapshotCameraShotSet(params: {
+  node: Extract<CanvasNode, { kind: "camera-shot-set" }>;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}) {
+  const sourceEdges = params.edges.filter(
+    (edge) => edge.targetId === params.node.id && !edge.sourceGroupId,
+  );
+  const sourceNode = sourceEdges.length === 1
+    ? params.nodes.find((node) => node.id === sourceEdges[0]?.sourceId)
+    : undefined;
+  const sourceOutput = sourceNode ? resolveSnapshotGeneratedOutput(sourceNode, params.nodes) : null;
+  const sourceWidth = sourceOutput?.width ?? sourceNode?.sourceImage?.width;
+  const sourceHeight = sourceOutput?.height ?? sourceNode?.sourceImage?.height;
+  const aspectRatio =
+    typeof sourceWidth === "number" && Number.isFinite(sourceWidth) && sourceWidth > 0 &&
+    typeof sourceHeight === "number" && Number.isFinite(sourceHeight) && sourceHeight > 0
+      ? sourceWidth / sourceHeight
+      : 1;
+  const inputAssetIds = [sourceOutput?.assetId ?? sourceNode?.sourceImage?.assetId].filter(
+    (assetId): assetId is string => typeof assetId === "string" && assetId.length > 0,
+  );
+
+  return {
+    mode: params.node.cameraShotSet.mode,
+    cameras: params.node.cameraShotSet.cameras.map((camera, order) => {
+      const shot = params.node.cameraShotSet.mode === "plan"
+        ? {
+            shotSetNodeId: params.node.id,
+            shotId: camera.id,
+            shotName: camera.name,
+            order,
+            mode: "plan" as const,
+            plan: { ...camera.plan },
+          }
+        : {
+            shotSetNodeId: params.node.id,
+            shotId: camera.id,
+            shotName: camera.name,
+            order,
+            mode: "orbit" as const,
+            orbit: { ...camera.orbit },
+          };
+
+      try {
+        return {
+          ...camera,
+          plan: { ...camera.plan },
+          orbit: { ...camera.orbit },
+          cameraSpec: normalizeCameraShotDirective({ shot, aspectRatio, inputAssetIds }).cameraSpec,
+        };
+      } catch {
+        // Keep a legacy-compatible raw camera instead of persisting invalid geometry.
+        const { cameraSpec: _cameraSpec, ...legacyCamera } = camera;
+        return { ...legacyCamera, plan: { ...camera.plan }, orbit: { ...camera.orbit } };
+      }
+    }),
+    selectedCameraId: params.node.cameraShotSet.selectedCameraId,
+    cameraDisplayMode: params.node.cameraShotSet.cameraDisplayMode,
   };
 }
 
@@ -462,16 +544,7 @@ export function buildCanvasSnapshotWithGraph(params: {
             }
           : undefined,
         cameraShotSet: isCanvasCameraShotSetNode(node)
-          ? {
-              mode: node.cameraShotSet.mode,
-              cameras: node.cameraShotSet.cameras.map((camera) => ({
-                ...camera,
-                plan: { ...camera.plan },
-                orbit: { ...camera.orbit },
-              })),
-              selectedCameraId: node.cameraShotSet.selectedCameraId,
-              cameraDisplayMode: node.cameraShotSet.cameraDisplayMode,
-            }
+          ? snapshotCameraShotSet({ node, nodes: params.nodes, edges: params.edges })
           : undefined,
         assistant: isAssistantNode(node) ? node.assistant : undefined,
         imageGenerator: isCanvasImageGeneratorNode(node)
