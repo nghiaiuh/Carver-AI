@@ -134,6 +134,7 @@ test("multi-angles resolves the selected Image Generator gallery output as its s
   assert.ok(context?.generatorContext.cameraShotSet);
   assert.equal(context.generatorContext.cameraShotSet.source.nodeId, "source-gallery");
   assert.equal(context.generatorContext.cameraShotSet.source.assetId, selectedAssetId);
+  assert.equal(context.generatorContext.cameraShotSet.source.imageUrl, "");
   assert.equal(context.executionContext?.target.assetId, selectedAssetId);
   assert.equal(context.generatorContext.cameraShotSet.shots[0]?.orbit?.rotate, -42);
 });

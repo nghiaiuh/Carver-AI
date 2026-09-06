@@ -336,9 +336,7 @@ export const prepareGenerationState = async (
     : null;
   const sourceImageId =
     job.cameraShotSetContext?.source.assetId ??
-    job.canvasGraphContext?.target.assetId ??
-    job.cameraShotSetContext?.source.nodeId ??
-    job.canvasGraphContext?.target.nodeId;
+    job.canvasGraphContext?.target.assetId;
   const novelViewRequest = compiledPromptV2 && changeAngleOperation && sourceImageId
     ? buildNovelViewGenerationRequest({
         operation: changeAngleOperation,

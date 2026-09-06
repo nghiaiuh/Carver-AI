@@ -129,13 +129,15 @@ function buildCameraShotSetContext(params: {
   }
 
   const generatedOutput = resolveGeneratedNodeOutput(sourceNode, params.nodes);
-  const imageUrl = generatedOutput?.imageUrl || sourceNode.imageUrl || sourceNode.sourceImage?.url || "";
   const assetId = resolveConnectedImageAssetId({
-    imageUrl,
+    imageUrl: generatedOutput?.imageUrl || sourceNode.imageUrl || sourceNode.sourceImage?.url || "",
     sourceImageUrl: sourceNode.sourceImage?.url,
     assetId: generatedOutput?.assetId ?? sourceNode.sourceImage?.assetId,
   });
-  if (!imageUrl && !assetId) return null;
+  // Multi-angle is an image-edit operation. Its source must survive browser
+  // reloads and signed gateway URL refreshes, so never build a camera request
+  // from a transient URL alone.
+  if (!assetId) return null;
 
   const shots = params.node.cameraShotSet.cameras
     .filter((camera) => camera.isVisible)
@@ -156,7 +158,7 @@ function buildCameraShotSetContext(params: {
     source: {
       nodeId: sourceNode.id,
       title: sourceNode.title,
-      imageUrl,
+      imageUrl: "",
       assetId,
       role: "direct_edit_target",
       prompt: params.prompt.trim() || null,
