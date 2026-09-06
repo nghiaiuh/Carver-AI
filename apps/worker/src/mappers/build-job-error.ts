@@ -6,6 +6,7 @@
  */
 
 import { getGenerationStageError, type GenerationFailureStage } from "../errors/generation-stage-error";
+import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 
 export type WorkerJobError = {
   errorCode: string;
@@ -20,6 +21,23 @@ export const toWorkerError = (error: unknown) =>
   error instanceof Error ? error : new Error(typeof error === "string" ? error : "Unknown worker failure");
 
 export const buildJobError = (error: unknown): WorkerJobError => {
+  if (error instanceof GenerationDecisionGateError) {
+    return {
+      errorCode:
+        error.decision === "require_review"
+          ? "generation_review_required"
+          : "generation_rejected",
+      errorMessage:
+        error.decision === "require_review"
+          ? "Generation requires review before it can run."
+          : "Generation was rejected before provider execution.",
+      permanent: true,
+      failureStage: null,
+      providerStatus: null,
+      providerCode: null,
+    };
+  }
+
   const stageError = getGenerationStageError(error);
   if (stageError) {
     if (stageError.stage === "provider_configuration") {

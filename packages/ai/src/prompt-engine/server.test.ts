@@ -153,7 +153,7 @@ test("camera metadata bypasses the language interpreter and is compiled afterwar
   assert.doesNotMatch(interpreterPrompt, /-41\.96062127060776/);
   assert.match(result.providerPrompt, /front-left three-quarter view/);
   assert.match(result.providerPrompt, /azimuth -42°/);
-  assert.match(result.providerPrompt, /Preserve these additional user-requested constraints:/);
+  assert.match(result.providerPrompt, /APPROVED SEMANTIC PLAN/);
   assert.match(result.providerPrompt, /Keep the pond unchanged\./);
   assert.doesNotMatch(result.providerPrompt, /Camera 01/);
 });

@@ -77,6 +77,42 @@ test("image generator prevents an unprompted list from being blended into one im
   assert.match(prompt, /do not blend contradictory options together/);
 });
 
+test("review and rejection decisions stop before the image provider", async () => {
+  for (const decision of ["require_review", "reject"] as const) {
+    let providerCalls = 0;
+    const state: PreparedGenerationState = {
+      editBrief: {} as CarverEditBrief,
+      compiledPromptMeta: null,
+      compiledPromptV2: { plan: { decision } } as never,
+      finalPrompt: "Provider prompt must not be used.",
+    };
+
+    await assert.rejects(
+      executeGeneratedImageJob(
+        {
+          jobId: `job-decision-${decision}`,
+          projectId: "project-1",
+          userId: "user-1",
+          targetType: "image-generator",
+          executionMode: "text_to_image",
+        } as CarverAiJobPayload,
+        state,
+        {
+          dependencies: {
+            generateImagesFromPrompt: async () => {
+              providerCalls += 1;
+              return [];
+            },
+          },
+        },
+      ),
+      new RegExp(`Generation decision gate blocked provider execution: ${decision}`),
+    );
+
+    assert.equal(providerCalls, 0, decision);
+  }
+});
+
 test("camera-shot generation rejects any execution mode other than image_edit", async () => {
   await assert.rejects(
     prepareGenerationState(

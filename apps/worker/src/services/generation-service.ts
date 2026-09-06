@@ -42,6 +42,7 @@ import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGe
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
+import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
 
 const logger = createSafeLogger("worker.generation-service");
@@ -83,6 +84,15 @@ export type PreparedGenerationState = {
   finalPrompt: string | null;
   cameraShot?: CameraShotDirective | null;
   novelViewRequest?: ImageGenerationRequest | null;
+};
+
+const assertProviderExecutionAllowed = (state: PreparedGenerationState) => {
+  const decision =
+    state.compiledPromptV2?.plan.decision ?? state.compiledPromptMeta?.decision;
+
+  if (decision === "reject" || decision === "require_review") {
+    throw new GenerationDecisionGateError(decision);
+  }
 };
 
 export type PreparedGenerationJobResult = {
@@ -374,6 +384,8 @@ export const executeGeneratedImageJob = async (
     dependencies?: Partial<GenerationServiceDependencies>;
   },
 ): Promise<PreparedGenerationJobResult> => {
+  assertProviderExecutionAllowed(state);
+
   if (!state.finalPrompt) {
     throw new Error("Image-generating jobs require a compiled prompt.");
   }
@@ -468,6 +480,7 @@ export const executeGeneratedImageJob = async (
       const shotState = shot && state.cameraShot?.shotId !== shot.shotId
         ? await prepareGenerationState(job, shot)
         : state;
+      assertProviderExecutionAllowed(shotState);
       if (shot?.mode === "orbit" && !shotState.novelViewRequest) {
         throw new Error("Orbit camera generation is missing its structured novel-view prompt.");
       }

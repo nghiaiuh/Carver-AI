@@ -341,7 +341,7 @@ ${riskInstruction ? `\n${riskInstruction}\n` : ""}
 
 DO NOT
 
-Do not:
+Unless a directly approved operation in ADDITIONAL USER INSTRUCTION requires it, do not:
 
 - redesign the landscape
 - restyle the property

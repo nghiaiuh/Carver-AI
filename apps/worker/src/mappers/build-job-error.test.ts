@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildJobError, toWorkerError } from "./build-job-error";
+import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { GenerationStageError } from "../errors/generation-stage-error";
 
 test("classifies transient provider and storage failures as retryable", () => {
@@ -62,4 +63,14 @@ test("identifies input resolution and R2 persistence failures by stage", () => {
 
   assert.equal(input.errorCode, "generation_input_unavailable");
   assert.equal(persistence.errorCode, "storage_upload_failed");
+});
+
+test("marks decision-gated jobs terminal without treating them as provider failures", () => {
+  const review = buildJobError(new GenerationDecisionGateError("require_review"));
+  const rejected = buildJobError(new GenerationDecisionGateError("reject"));
+
+  assert.equal(review.errorCode, "generation_review_required");
+  assert.equal(rejected.errorCode, "generation_rejected");
+  assert.equal(review.permanent, true);
+  assert.equal(rejected.permanent, true);
 });
