@@ -6,6 +6,7 @@ import {
   TEST_PNG_BASE64,
 } from "@carver/shared/testing/openaiTransport";
 import { GenerationStageError } from "../../errors/generation-stage-error";
+import type { ProviderImageInput } from "../image-provider";
 import {
   buildOpenAiImageGenerationRequestBody,
   generateImagesFromPrompt,
@@ -89,10 +90,81 @@ test("image edit request carries target, references, mask, and output count in m
 
   const body = fake.requests[0]?.init.body;
   assert.ok(body instanceof FormData);
-  assert.equal(body.get("prompt"), "Add autumn planting.");
+  assert.match(String(body.get("prompt")), /^Add autumn planting\./);
+  assert.equal(body.get("model"), "gpt-image-2");
   assert.equal(body.get("n"), "2");
   assert.equal(body.getAll("image[]").length, 2);
   assert.ok(body.get("mask"));
+});
+
+test("image edit maps ordered conditioning roles and bytes while forwarding the selected model", async () => {
+  const fake = createQueuedOpenAITransport([openAIJsonResponse(imagePayload(1))]);
+  const selectedModel = "gpt-image-2-2026-09-01";
+  const source = Buffer.from("authoritative-source", "utf8");
+  const cameraGuide = Buffer.from("camera-guide", "utf8");
+  const reference = Buffer.from("style-reference", "utf8");
+  const mask = Buffer.from("protected-mask", "utf8");
+  const imageManifest: ProviderImageInput[] = [
+    { role: "authoritative_source", assetId: "asset-source", required: true, buffer: source, mimeType: "image/png" },
+    { role: "camera_guide", assetId: "asset-guide", required: true, buffer: cameraGuide, mimeType: "image/png" },
+    { role: "reference", assetId: "asset-style", required: true, buffer: reference, mimeType: "image/png" },
+    { role: "protected_region", assetId: "asset-mask", required: true, buffer: mask, mimeType: "image/png" },
+  ];
+
+  const images = await generateImagesFromPrompt({
+    prompt: "Create a controlled view.",
+    mode: "image_edit",
+    model: selectedModel,
+    outputCount: 1,
+    imageManifest,
+    transport: fake.transport,
+  });
+
+  const body = fake.requests[0]?.init.body;
+  assert.ok(body instanceof FormData);
+  assert.equal(body.get("model"), selectedModel);
+  assert.match(String(body.get("prompt")), /Image 1 is the authoritative source image\./);
+  assert.match(String(body.get("prompt")), /Image 2 is the camera geometry guide\./);
+  assert.match(String(body.get("prompt")), /Image 3 is the connected reference image\./);
+  assert.match(String(body.get("prompt")), /native mask applies only to Image 1/);
+
+  const files = body.getAll("image[]") as File[];
+  assert.deepEqual(files.map((file) => file.name), [
+    "authoritative-source.png",
+    "camera-guide-2.png",
+    "reference-3.png",
+  ]);
+  assert.deepEqual(
+    await Promise.all(files.map(async (file) => Buffer.from(await file.arrayBuffer()))),
+    [source, cameraGuide, reference],
+  );
+  const maskFile = body.get("mask") as File;
+  assert.equal(maskFile.name, "protected-region-mask.png");
+  assert.deepEqual(Buffer.from(await maskFile.arrayBuffer()), mask);
+  assert.equal(images[0]?.provider, selectedModel);
+});
+
+test("image edit rejects provider input over the documented sixteen-image limit without truncation", async () => {
+  const fake = createQueuedOpenAITransport([]);
+  const source = { role: "authoritative_source" as const, assetId: "asset-source", required: true, buffer: Buffer.from("source"), mimeType: "image/png" };
+  const references: ProviderImageInput[] = Array.from({ length: 16 }, (_, index) => ({
+    role: "reference",
+    assetId: `asset-reference-${index + 1}`,
+    required: true,
+    buffer: Buffer.from(`reference-${index + 1}`),
+    mimeType: "image/png",
+  }));
+
+  await assert.rejects(
+    generateImagesFromPrompt({
+      prompt: "x",
+      mode: "image_edit",
+      imageManifest: [source, ...references],
+      transport: fake.transport,
+    }),
+    (error: unknown) => error instanceof GenerationStageError && error.providerCode === "too_many_input_images",
+  );
+  assert.equal(fake.requests.length, 0);
 });
 
 test("image adapter maps provider rejection, malformed output, and incomplete output to safe stage errors", async () => {

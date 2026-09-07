@@ -23,6 +23,7 @@ import type {
   CameraShotDirective,
   GenerationPromptResultV2,
   ImageGenerationRequest,
+  ModelConditioning,
 } from "@carver/shared";
 import {
   getImageGeneratorProviderSize,
@@ -38,7 +39,12 @@ import {
   persistGeneratedImageAsset,
   type PersistedGeneratedOutput,
 } from "./asset-persistence-service";
-import { resolveGenerationMaskImage, resolveGenerationReferenceImages, resolveGenerationTargetImage } from "./job-image-sources";
+import {
+  buildProviderImageManifest,
+  resolveGenerationMaskImage,
+  resolveGenerationReferenceImages,
+  resolveGenerationTargetImage,
+} from "./job-image-sources";
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
@@ -488,12 +494,13 @@ export const executeGeneratedImageJob = async (
       if (!providerPrompt) {
         throw new Error("Multi-angle shot is missing a compiled prompt.");
       }
+      let conditioning: ModelConditioning | null = null;
       // New multi-angle jobs already carry both a normalized CameraSpec and a
       // semantic PromptPlan. Build the provider-neutral package before any
-      // provider work. MA-007 will map its image roles into adapter inputs;
-      // legacy persisted jobs continue through the compatible prompt path.
+      // provider work. Legacy persisted jobs continue through the compatible
+      // source/reference manifest until their next job creation.
       if (shot && shotState.compiledPromptV2 && shot.cameraSpec && targetImage && inputMetadata?.width && inputMetadata.height) {
-        const conditioning = await runGenerationStage("conditioning_assembly", async () =>
+        conditioning = await runGenerationStage("conditioning_assembly", async () =>
           buildModelConditioning({
             job,
             cameraShot: shot,
@@ -517,6 +524,14 @@ export const executeGeneratedImageJob = async (
           referenceCount: conditioning.referenceImages.length,
         });
       }
+      const imageManifest = await runGenerationStage("input_resolution", async () =>
+        buildProviderImageManifest({
+          conditioning,
+          targetImage,
+          referenceImages,
+          maskImage,
+        }),
+      );
       logProviderDebugPrompt({
         jobId: job.jobId,
         cameraShot: shot,
@@ -539,6 +554,7 @@ export const executeGeneratedImageJob = async (
               model: job.model && job.model !== "auto" ? job.model : undefined,
               size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
               outputCount: requestedOutputCount,
+              imageManifest,
               targetImage,
               referenceImages,
               maskImage,

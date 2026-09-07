@@ -134,8 +134,9 @@ test("camera-shot generation rejects any execution mode other than image_edit", 
   );
 });
 
-test("orbit prompt reaches the image provider prompt field", async () => {
+test("orbit prompt, conditioning manifest, and selected model reach the image provider", async () => {
   const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
+  const referenceBuffer = Buffer.from("style-reference-bytes", "utf8");
   const shot = normalizeCameraShotDirective({
     shot: {
       shotSetNodeId: "camera-set-1",
@@ -166,12 +167,19 @@ test("orbit prompt reaches the image provider prompt field", async () => {
     promptMode: "auto",
     inputSnapshotId: null,
     snapshot: createEmptyCanvasSnapshotDocument(),
-    referenceAssetIds: [],
-    inputAssetIds: ["asset-source"],
+    model: "gpt-image-2-2026-09-01",
+    referenceAssetIds: ["asset-style"],
+    inputAssetIds: ["asset-source", "asset-style"],
     outputCount: 1,
     canvasGraphContext: {
       target: source,
-      imageReferences: [],
+      imageReferences: [{
+        nodeId: "style-node",
+        title: "Autumn planting style",
+        imageUrl: "",
+        assetId: "asset-style",
+        role: "style_reference",
+      }],
       presetReferences: [],
       preserveRules: [],
       referenceSummary: "Camera source image.",
@@ -180,7 +188,13 @@ test("orbit prompt reaches the image provider prompt field", async () => {
     imageGeneratorContext: {
       nodeId: "generator-1",
       nodeTitle: "Image Generator",
-      imageReferences: [],
+      imageReferences: [{
+        nodeId: "style-node",
+        title: "Autumn planting style",
+        imageUrl: "",
+        assetId: "asset-style",
+        role: "style_reference",
+      }],
       presetReferences: [],
       textReferences: [{
         nodeId: shot.shotSetNodeId,
@@ -210,22 +224,41 @@ test("orbit prompt reaches the image provider prompt field", async () => {
   assert.doesNotMatch(state.finalPrompt ?? "", /Camera 01/);
 
   let providerPrompt = "";
-  await executeGeneratedImageJob(job, state, {
+  let providerModel: string | undefined;
+  let providerImageManifest: Array<{ role: string; assetId: string | null; buffer: Buffer }> = [];
+  const result = await executeGeneratedImageJob(job, state, {
     dependencies: {
       findReusableGeneratedImageAsset: async () => null,
       findReusableGeneratedImageAssets: async () => [],
-      resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
-      resolveGenerationReferenceImages: async () => [],
+      resolveGenerationTargetImage: async () => ({
+        buffer: imageBuffer,
+        mimeType: "image/png",
+        assetId: "asset-source",
+      }),
+      resolveGenerationReferenceImages: async () => [{
+        buffer: referenceBuffer,
+        mimeType: "image/png",
+        assetId: "asset-style",
+        contextId: "style-node",
+        sourceNodeId: "style-node",
+        role: "style_reference",
+      }],
       resolveGenerationMaskImage: async () => null,
       generateImagesFromPrompt: async (params) => {
         providerPrompt = params.prompt;
+        providerModel = params.model;
+        providerImageManifest = (params.imageManifest ?? []).map((image) => ({
+          role: image.role,
+          assetId: image.assetId,
+          buffer: image.buffer,
+        }));
         return [{
           buffer: imageBuffer,
           mimeType: "image/png",
           width: 1,
           height: 1,
           revisedPrompt: null,
-          provider: "fixture",
+          provider: params.model ?? "fixture",
         }];
       },
       persistGeneratedImageAsset: async (params) => ({
@@ -239,7 +272,7 @@ test("orbit prompt reaches the image provider prompt field", async () => {
           height: 1,
           prompt: params.prompt,
           mimeType: "image/png",
-          provider: "fixture",
+          provider: params.provider,
           cameraShot: params.cameraShot,
         },
       }),
@@ -247,6 +280,13 @@ test("orbit prompt reaches the image provider prompt field", async () => {
   });
 
   assert.equal(providerPrompt, state.novelViewRequest.prompt);
+  assert.equal(providerModel, job.model);
+  assert.equal(result.jobResult.generatedImages[0]?.provider, job.model);
+  assert.deepEqual(providerImageManifest.map((image) => [image.role, image.assetId]), [
+    ["authoritative_source", "asset-source"],
+    ["reference", "asset-style"],
+  ]);
+  assert.deepEqual(providerImageManifest.map((image) => image.buffer), [imageBuffer, referenceBuffer]);
   assert.match(providerPrompt, /VIEWPOINT RECONSTRUCTION/);
   assert.match(providerPrompt, /azimuth -42°/);
 });

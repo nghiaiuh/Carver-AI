@@ -219,11 +219,13 @@ const buildUnavailableEvidence = (params: {
   sourceAssetId: string;
   sourceContentHash: string;
   targetCameraHash: string;
+  protectedRegionMaskAssetId?: string;
 }): SceneEvidence => {
   const evidenceIdentity = {
     sourceAssetId: params.sourceAssetId,
     sourceContentHash: params.sourceContentHash,
     targetCameraHash: params.targetCameraHash,
+    protectedRegionMaskAssetId: params.protectedRegionMaskAssetId ?? null,
     builderVersion: UNAVAILABLE_SCENE_EVIDENCE_BUILDER_VERSION,
   };
   const evidenceHash = hashConditioningValue(evidenceIdentity);
@@ -242,6 +244,9 @@ const buildUnavailableEvidence = (params: {
       method: "no_scene_evidence_builder",
       version: UNAVAILABLE_SCENE_EVIDENCE_BUILDER_VERSION,
     },
+    ...(params.protectedRegionMaskAssetId
+      ? { protectedRegionMask: { assetId: params.protectedRegionMaskAssetId } }
+      : {}),
     degradationCodes: ["SCENE_EVIDENCE_NOT_BUILT"],
   };
 };
@@ -308,6 +313,7 @@ export function buildModelConditioning(params: {
     sourceAssetId,
     sourceContentHash,
     targetCameraHash,
+    protectedRegionMaskAssetId: params.job.maskAssetId,
   });
   validateEvidence({ evidence: sceneEvidence, sourceAssetId, sourceContentHash, targetCameraHash });
 

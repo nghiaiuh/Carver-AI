@@ -6,7 +6,6 @@
  */
 
 import {
-  type CarverImageExecutionMode,
   OPENAI_IMAGE_MODEL,
   OPENAI_IMAGE_OUTPUT_FORMAT,
   OPENAI_IMAGE_QUALITY,
@@ -18,6 +17,11 @@ import { hasAllowedMagicBytes } from "@carver/storage/image-format";
 import { createSafeLogger } from "@carver/shared";
 import sharp from "sharp";
 import { GenerationStageError } from "../../errors/generation-stage-error";
+import type {
+  ProviderGeneratedImage,
+  ProviderImageGenerationRequest,
+  ProviderImageInput,
+} from "../image-provider";
 
 const logger = createSafeLogger("worker.openai-image");
 const DEFAULT_OPENAI_IMAGE_REQUEST_TIMEOUT_MS = 240_000;
@@ -47,19 +51,9 @@ type OpenAIImageGenerationResponse = {
 const MIN_OPENAI_IMAGE_OUTPUT_COUNT = 1;
 const MAX_OPENAI_IMAGE_OUTPUT_COUNT = 4;
 
-export type OpenAiGeneratedImage = {
-  buffer: Buffer;
-  mimeType: "image/png" | "image/jpeg" | "image/webp";
-  width: number;
-  height: number;
-  revisedPrompt: string | null;
-  provider: string;
-};
+export type OpenAiGeneratedImage = ProviderGeneratedImage;
 
-type ImageInput = {
-  buffer: Buffer;
-  mimeType: string;
-};
+type ImageInput = Pick<ProviderImageInput, "buffer" | "mimeType">;
 
 function toBlobPart(buffer: Buffer) {
   return new Uint8Array(buffer);
@@ -200,49 +194,119 @@ async function fetchWithTimeout(
 }
 
 async function createImagesEditRequest(params: {
+  model: string;
   prompt: string;
   size: string;
   outputCount: number;
-  targetImage: ImageInput;
-  referenceImages: ImageInput[];
-  maskImage?: ImageInput | null;
+  imageManifest: readonly ProviderImageInput[];
 }) {
+  const sourceImages = params.imageManifest.filter((image) => image.role === "authoritative_source");
+  if (sourceImages.length !== 1) {
+    throw new GenerationStageError("provider_request", "OpenAI edits require exactly one authoritative source image.", {
+      providerCode: "invalid_conditioning_manifest",
+    });
+  }
+  const maskImages = params.imageManifest.filter((image) => image.role === "protected_region");
+  if (maskImages.length > 1) {
+    throw new GenerationStageError("provider_request", "OpenAI edits support one protected-region mask.", {
+      providerCode: "invalid_conditioning_manifest",
+    });
+  }
+  const inputImages = params.imageManifest.filter((image) => image.role !== "protected_region");
+  if (inputImages.length > 16) {
+    throw new GenerationStageError("provider_request", "OpenAI image input limit exceeded.", {
+      providerCode: "too_many_input_images",
+    });
+  }
+
   const formData = new FormData();
-  formData.set("model", OPENAI_IMAGE_MODEL);
-  formData.set("prompt", params.prompt);
+  formData.set("model", params.model);
+  formData.set("prompt", buildOpenAiPromptWithImageRoles(params.prompt, params.imageManifest));
   formData.set("size", params.size);
   formData.set("quality", OPENAI_IMAGE_QUALITY);
   formData.set("output_format", OPENAI_IMAGE_OUTPUT_FORMAT);
   formData.set("n", String(params.outputCount));
 
-  formData.append(
-    "image[]",
-    new File([toBlobPart(params.targetImage.buffer)], "target.png", { type: params.targetImage.mimeType }),
-  );
-
-  params.referenceImages.forEach((image, index) => {
+  inputImages.forEach((image, index) => {
     formData.append(
       "image[]",
-      new File([toBlobPart(image.buffer)], `reference-${index + 1}.png`, { type: image.mimeType }),
+      new File([toBlobPart(image.buffer)], openAiRoleFileName(image.role, index), { type: image.mimeType }),
     );
   });
 
-  if (params.maskImage) {
+  const maskImage = maskImages[0];
+  if (maskImage) {
     formData.set(
       "mask",
-      new File([toBlobPart(params.maskImage.buffer)], "mask.png", { type: params.maskImage.mimeType }),
+      new File([toBlobPart(maskImage.buffer)], "protected-region-mask.png", { type: maskImage.mimeType }),
     );
   }
 
   return formData;
 }
 
-export async function generateImagesFromPrompt(params: {
-  prompt: string;
-  mode: CarverImageExecutionMode;
-  model?: string;
-  size?: string;
-  outputCount?: number;
+const openAiRoleDescription = (role: ProviderImageInput["role"]) => {
+  switch (role) {
+    case "authoritative_source":
+      return "authoritative source image";
+    case "camera_guide":
+      return "camera geometry guide";
+    case "uncertainty_guide":
+      return "uncertainty guide";
+    case "protected_region":
+      return "protected-region mask";
+    case "reference":
+      return "connected reference image";
+  }
+};
+
+const openAiRoleFileName = (role: ProviderImageInput["role"], inputIndex: number) =>
+  role === "authoritative_source"
+    ? "authoritative-source.png"
+    : `${role.replace(/_/g, "-")}-${inputIndex + 1}.png`;
+
+/**
+ * OpenAI accepts ordered image bytes but no typed role field. The adapter
+ * preserves the manifest order in multipart input and makes that order
+ * explicit in provider prose without leaking internal asset identities.
+ */
+export const buildOpenAiPromptWithImageRoles = (
+  prompt: string,
+  imageManifest: readonly ProviderImageInput[],
+) => {
+  const providerImages = imageManifest.filter((image) => image.role !== "protected_region");
+  if (providerImages.length === 0) return prompt;
+
+  const lines = providerImages.map(
+    (image, index) => `Image ${index + 1} is the ${openAiRoleDescription(image.role)}.`,
+  );
+  if (imageManifest.some((image) => image.role === "protected_region")) {
+    lines.push("The supplied native mask applies only to Image 1, the authoritative source image.");
+  }
+  return [prompt.trim(), "INPUT IMAGE ROLE MANIFEST", ...lines].filter(Boolean).join("\n\n");
+};
+
+const buildLegacyImageManifest = (params: {
+  targetImage?: ImageInput | null;
+  referenceImages?: ImageInput[];
+  maskImage?: ImageInput | null;
+}): ProviderImageInput[] => [
+  ...(params.targetImage
+    ? [{ ...params.targetImage, role: "authoritative_source" as const, assetId: null, required: true }]
+    : []),
+  ...(params.referenceImages ?? []).map((image) => ({
+    ...image,
+    role: "reference" as const,
+    assetId: null,
+    required: true,
+  })),
+  ...(params.maskImage
+    ? [{ ...params.maskImage, role: "protected_region" as const, assetId: null, required: true }]
+    : []),
+];
+
+export async function generateImagesFromPrompt(params: Omit<ProviderImageGenerationRequest, "imageManifest"> & {
+  imageManifest?: readonly ProviderImageInput[];
   targetImage?: ImageInput | null;
   referenceImages?: ImageInput[];
   maskImage?: ImageInput | null;
@@ -262,14 +326,13 @@ export async function generateImagesFromPrompt(params: {
       ? OPENAI_IMAGES_URL
       : OPENAI_IMAGES_URL.replace("/generations", "/edits");
 
-  if (params.mode !== "text_to_image" && !params.targetImage) {
-    throw new GenerationStageError("input_resolution", "Image edit is missing a target image.");
-  }
-
   const resolvedModel = params.model?.trim() || OPENAI_IMAGE_MODEL;
   const resolvedSize = params.size?.trim() || OPENAI_IMAGE_SIZE;
   const resolvedOutputCount = normalizeOpenAiImageOutputCount(params.outputCount);
-  const resolvedTargetImage = params.targetImage ?? null;
+  const imageManifest = params.imageManifest ?? buildLegacyImageManifest(params);
+  if (params.mode !== "text_to_image" && !imageManifest.some((image) => image.role === "authoritative_source")) {
+    throw new GenerationStageError("input_resolution", "Image edit is missing an authoritative source image.");
+  }
 
   const requestBody =
     params.mode === "text_to_image"
@@ -280,12 +343,11 @@ export async function generateImagesFromPrompt(params: {
           outputCount: resolvedOutputCount,
         })
       : await createImagesEditRequest({
+          model: resolvedModel,
           prompt: params.prompt,
           size: resolvedSize,
           outputCount: resolvedOutputCount,
-          targetImage: resolvedTargetImage as ImageInput,
-          referenceImages: params.referenceImages ?? [],
-          maskImage: params.maskImage,
+          imageManifest,
         });
 
   logger.info("calling openai images api", {
@@ -294,9 +356,9 @@ export async function generateImagesFromPrompt(params: {
     mode: params.mode,
     size: resolvedSize,
     outputCount: resolvedOutputCount,
-    referenceImageCount: params.referenceImages?.length ?? 0,
-    hasTargetImage: Boolean(params.targetImage),
-    hasMaskImage: Boolean(params.maskImage),
+    referenceImageCount: imageManifest.filter((image) => image.role === "reference").length,
+    hasTargetImage: imageManifest.some((image) => image.role === "authoritative_source"),
+    hasMaskImage: imageManifest.some((image) => image.role === "protected_region"),
   });
 
   let response: Response;
