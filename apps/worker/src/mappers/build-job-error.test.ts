@@ -57,11 +57,14 @@ test("preserves a safe provider rejection stage without exposing the provider me
   assert.equal(result.errorMessage.includes("Example Street"), false);
 });
 
-test("identifies input resolution and R2 persistence failures by stage", () => {
+test("identifies input resolution, conditioning, and R2 persistence failures by stage", () => {
   const input = buildJobError(new GenerationStageError("input_resolution", "r2 object failed"));
+  const conditioning = buildJobError(new GenerationStageError("conditioning_assembly", "unexpected source metadata"));
   const persistence = buildJobError(new GenerationStageError("asset_persistence", "storage failed"));
 
   assert.equal(input.errorCode, "generation_input_unavailable");
+  assert.equal(conditioning.errorCode, "generation_conditioning_failed");
+  assert.equal(conditioning.errorMessage.includes("source metadata"), false);
   assert.equal(persistence.errorCode, "storage_upload_failed");
 });
 

@@ -2,6 +2,7 @@ export const GENERATION_FAILURE_STAGES = [
   "prompt_compile",
   "input_resolution",
   "input_metadata",
+  "conditioning_assembly",
   "provider_configuration",
   "provider_request",
   "output_normalization",

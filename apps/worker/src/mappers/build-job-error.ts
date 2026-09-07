@@ -120,6 +120,11 @@ export const buildJobError = (error: unknown): WorkerJobError => {
         errorMessage: "A generation image could not be processed. Refresh the image and retry.",
         permanent: false,
       },
+      conditioning_assembly: {
+        errorCode: "generation_conditioning_failed",
+        errorMessage: "The controlled camera inputs could not be assembled. Refresh the canvas image and retry.",
+        permanent: false,
+      },
       output_normalization: {
         errorCode: "generation_output_processing_failed",
         errorMessage: "The generated image could not be processed. Please retry shortly.",

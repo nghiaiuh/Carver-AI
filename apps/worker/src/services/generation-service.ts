@@ -44,6 +44,7 @@ import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
+import { buildModelConditioning, hashSourceImageContent } from "../novel-view/build-model-conditioning";
 
 const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
@@ -486,6 +487,35 @@ export const executeGeneratedImageJob = async (
         : shotState.finalPrompt;
       if (!providerPrompt) {
         throw new Error("Multi-angle shot is missing a compiled prompt.");
+      }
+      // New multi-angle jobs already carry both a normalized CameraSpec and a
+      // semantic PromptPlan. Build the provider-neutral package before any
+      // provider work. MA-007 will map its image roles into adapter inputs;
+      // legacy persisted jobs continue through the compatible prompt path.
+      if (shot && shotState.compiledPromptV2 && shot.cameraSpec && targetImage && inputMetadata?.width && inputMetadata.height) {
+        const conditioning = await runGenerationStage("conditioning_assembly", async () =>
+          buildModelConditioning({
+            job,
+            cameraShot: shot,
+            compiledPrompt: shotState.compiledPromptV2!,
+            source: {
+              // The resolver's asset ID must agree with the canonical request
+              // source. The builder validates that agreement before provider work.
+              assetId: targetImage.assetId ?? job.cameraShotSetContext!.source.assetId!,
+              width: inputMetadata.width,
+              height: inputMetadata.height,
+              mimeType: targetImage.mimeType,
+              contentHash: hashSourceImageContent(targetImage.buffer),
+            },
+          }),
+        );
+        logger.info("model conditioning assembled", {
+          jobId: job.jobId,
+          shotId: shot.shotId,
+          conditioningHash: conditioning.conditioningHash,
+          evidenceStatus: conditioning.sceneEvidence.status,
+          referenceCount: conditioning.referenceImages.length,
+        });
       }
       logProviderDebugPrompt({
         jobId: job.jobId,
