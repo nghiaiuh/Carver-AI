@@ -48,9 +48,16 @@ import {
 import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
+import { shotInvocationRepository } from "../repositories/shot-invocation-repository";
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
 import { buildModelConditioning, hashSourceImageContent } from "../novel-view/build-model-conditioning";
+import {
+  buildShotInvocationIdentity,
+  ShotInvocationBusyError,
+  ShotInvocationOutcomeUnknownError,
+  type ShotInvocationStore,
+} from "./shot-invocation-service";
 
 const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
@@ -225,6 +232,7 @@ export type GenerationServiceDependencies = {
   resolveGenerationMaskImage: typeof resolveGenerationMaskImage;
   generateImagesFromPrompt: typeof generateImagesFromPrompt;
   persistGeneratedAssistantMessage: typeof persistGeneratedAssistantMessage;
+  shotInvocationStore: ShotInvocationStore;
 };
 
 const defaultGenerationServiceDependencies: GenerationServiceDependencies = {
@@ -236,6 +244,7 @@ const defaultGenerationServiceDependencies: GenerationServiceDependencies = {
   resolveGenerationMaskImage,
   generateImagesFromPrompt,
   persistGeneratedAssistantMessage,
+  shotInvocationStore: shotInvocationRepository,
 };
 
 export function getExactCenterCropDimensions(params: {
@@ -419,6 +428,30 @@ export const executeGeneratedImageJob = async (
         }),
       )
     : [];
+  if (isMultiAngleJob) {
+    for (const output of reusableShotOutputs) {
+      const shot = output.generatedImage.cameraShot;
+      if (!shot) continue;
+
+      const identity = buildShotInvocationIdentity({
+        jobId: job.jobId,
+        shotSetNodeId: shot.shotSetNodeId,
+        shotId: shot.shotId,
+        shotOrder: shot.order,
+      });
+      await runGenerationStage("shot_invocation", () =>
+        dependencies.shotInvocationStore.markPersisted({
+          jobId: job.jobId,
+          projectId: job.projectId,
+          ownerId: job.userId,
+          identity,
+          outputAssetId: output.assetId,
+          conditioningHash: null,
+          providerModel: output.generatedImage.provider ?? null,
+        }),
+      );
+    }
+  }
   const reusableShotOutputIds = new Set(
     reusableShotOutputs
       .map((output) => output.generatedImage.cameraShot?.shotId)
@@ -478,6 +511,16 @@ export const executeGeneratedImageJob = async (
     const shotsToGenerate = isMultiAngleJob
       ? cameraShots.filter((shot) => !reusableShotOutputIds.has(shot.shotId))
       : [null];
+    const findReusableShotOutput = async (shotId: string, assetId?: string) => {
+      const outputs = await dependencies.findReusableGeneratedImageAssets({
+        jobId: job.jobId,
+        projectId: job.projectId,
+        ownerId: job.userId,
+      });
+      return outputs.find((output) =>
+        output.generatedImage.cameraShot?.shotId === shotId && (!assetId || output.assetId === assetId),
+      ) ?? null;
+    };
     let outputIndex = 0;
 
     for (const shot of shotsToGenerate) {
@@ -532,6 +575,73 @@ export const executeGeneratedImageJob = async (
           maskImage,
         }),
       );
+      const requestedProviderModel = job.model && job.model !== "auto" ? job.model : undefined;
+      const shotInvocation = shot
+        ? await runGenerationStage("shot_invocation", () =>
+            dependencies.shotInvocationStore.claim({
+              jobId: job.jobId,
+              projectId: job.projectId,
+              ownerId: job.userId,
+              identity: buildShotInvocationIdentity({
+                jobId: job.jobId,
+                shotSetNodeId: shot.shotSetNodeId,
+                shotId: shot.shotId,
+                shotOrder: shot.order,
+              }),
+            }),
+          )
+        : null;
+
+      if (shotInvocation?.kind === "persisted") {
+        const persisted = await runGenerationStage("asset_persistence", () =>
+          findReusableShotOutput(shot!.shotId, shotInvocation.outputAssetId),
+        );
+        if (!persisted) {
+          throw new Error("Durable shot state references an unavailable output asset.");
+        }
+        persistedOutputs.push(persisted);
+        continue;
+      }
+
+      if (shotInvocation?.kind === "outcome_unknown") {
+        const persisted = await runGenerationStage("asset_persistence", () => findReusableShotOutput(shot!.shotId));
+        if (!persisted) {
+          throw new ShotInvocationOutcomeUnknownError(shotInvocation.identity.invocationId);
+        }
+        await runGenerationStage("shot_invocation", () =>
+          dependencies.shotInvocationStore.markPersisted({
+            jobId: job.jobId,
+            projectId: job.projectId,
+            ownerId: job.userId,
+            identity: shotInvocation.identity,
+            outputAssetId: persisted.assetId,
+            conditioningHash: conditioning?.conditioningHash ?? null,
+            providerModel: persisted.generatedImage.provider ?? null,
+          }),
+        );
+        persistedOutputs.push(persisted);
+        continue;
+      }
+
+      if (shotInvocation?.kind === "busy") {
+        throw new ShotInvocationBusyError(shotInvocation.identity.invocationId);
+      }
+
+      if (shotInvocation?.kind === "claimed") {
+        // This write is immediately before the external call. Any crash after
+        // it must remain outcome_unknown unless a matching asset is recovered.
+        await runGenerationStage("shot_invocation", () =>
+          dependencies.shotInvocationStore.markOutcomeUnknown({
+            jobId: job.jobId,
+            projectId: job.projectId,
+            ownerId: job.userId,
+            identity: shotInvocation.identity,
+            claimToken: shotInvocation.claimToken,
+            conditioningHash: conditioning?.conditioningHash ?? null,
+            requestedModel: requestedProviderModel ?? null,
+          }),
+        );
+      }
       logProviderDebugPrompt({
         jobId: job.jobId,
         cameraShot: shot,
@@ -551,7 +661,7 @@ export const executeGeneratedImageJob = async (
             dependencies.generateImagesFromPrompt({
               prompt: providerPrompt,
               mode: job.executionMode,
-              model: job.model && job.model !== "auto" ? job.model : undefined,
+              model: requestedProviderModel,
               size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
               outputCount: requestedOutputCount,
               imageManifest,
@@ -605,6 +715,13 @@ export const executeGeneratedImageJob = async (
                   mode: shot.mode,
                 }
               : undefined,
+            ...(shotInvocation?.kind === "claimed"
+              ? {
+                  invocationId: shotInvocation.identity.invocationId,
+                  candidateId: shotInvocation.identity.candidateId,
+                  conditioningHash: conditioning?.conditioningHash ?? null,
+                }
+              : {}),
             buffer: normalizedImage.buffer,
             mimeType: providerImage.mimeType,
             width: normalizedImage.width,
@@ -612,6 +729,21 @@ export const executeGeneratedImageJob = async (
             provider: providerImage.provider,
           }),
         );
+
+        if (shotInvocation?.kind === "claimed") {
+          await runGenerationStage("shot_invocation", () =>
+            dependencies.shotInvocationStore.markPersisted({
+              jobId: job.jobId,
+              projectId: job.projectId,
+              ownerId: job.userId,
+              identity: shotInvocation.identity,
+              claimToken: shotInvocation.claimToken,
+              outputAssetId: persisted.assetId,
+              conditioningHash: conditioning?.conditioningHash ?? null,
+              providerModel: providerImage.provider,
+            }),
+          );
+        }
 
         persistedOutputs.push(persisted);
         if (!shot) {

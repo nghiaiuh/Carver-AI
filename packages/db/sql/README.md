@@ -35,6 +35,7 @@ Apply these SQL files in the exact order below. The numeric prefixes are histori
 | 27 | `025_ai_job_checkpoint_rpc_alias_fix.sql` | Fixes ambiguous references in the AI-job checkpoint RPC. |
 | 28 | `026_canvas_draft_operation_log.sql` | Adds the operation-first canvas draft journal and atomic batch RPC. |
 | 29 | `027_canvas_draft_operation_rpc_alias_fix.sql` | Forward-fixes ambiguous references in the canvas operation batch RPC. |
+| 30 | `028_multi_angle_execution_manifest.sql` | Adds durable per-shot invocation state and safe replay RPCs. |
 
 ## Manual Apply Checklist
 

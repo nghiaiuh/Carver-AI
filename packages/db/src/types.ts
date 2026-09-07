@@ -17,6 +17,7 @@ export type AiJobStatus =
   | "failed"
   | "enqueue_failed"
   | "cancelled";
+export type AiJobShotInvocationStatus = "pending" | "outcome_unknown" | "persisted";
 export type SnapshotKind =
   | "initial"
   | "manual"
@@ -605,6 +606,80 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      ai_job_shot_invocations: Table<
+        {
+          id: string;
+          ai_job_id: string;
+          project_id: string;
+          owner_id: string;
+          shot_set_node_id: string;
+          shot_id: string;
+          shot_order: number;
+          candidate_index: number;
+          invocation_id: string;
+          candidate_id: string;
+          status: AiJobShotInvocationStatus;
+          attempt_count: number;
+          conditioning_hash: string | null;
+          requested_model: string | null;
+          provider_model: string | null;
+          output_asset_id: string | null;
+          claim_token: string | null;
+          claim_expires_at: string | null;
+          provider_started_at: string | null;
+          persisted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          ai_job_id: string;
+          project_id: string;
+          owner_id: string;
+          shot_set_node_id: string;
+          shot_id: string;
+          shot_order: number;
+          candidate_index?: number;
+          invocation_id: string;
+          candidate_id: string;
+          status?: AiJobShotInvocationStatus;
+          attempt_count?: number;
+          conditioning_hash?: string | null;
+          requested_model?: string | null;
+          provider_model?: string | null;
+          output_asset_id?: string | null;
+          claim_token?: string | null;
+          claim_expires_at?: string | null;
+          provider_started_at?: string | null;
+          persisted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          id?: string;
+          ai_job_id?: string;
+          project_id?: string;
+          owner_id?: string;
+          shot_set_node_id?: string;
+          shot_id?: string;
+          shot_order?: number;
+          candidate_index?: number;
+          invocation_id?: string;
+          candidate_id?: string;
+          status?: AiJobShotInvocationStatus;
+          attempt_count?: number;
+          conditioning_hash?: string | null;
+          requested_model?: string | null;
+          provider_model?: string | null;
+          output_asset_id?: string | null;
+          claim_token?: string | null;
+          claim_expires_at?: string | null;
+          provider_started_at?: string | null;
+          persisted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
       worker_maintenance_leases: Table<
         {
           task_name: string;
@@ -800,6 +875,57 @@ export interface Database {
           id: string;
           payload: Json;
         }[];
+      };
+      claim_ai_job_shot_invocation: {
+        Args: {
+          target_ai_job_id: string;
+          target_candidate_id: string;
+          target_candidate_index: number;
+          target_claim_token: string;
+          target_invocation_id: string;
+          target_lease_seconds?: number;
+          target_owner_id: string;
+          target_project_id: string;
+          target_shot_id: string;
+          target_shot_order: number;
+          target_shot_set_node_id: string;
+        };
+        Returns: {
+          candidate_id: string;
+          invocation_id: string;
+          output_asset_id: string | null;
+          state_status: string;
+        }[];
+      };
+      mark_ai_job_shot_invocation_outcome_unknown: {
+        Args: {
+          target_ai_job_id: string;
+          target_claim_token: string;
+          target_conditioning_hash: string | null;
+          target_invocation_id: string;
+          target_owner_id: string;
+          target_project_id: string;
+          target_requested_model: string | null;
+        };
+        Returns: boolean;
+      };
+      mark_ai_job_shot_invocation_persisted: {
+        Args: {
+          target_ai_job_id: string;
+          target_candidate_id: string;
+          target_candidate_index: number;
+          target_claim_token?: string | null;
+          target_conditioning_hash?: string | null;
+          target_invocation_id: string;
+          target_output_asset_id: string;
+          target_owner_id: string;
+          target_project_id: string;
+          target_provider_model?: string | null;
+          target_shot_id: string;
+          target_shot_order: number;
+          target_shot_set_node_id: string;
+        };
+        Returns: boolean;
       };
       mark_ai_job_outbox_dispatched: {
         Args: {

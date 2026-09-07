@@ -7,6 +7,7 @@
 
 import { getGenerationStageError, type GenerationFailureStage } from "../errors/generation-stage-error";
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
+import { ShotInvocationBusyError, ShotInvocationOutcomeUnknownError } from "../services/shot-invocation-service";
 
 export type WorkerJobError = {
   errorCode: string;
@@ -21,6 +22,28 @@ export const toWorkerError = (error: unknown) =>
   error instanceof Error ? error : new Error(typeof error === "string" ? error : "Unknown worker failure");
 
 export const buildJobError = (error: unknown): WorkerJobError => {
+  if (error instanceof ShotInvocationOutcomeUnknownError) {
+    return {
+      errorCode: "generation_outcome_unknown",
+      errorMessage: "The result of one camera view could not be confirmed, so no duplicate generation was started.",
+      permanent: true,
+      failureStage: null,
+      providerStatus: null,
+      providerCode: null,
+    };
+  }
+
+  if (error instanceof ShotInvocationBusyError) {
+    return {
+      errorCode: "generation_shot_in_progress",
+      errorMessage: "Another worker is safely completing this camera view. Please retry shortly.",
+      permanent: false,
+      failureStage: null,
+      providerStatus: null,
+      providerCode: null,
+    };
+  }
+
   if (error instanceof GenerationDecisionGateError) {
     return {
       errorCode:
@@ -123,6 +146,11 @@ export const buildJobError = (error: unknown): WorkerJobError => {
       conditioning_assembly: {
         errorCode: "generation_conditioning_failed",
         errorMessage: "The controlled camera inputs could not be assembled. Refresh the canvas image and retry.",
+        permanent: false,
+      },
+      shot_invocation: {
+        errorCode: "generation_shot_state_failed",
+        errorMessage: "The controlled camera generation state could not be recorded. Please retry shortly.",
         permanent: false,
       },
       output_normalization: {

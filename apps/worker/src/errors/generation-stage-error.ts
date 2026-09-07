@@ -3,6 +3,7 @@ export const GENERATION_FAILURE_STAGES = [
   "input_resolution",
   "input_metadata",
   "conditioning_assembly",
+  "shot_invocation",
   "provider_configuration",
   "provider_request",
   "output_normalization",

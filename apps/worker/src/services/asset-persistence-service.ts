@@ -155,6 +155,9 @@ export const persistGeneratedImageAsset = async (params: {
   assetId?: string;
   outputIndex?: number;
   cameraShot?: PersistedGeneratedImage["cameraShot"];
+  invocationId?: string;
+  candidateId?: string;
+  conditioningHash?: string | null;
   buffer: Buffer;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
@@ -201,6 +204,9 @@ export const persistGeneratedImageAsset = async (params: {
         prompt: params.prompt,
         provider: params.provider,
         ...(params.cameraShot ? { cameraShot: params.cameraShot } : {}),
+        ...(params.invocationId ? { invocationId: params.invocationId } : {}),
+        ...(params.candidateId ? { candidateId: params.candidateId } : {}),
+        ...(params.conditioningHash ? { conditioningHash: params.conditioningHash } : {}),
       },
     });
   } catch (error) {

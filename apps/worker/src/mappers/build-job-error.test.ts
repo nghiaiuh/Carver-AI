@@ -3,6 +3,7 @@ import test from "node:test";
 import { buildJobError, toWorkerError } from "./build-job-error";
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { GenerationStageError } from "../errors/generation-stage-error";
+import { ShotInvocationBusyError, ShotInvocationOutcomeUnknownError } from "../services/shot-invocation-service";
 
 test("classifies transient provider and storage failures as retryable", () => {
   for (const message of [
@@ -60,11 +61,13 @@ test("preserves a safe provider rejection stage without exposing the provider me
 test("identifies input resolution, conditioning, and R2 persistence failures by stage", () => {
   const input = buildJobError(new GenerationStageError("input_resolution", "r2 object failed"));
   const conditioning = buildJobError(new GenerationStageError("conditioning_assembly", "unexpected source metadata"));
+  const invocation = buildJobError(new GenerationStageError("shot_invocation", "claim failed"));
   const persistence = buildJobError(new GenerationStageError("asset_persistence", "storage failed"));
 
   assert.equal(input.errorCode, "generation_input_unavailable");
   assert.equal(conditioning.errorCode, "generation_conditioning_failed");
   assert.equal(conditioning.errorMessage.includes("source metadata"), false);
+  assert.equal(invocation.errorCode, "generation_shot_state_failed");
   assert.equal(persistence.errorCode, "storage_upload_failed");
 });
 
@@ -76,4 +79,15 @@ test("marks decision-gated jobs terminal without treating them as provider failu
   assert.equal(rejected.errorCode, "generation_rejected");
   assert.equal(review.permanent, true);
   assert.equal(rejected.permanent, true);
+});
+
+test("keeps ambiguous provider outcomes explicit and avoids retrying them", () => {
+  const unknown = buildJobError(new ShotInvocationOutcomeUnknownError("shot-invocation:abc"));
+  const busy = buildJobError(new ShotInvocationBusyError("shot-invocation:def"));
+
+  assert.equal(unknown.errorCode, "generation_outcome_unknown");
+  assert.equal(unknown.permanent, true);
+  assert.equal(unknown.errorMessage.includes("shot-invocation"), false);
+  assert.equal(busy.errorCode, "generation_shot_in_progress");
+  assert.equal(busy.permanent, false);
 });

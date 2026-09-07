@@ -16,6 +16,7 @@ export * from "./image-generator";
 export * from "./novel-view";
 export * from "./camera-normalization";
 export * from "./model-conditioning";
+export * from "./shot-invocation";
 export type { OpenAIHttpTransport } from "./openai-transport";
 export * from "./safe-logger";
 export * from "./operational-alert";

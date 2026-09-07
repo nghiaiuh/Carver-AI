@@ -7,10 +7,16 @@ import {
   type CarverAiJobPayload,
   type CarverEditBrief,
   type PersistedGeneratedImage,
+  type AiJobShotInvocationIdentity,
 } from "@carver/shared";
 import { buildNovelViewGenerationRequest, toChangeAngleOperation } from "@carver/ai/prompt-engine";
 import type { OpenAiGeneratedImage } from "../providers/openai/generate-image";
 import type { PersistedGeneratedOutput } from "./asset-persistence-service";
+import {
+  ShotInvocationOutcomeUnknownError,
+  type ShotInvocationClaim,
+  type ShotInvocationStore,
+} from "./shot-invocation-service";
 import {
   buildImageGeneratorPrompt,
   executeGeneratedImageJob,
@@ -18,6 +24,73 @@ import {
   prepareGenerationState,
   type PreparedGenerationState,
 } from "./generation-service";
+
+type InMemoryShotInvocation = {
+  identity: AiJobShotInvocationIdentity;
+  status: "pending" | "outcome_unknown" | "persisted";
+  claimToken: string | null;
+  outputAssetId: string | null;
+};
+
+const createInMemoryShotInvocationStore = () => {
+  const invocations = new Map<string, InMemoryShotInvocation>();
+  let claimCounter = 0;
+  const keyFor = (identity: AiJobShotInvocationIdentity) => identity.invocationId;
+
+  const store: ShotInvocationStore = {
+    claim: async ({ identity }) => {
+      const key = keyFor(identity);
+      const existing = invocations.get(key);
+      if (existing?.status === "persisted" && existing.outputAssetId) {
+        return { kind: "persisted", identity, outputAssetId: existing.outputAssetId } satisfies ShotInvocationClaim;
+      }
+      if (existing?.status === "outcome_unknown") {
+        return { kind: "outcome_unknown", identity } satisfies ShotInvocationClaim;
+      }
+      if (existing?.claimToken) {
+        return { kind: "busy", identity } satisfies ShotInvocationClaim;
+      }
+
+      const claimToken = `claim-${++claimCounter}`;
+      invocations.set(key, {
+        identity,
+        status: "pending",
+        claimToken,
+        outputAssetId: null,
+      });
+      return { kind: "claimed", identity, claimToken } satisfies ShotInvocationClaim;
+    },
+    markOutcomeUnknown: async ({ identity, claimToken }) => {
+      const invocation = invocations.get(keyFor(identity));
+      assert.equal(invocation?.claimToken, claimToken);
+      assert.equal(invocation?.status, "pending");
+      if (invocation) {
+        invocation.status = "outcome_unknown";
+      }
+    },
+    markPersisted: async ({ identity, outputAssetId, claimToken }) => {
+      const key = keyFor(identity);
+      const invocation = invocations.get(key);
+      if (!invocation) {
+        invocations.set(key, {
+          identity,
+          status: "persisted",
+          claimToken: null,
+          outputAssetId,
+        });
+        return;
+      }
+      if (claimToken) {
+        assert.equal(invocation.claimToken, claimToken);
+      }
+      assert.ok(invocation.status === "outcome_unknown" || invocation.status === "persisted");
+      invocation.status = "persisted";
+      invocation.outputAssetId = outputAssetId;
+    },
+  };
+
+  return { store, invocations };
+};
 
 test("generated image crops are centered and preserve exact requested ratio", () => {
   const wide = getExactCenterCropDimensions({ width: 1536, height: 1024, ratio: "21:9" });
@@ -226,6 +299,9 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
   let providerPrompt = "";
   let providerModel: string | undefined;
   let providerImageManifest: Array<{ role: string; assetId: string | null; buffer: Buffer }> = [];
+  let persistedInvocationId: string | undefined;
+  let persistedCandidateId: string | undefined;
+  const shotInvocationState = createInMemoryShotInvocationStore();
   const result = await executeGeneratedImageJob(job, state, {
     dependencies: {
       findReusableGeneratedImageAsset: async () => null,
@@ -244,6 +320,7 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
         role: "style_reference",
       }],
       resolveGenerationMaskImage: async () => null,
+      shotInvocationStore: shotInvocationState.store,
       generateImagesFromPrompt: async (params) => {
         providerPrompt = params.prompt;
         providerModel = params.model;
@@ -261,27 +338,33 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
           provider: params.model ?? "fixture",
         }];
       },
-      persistGeneratedImageAsset: async (params) => ({
-        assetId: "asset-output",
-        generatedImage: {
-          id: "asset-output",
+      persistGeneratedImageAsset: async (params) => {
+        persistedInvocationId = params.invocationId;
+        persistedCandidateId = params.candidateId;
+        return {
           assetId: "asset-output",
-          title: params.title,
-          imageUrl: "",
-          width: 1,
-          height: 1,
-          prompt: params.prompt,
-          mimeType: "image/png",
-          provider: params.provider,
-          cameraShot: params.cameraShot,
-        },
-      }),
+          generatedImage: {
+            id: "asset-output",
+            assetId: "asset-output",
+            title: params.title,
+            imageUrl: "",
+            width: 1,
+            height: 1,
+            prompt: params.prompt,
+            mimeType: "image/png",
+            provider: params.provider,
+            cameraShot: params.cameraShot,
+          },
+        };
+      },
     },
   });
 
   assert.equal(providerPrompt, state.novelViewRequest.prompt);
   assert.equal(providerModel, job.model);
   assert.equal(result.jobResult.generatedImages[0]?.provider, job.model);
+  assert.match(persistedInvocationId ?? "", /^shot-invocation:/);
+  assert.match(persistedCandidateId ?? "", /^shot-candidate:/);
   assert.deepEqual(providerImageManifest.map((image) => [image.role, image.assetId]), [
     ["authoritative_source", "asset-source"],
     ["reference", "asset-style"],
@@ -313,6 +396,7 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
     prompt: "Camera prompt",
   });
   let providerCalls = 0;
+  const shotInvocationState = createInMemoryShotInvocationStore();
   const result = await executeGeneratedImageJob({
     jobId: "job-camera-1",
     projectId: "project-1",
@@ -340,6 +424,7 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
       resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
       resolveGenerationReferenceImages: async () => [],
       resolveGenerationMaskImage: async () => null,
+      shotInvocationStore: shotInvocationState.store,
       generateImagesFromPrompt: async (params) => {
         providerCalls += 1;
         assert.equal(params.outputCount, 1);
@@ -360,7 +445,7 @@ test("multi-angle generation persists a camera-labelled output with n=1", async 
   assert.match(result.jobResult.generatedImages[0]?.title ?? "", /Camera 01 - Front/);
 });
 
-test("a second-shot failure replays only the missing camera shot", async () => {
+test("a crash after first-shot asset persistence resumes only the missing camera shot", async () => {
   const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
   const shots = [
     {
@@ -437,7 +522,8 @@ test("a second-shot failure replays only the missing camera shot", async () => {
   };
   const persistedByShot = new Map<string, PersistedGeneratedOutput>();
   const providerCalls: string[] = [];
-  let failSecondShot = true;
+  const shotInvocationState = createInMemoryShotInvocationStore();
+  let failAfterFirstPersist = true;
   const dependencies = {
     findReusableGeneratedImageAssets: async () => [...persistedByShot.values()],
     resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png" }),
@@ -446,9 +532,6 @@ test("a second-shot failure replays only the missing camera shot", async () => {
     generateImagesFromPrompt: async (params: { prompt: string }) => {
       const shotId = params.prompt.includes("Front camera prompt") ? "shot-first" : "shot-second";
       providerCalls.push(shotId);
-      if (shotId === "shot-second" && failSecondShot) {
-        throw new Error("simulated second-shot provider failure");
-      }
       return [{
         buffer: imageBuffer,
         mimeType: "image/png" as const,
@@ -485,7 +568,80 @@ test("a second-shot failure replays only the missing camera shot", async () => {
         },
       };
       persistedByShot.set(cameraShot.shotId, output);
+      if (cameraShot.shotId === "shot-first" && failAfterFirstPersist) {
+        failAfterFirstPersist = false;
+        throw new Error("temporary post-persist interruption");
+      }
       return output;
+    },
+    shotInvocationStore: shotInvocationState.store,
+  };
+
+  await assert.rejects(
+    executeGeneratedImageJob(job, state, { dependencies }),
+    /asset_persistence/,
+  );
+  assert.deepEqual([...persistedByShot.keys()], ["shot-first"]);
+
+  const replay = await executeGeneratedImageJob(job, state, { dependencies });
+
+  assert.deepEqual(providerCalls, ["shot-first", "shot-second"]);
+  assert.deepEqual(replay.jobResult.outputAssetIds, ["asset-shot-first", "asset-shot-second"]);
+});
+
+test("an unknown shot outcome stops replay before a duplicate provider call", async () => {
+  const imageBuffer = Buffer.from(TEST_PNG_BASE64, "base64");
+  const shot = {
+    shotSetNodeId: "camera-set-unknown",
+    shotId: "shot-unknown",
+    shotName: "Front",
+    order: 0,
+    mode: "plan" as const,
+    plan: {
+      u: 0,
+      v: 0,
+      height: 1,
+      targetU: 0,
+      targetV: 0,
+      lens: 35,
+      pitch: 0,
+      roll: 0,
+      viewDirection: "look-at-target" as const,
+    },
+  };
+  let providerCalls = 0;
+  const shotInvocationState = createInMemoryShotInvocationStore();
+  const job = {
+    jobId: "job-outcome-unknown",
+    projectId: "project-1",
+    userId: "user-1",
+    jobType: "generate_concept",
+    targetType: "image-generator",
+    executionMode: "image_edit",
+    cameraShotSetContext: {
+      shotSetNodeId: shot.shotSetNodeId,
+      source: { nodeId: "source", title: "Source", imageUrl: "", assetId: "asset-source", role: "direct_edit_target", prompt: null },
+      shots: [shot],
+    },
+  } as CarverAiJobPayload;
+  const state: PreparedGenerationState = {
+    editBrief: {} as CarverEditBrief,
+    compiledPromptMeta: null,
+    compiledPromptV2: null,
+    finalPrompt: "Reconstruct the requested camera view.",
+    cameraShot: shot,
+    novelViewRequest: null,
+  };
+  const dependencies = {
+    findReusableGeneratedImageAsset: async () => null,
+    findReusableGeneratedImageAssets: async () => [],
+    resolveGenerationTargetImage: async () => ({ buffer: imageBuffer, mimeType: "image/png", assetId: "asset-source" }),
+    resolveGenerationReferenceImages: async () => [],
+    resolveGenerationMaskImage: async () => null,
+    shotInvocationStore: shotInvocationState.store,
+    generateImagesFromPrompt: async () => {
+      providerCalls += 1;
+      throw new Error("simulated ambiguous provider transport failure");
     },
   };
 
@@ -493,13 +649,14 @@ test("a second-shot failure replays only the missing camera shot", async () => {
     executeGeneratedImageJob(job, state, { dependencies }),
     /provider_request/,
   );
-  assert.deepEqual([...persistedByShot.keys()], ["shot-first"]);
+  assert.equal(providerCalls, 1);
 
-  failSecondShot = false;
-  const replay = await executeGeneratedImageJob(job, state, { dependencies });
+  await assert.rejects(
+    executeGeneratedImageJob(job, state, { dependencies }),
+    (error: unknown) => error instanceof ShotInvocationOutcomeUnknownError,
+  );
 
-  assert.deepEqual(providerCalls, ["shot-first", "shot-second", "shot-second"]);
-  assert.deepEqual(replay.jobResult.outputAssetIds, ["asset-shot-first", "asset-shot-second"]);
+  assert.equal(providerCalls, 1);
 });
 
 test("image generator worker persists every fake provider output without OpenAI, R2, or Supabase", async () => {
