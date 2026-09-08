@@ -52,6 +52,7 @@ import { shotInvocationRepository } from "../repositories/shot-invocation-reposi
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
 import { buildModelConditioning, hashSourceImageContent } from "../novel-view/build-model-conditioning";
+import { buildSceneEvidence } from "../novel-view/scene-evidence-builder";
 import {
   buildShotInvocationIdentity,
   ShotInvocationBusyError,
@@ -542,9 +543,20 @@ export const executeGeneratedImageJob = async (
       // semantic PromptPlan. Build the provider-neutral package before any
       // provider work. Legacy persisted jobs continue through the compatible
       // source/reference manifest until their next job creation.
-      if (shot && shotState.compiledPromptV2 && shot.cameraSpec && targetImage && inputMetadata?.width && inputMetadata.height) {
-        conditioning = await runGenerationStage("conditioning_assembly", async () =>
-          buildModelConditioning({
+      const cameraSpec = shot?.cameraSpec;
+      if (shot && shotState.compiledPromptV2 && cameraSpec && targetImage && inputMetadata?.width && inputMetadata.height) {
+        conditioning = await runGenerationStage("conditioning_assembly", async () => {
+          const sourceContentHash = hashSourceImageContent(targetImage.buffer);
+          const sceneEvidence = await buildSceneEvidence({
+            source: {
+              assetId: targetImage.assetId ?? job.cameraShotSetContext!.source.assetId!,
+              buffer: targetImage.buffer,
+              contentHash: sourceContentHash,
+            },
+            targetCamera: cameraSpec,
+            protectedRegionMaskAssetId: job.maskAssetId,
+          });
+          return buildModelConditioning({
             job,
             cameraShot: shot,
             compiledPrompt: shotState.compiledPromptV2!,
@@ -555,10 +567,11 @@ export const executeGeneratedImageJob = async (
               width: inputMetadata.width,
               height: inputMetadata.height,
               mimeType: targetImage.mimeType,
-              contentHash: hashSourceImageContent(targetImage.buffer),
+              contentHash: sourceContentHash,
             },
-          }),
-        );
+            sceneEvidence: sceneEvidence.evidence,
+          });
+        });
         logger.info("model conditioning assembled", {
           jobId: job.jobId,
           shotId: shot.shotId,
