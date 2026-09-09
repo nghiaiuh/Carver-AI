@@ -75,6 +75,28 @@ test("scene evidence degrades honestly when source bytes cannot be decoded", asy
   assert.equal(result.evidence.status, "unavailable");
   assert.deepEqual(result.evidence.degradationCodes, [
     SCENE_EVIDENCE_DEGRADATION_CODES.sourceArtifactUnavailable,
+    SCENE_EVIDENCE_DEGRADATION_CODES.sourceContentHashMismatch,
+    SCENE_EVIDENCE_DEGRADATION_CODES.cameraOverlayUnavailable,
+  ]);
+  assert.deepEqual(result.artifacts, {});
+});
+
+test("scene evidence rejects a declared source hash that does not match the decoded bytes", async () => {
+  const buffer = await sourcePng();
+  const result = await buildSceneEvidence({
+    source: {
+      assetId: "asset-source",
+      buffer,
+      contentHash: "sha256:stale-source-content",
+    },
+    targetCamera: camera(),
+  });
+
+  assert.equal(result.evidence.status, "unavailable");
+  assert.equal(result.evidence.sourceContentHash, hashSourceImageContent(buffer));
+  assert.deepEqual(result.evidence.degradationCodes, [
+    SCENE_EVIDENCE_DEGRADATION_CODES.sourceArtifactUnavailable,
+    SCENE_EVIDENCE_DEGRADATION_CODES.sourceContentHashMismatch,
     SCENE_EVIDENCE_DEGRADATION_CODES.cameraOverlayUnavailable,
   ]);
   assert.deepEqual(result.artifacts, {});

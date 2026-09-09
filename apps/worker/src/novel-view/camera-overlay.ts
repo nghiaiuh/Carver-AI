@@ -63,12 +63,18 @@ const buildOverlaySvg = (params: { camera: CameraSpec; width: number; height: nu
   const label = escapeXml(
     `${camera.coordinateSpace} | ${rounded(camera.projection.horizontalFovDeg)} deg HFOV | ${camera.framingMode}`,
   );
-  const labelWidth = Math.min(width - 24, Math.max(230, label.length * 6.2 + 24));
+  const hasLabelRoom = width >= 64 && height >= 48;
+  const labelWidth = hasLabelRoom
+    ? Math.min(width - 24, Math.max(40, label.length * 6.2 + 24))
+    : 0;
+  const labelMarkup = hasLabelRoom
+    ? `<rect x="12" y="12" width="${rounded(labelWidth)}" height="28" rx="8" fill="#111827" fill-opacity="0.8"/>` +
+      `<text x="24" y="31" fill="#f9fafb" font-family="Arial, sans-serif" font-size="12">${label}</text>`
+    : "";
 
   return Buffer.from(
     `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
-      `<rect x="12" y="12" width="${rounded(labelWidth)}" height="28" rx="8" fill="#111827" fill-opacity="0.8"/>` +
-      `<text x="24" y="31" fill="#f9fafb" font-family="Arial, sans-serif" font-size="12">${label}</text>` +
+      labelMarkup +
       `<circle cx="${arrow.centerX}" cy="${arrow.centerY}" r="18" fill="#111827" fill-opacity="0.8"/>` +
       `<path d="M ${arrow.centerX} ${arrow.centerY} L ${arrow.endX} ${arrow.endY}" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>` +
       `<path d="M ${arrow.endX} ${arrow.endY} l -7 11 l 14 0 z" fill="#fbbf24" transform="rotate(${rounded((Math.atan2(arrow.endY - arrow.centerY, arrow.endX - arrow.centerX) * 180) / Math.PI - 90)} ${arrow.endX} ${arrow.endY})"/>` +

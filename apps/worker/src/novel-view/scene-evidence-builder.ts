@@ -7,7 +7,7 @@
 
 import type { CameraSpec, SceneEvidence } from "@carver/shared";
 import { SCENE_EVIDENCE_SCHEMA_VERSION } from "@carver/shared";
-import { hashConditioningValue } from "./build-model-conditioning";
+import { hashConditioningValue, hashSourceImageContent } from "./build-model-conditioning";
 import {
   buildCameraOverlay,
   normalizeSourceArtifact,
@@ -19,6 +19,7 @@ export const SCENE_EVIDENCE_BUILDER_VERSION = "scene-evidence-v1" as const;
 
 export const SCENE_EVIDENCE_DEGRADATION_CODES = {
   sourceArtifactUnavailable: "SOURCE_ARTIFACT_UNAVAILABLE",
+  sourceContentHashMismatch: "SOURCE_CONTENT_HASH_MISMATCH",
   cameraOverlayUnavailable: "CAMERA_OVERLAY_UNAVAILABLE",
   depthUnavailable: "DEPTH_UNAVAILABLE",
   coarseCameraGuideUnavailable: "COARSE_CAMERA_GUIDE_UNAVAILABLE",
@@ -99,7 +100,11 @@ export const buildSceneEvidence = async (params: {
   protectedRegionMaskAssetId?: string;
 }): Promise<SceneEvidenceBuildResult> => {
   const sourceAssetId = nonEmpty(params.source.assetId);
-  const sourceContentHash = nonEmpty(params.source.contentHash);
+  const declaredSourceContentHash = nonEmpty(params.source.contentHash);
+  const measuredSourceContentHash = Buffer.isBuffer(params.source.buffer)
+    ? hashSourceImageContent(params.source.buffer)
+    : "";
+  const sourceContentHash = measuredSourceContentHash || declaredSourceContentHash;
   let targetCameraHash = nonEmpty(params.targetCameraHash);
 
   try {
@@ -117,6 +122,26 @@ export const buildSceneEvidence = async (params: {
         protectedRegionMaskAssetId: params.protectedRegionMaskAssetId,
         degradationCodes: [
           SCENE_EVIDENCE_DEGRADATION_CODES.sourceArtifactUnavailable,
+          SCENE_EVIDENCE_DEGRADATION_CODES.cameraOverlayUnavailable,
+        ],
+      }),
+      artifacts: {},
+    };
+  }
+
+  // The evidence receipt must bind to the bytes the worker actually decoded,
+  // rather than trusting a caller-provided label for those bytes. This makes a
+  // stale asset read or an accidental source swap explicit before conditioning.
+  if (!declaredSourceContentHash || declaredSourceContentHash !== measuredSourceContentHash) {
+    return {
+      evidence: unavailableEvidence({
+        sourceAssetId,
+        sourceContentHash,
+        targetCameraHash,
+        protectedRegionMaskAssetId: params.protectedRegionMaskAssetId,
+        degradationCodes: [
+          SCENE_EVIDENCE_DEGRADATION_CODES.sourceArtifactUnavailable,
+          SCENE_EVIDENCE_DEGRADATION_CODES.sourceContentHashMismatch,
           SCENE_EVIDENCE_DEGRADATION_CODES.cameraOverlayUnavailable,
         ],
       }),
