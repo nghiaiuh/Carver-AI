@@ -365,11 +365,18 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
   assert.equal(result.jobResult.generatedImages[0]?.provider, job.model);
   assert.match(persistedInvocationId ?? "", /^shot-invocation:/);
   assert.match(persistedCandidateId ?? "", /^shot-candidate:/);
-  assert.deepEqual(providerImageManifest.map((image) => [image.role, image.assetId]), [
-    ["authoritative_source", "asset-source"],
-    ["reference", "asset-style"],
+  assert.deepEqual(providerImageManifest.map((image) => image.role), [
+    "authoritative_source",
+    "camera_guide",
+    "uncertainty_guide",
+    "reference",
   ]);
-  assert.deepEqual(providerImageManifest.map((image) => image.buffer), [imageBuffer, referenceBuffer]);
+  assert.equal(providerImageManifest[0]?.assetId, "asset-source");
+  assert.match(providerImageManifest[1]?.assetId ?? "", /^worker-evidence:coarse-camera-guide:/);
+  assert.match(providerImageManifest[2]?.assetId ?? "", /^worker-evidence:uncertainty-mask:/);
+  assert.equal(providerImageManifest[3]?.assetId, "asset-style");
+  assert.deepEqual(providerImageManifest.map((image) => image.buffer).slice(0, 1), [imageBuffer]);
+  assert.deepEqual(providerImageManifest.map((image) => image.buffer).slice(-1), [referenceBuffer]);
   assert.match(providerPrompt, /VIEWPOINT RECONSTRUCTION/);
   assert.match(providerPrompt, /azimuth -42°/);
 });

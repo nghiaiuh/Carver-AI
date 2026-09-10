@@ -52,7 +52,10 @@ import { shotInvocationRepository } from "../repositories/shot-invocation-reposi
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
 import { buildModelConditioning, hashSourceImageContent } from "../novel-view/build-model-conditioning";
-import { buildSceneEvidence } from "../novel-view/scene-evidence-builder";
+import {
+  buildSceneEvidence,
+  buildSceneEvidenceProviderImages,
+} from "../novel-view/scene-evidence-builder";
 import {
   buildShotInvocationIdentity,
   ShotInvocationBusyError,
@@ -539,6 +542,7 @@ export const executeGeneratedImageJob = async (
         throw new Error("Multi-angle shot is missing a compiled prompt.");
       }
       let conditioning: ModelConditioning | null = null;
+      let evidenceImages: ReturnType<typeof buildSceneEvidenceProviderImages> = [];
       // New multi-angle jobs already carry both a normalized CameraSpec and a
       // semantic PromptPlan. Build the provider-neutral package before any
       // provider work. Legacy persisted jobs continue through the compatible
@@ -556,6 +560,7 @@ export const executeGeneratedImageJob = async (
             targetCamera: cameraSpec,
             protectedRegionMaskAssetId: job.maskAssetId,
           });
+          evidenceImages = buildSceneEvidenceProviderImages(sceneEvidence.artifacts);
           return buildModelConditioning({
             job,
             cameraShot: shot,
@@ -586,6 +591,7 @@ export const executeGeneratedImageJob = async (
           targetImage,
           referenceImages,
           maskImage,
+          evidenceImages,
         }),
       );
       const requestedProviderModel = job.model && job.model !== "auto" ? job.model : undefined;

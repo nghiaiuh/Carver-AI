@@ -283,6 +283,12 @@ Current direction:
   `ai_job_shot_invocations` (migration 028). The worker records an
   `outcome_unknown` reservation immediately before a provider call; replay
   recovers a matching persisted asset but never repeats an ambiguous paid call.
+- MA010 builds deterministic worker-local 2.5D scene evidence for each
+  source/camera pair: a heuristic depth proxy and confidence map, coarse camera
+  guide, uncertainty mask, and observed/inferred/unobserved coverage. Only the
+  guide and uncertainty images join the current provider manifest; their opaque
+  `worker-evidence:` IDs and bytes never enter snapshots, R2, or public URLs.
+  This is not calibrated depth or full 3D reconstruction.
 - current release-ready path is `generate_concept` and `refine_concept`
 - unsupported job kinds should fail fast instead of silently returning placeholder results
 - BullMQ payloads should stay minimal (`jobId` plus non-sensitive tracing/idempotency metadata).
