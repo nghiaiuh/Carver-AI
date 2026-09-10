@@ -329,14 +329,14 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
           assetId: image.assetId,
           buffer: image.buffer,
         }));
-        return [{
+        return Array.from({ length: params.outputCount ?? 1 }, () => ({
           buffer: imageBuffer,
           mimeType: "image/png",
           width: 1,
           height: 1,
           revisedPrompt: null,
           provider: params.model ?? "fixture",
-        }];
+        }));
       },
       persistGeneratedImageAsset: async (params) => {
         persistedInvocationId = params.invocationId;
@@ -357,6 +357,7 @@ test("orbit prompt, conditioning manifest, and selected model reach the image pr
           },
         };
       },
+      persistCandidateEvaluation: async () => undefined,
     },
   });
 

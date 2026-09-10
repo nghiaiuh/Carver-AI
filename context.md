@@ -289,6 +289,16 @@ Current direction:
   guide and uncertainty images join the current provider manifest; their opaque
   `worker-evidence:` IDs and bytes never enter snapshots, R2, or public URLs.
   This is not calibrated depth or full 3D reconstruction.
+- MA011 uses complete scene evidence to choose a bounded 1–4 candidate budget.
+  Every multi-angle candidate receives a deterministic local evaluation receipt;
+  malformed outputs are hard-gated, unavailable evidence metrics remain null,
+  and a stable score-then-candidate-index tie-break selects the shot output.
+  Evaluation receipts are durable in `ai_job_shot_candidate_evaluations`
+  (migration 029), while image bytes remain private assets.
+- MA012 defines shared-observed-landmark scoring for cross-view checks and a
+  provider capability benchmark that compares adapters against the same
+  immutable conditioning hash. There is no paid VLM or invented landmark data:
+  a missing observed landmark/projection remains unavailable.
 - current release-ready path is `generate_concept` and `refine_concept`
 - unsupported job kinds should fail fast instead of silently returning placeholder results
 - BullMQ payloads should stay minimal (`jobId` plus non-sensitive tracing/idempotency metadata).

@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { PersistedGeneratedImage } from "@carver/shared";
+import type { EvaluationScore, PersistedGeneratedImage } from "@carver/shared";
 import { createGeneratedAsset } from "../repositories/asset-repository";
 import { getSupabaseAdmin } from "@carver/db/server";
 import {
@@ -39,6 +39,12 @@ type PersistedGeneratedAsset = {
 export type PersistedGeneratedOutput = {
   assetId: string;
   generatedImage: PersistedGeneratedImage;
+  candidate?: {
+    invocationId: string;
+    candidateId: string;
+    candidateIndex: number;
+  };
+  evaluationScore?: EvaluationScore;
 };
 
 const imageMimeType = (value: string | null): "image/png" | "image/jpeg" | "image/webp" | null =>
@@ -70,6 +76,35 @@ const cameraShotFromMetadata = (metadata: Record<string, unknown>): PersistedGen
   };
 };
 
+const candidateFromMetadata = (metadata: Record<string, unknown>) => {
+  const invocationId = typeof metadata.invocationId === "string" ? metadata.invocationId : "";
+  const candidateId = typeof metadata.candidateId === "string" ? metadata.candidateId : "";
+  const candidateIndex = metadata.candidateIndex;
+  if (
+    !invocationId
+    || !candidateId
+    || typeof candidateIndex !== "number"
+    || !Number.isInteger(candidateIndex)
+    || candidateIndex < 0
+    || candidateIndex > 3
+  ) {
+    return undefined;
+  }
+  return { invocationId, candidateId, candidateIndex };
+};
+
+const evaluationFromMetadata = (metadata: Record<string, unknown>): EvaluationScore | undefined => {
+  const value = generatedMetadata(metadata.evaluationScore);
+  if (
+    typeof value.candidateId !== "string" ||
+    typeof value.evaluatorVersion !== "string" ||
+    (value.decision !== "accept" && value.decision !== "reject" && value.decision !== "needs_review") ||
+    !Array.isArray(value.hardGateFailures) ||
+    !Array.isArray(value.metrics)
+  ) return undefined;
+  return value as unknown as EvaluationScore;
+};
+
 const toPersistedGeneratedOutput = async (data: PersistedGeneratedAsset): Promise<PersistedGeneratedOutput | null> => {
   if (!data.storage_path) return null;
   const mimeType = imageMimeType(data.mime_type);
@@ -97,6 +132,8 @@ const toPersistedGeneratedOutput = async (data: PersistedGeneratedAsset): Promis
       provider,
       ...(cameraShotFromMetadata(metadata) ? { cameraShot: cameraShotFromMetadata(metadata) } : {}),
     },
+    ...(candidateFromMetadata(metadata) ? { candidate: candidateFromMetadata(metadata) } : {}),
+    ...(evaluationFromMetadata(metadata) ? { evaluationScore: evaluationFromMetadata(metadata) } : {}),
   };
 };
 
@@ -157,7 +194,9 @@ export const persistGeneratedImageAsset = async (params: {
   cameraShot?: PersistedGeneratedImage["cameraShot"];
   invocationId?: string;
   candidateId?: string;
+  candidateIndex?: number;
   conditioningHash?: string | null;
+  evaluationScore?: EvaluationScore;
   buffer: Buffer;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
   width: number;
@@ -206,7 +245,9 @@ export const persistGeneratedImageAsset = async (params: {
         ...(params.cameraShot ? { cameraShot: params.cameraShot } : {}),
         ...(params.invocationId ? { invocationId: params.invocationId } : {}),
         ...(params.candidateId ? { candidateId: params.candidateId } : {}),
+        ...(typeof params.candidateIndex === "number" ? { candidateIndex: params.candidateIndex } : {}),
         ...(params.conditioningHash ? { conditioningHash: params.conditioningHash } : {}),
+        ...(params.evaluationScore ? { evaluationScore: params.evaluationScore } : {}),
       },
     });
   } catch (error) {
@@ -247,5 +288,9 @@ export const persistGeneratedImageAsset = async (params: {
   return {
     assetId: asset.id,
     generatedImage,
+    ...(params.invocationId && params.candidateId && typeof params.candidateIndex === "number"
+      ? { candidate: { invocationId: params.invocationId, candidateId: params.candidateId, candidateIndex: params.candidateIndex } }
+      : {}),
+    ...(params.evaluationScore ? { evaluationScore: params.evaluationScore } : {}),
   };
 };

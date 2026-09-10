@@ -7,6 +7,7 @@ export const GENERATION_FAILURE_STAGES = [
   "provider_configuration",
   "provider_request",
   "output_normalization",
+  "candidate_evaluation",
   "asset_persistence",
   "job_completion",
 ] as const;

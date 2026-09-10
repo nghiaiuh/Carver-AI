@@ -21,7 +21,9 @@ import type {
   CarverCompiledPromptMeta,
   CarverEditBrief,
   CameraShotDirective,
+  EvaluationScore,
   GenerationPromptResultV2,
+  GenerationCandidate,
   ImageGenerationRequest,
   ModelConditioning,
 } from "@carver/shared";
@@ -49,6 +51,7 @@ import { persistGeneratedAssistantMessage } from "./job-chat-persistence";
 import { createSafeLogger } from "@carver/shared";
 import { generateSimulatedImage, shouldFailAfterPersistedOutput } from "./simulation-generation-service";
 import { shotInvocationRepository } from "../repositories/shot-invocation-repository";
+import { persistCandidateEvaluation } from "../repositories/candidate-evaluation-repository";
 import { GenerationDecisionGateError } from "../errors/generation-decision-gate";
 import { runGenerationStage } from "../errors/generation-stage-error";
 import { buildModelConditioning, hashSourceImageContent } from "../novel-view/build-model-conditioning";
@@ -62,6 +65,15 @@ import {
   ShotInvocationOutcomeUnknownError,
   type ShotInvocationStore,
 } from "./shot-invocation-service";
+import { planCandidatePolicy } from "../novel-view/evaluator/candidate-policy";
+import {
+  evaluateGeneratedCandidate,
+  selectDeterministicWinner,
+} from "../novel-view/evaluator/evaluate-candidate";
+import {
+  OPENAI_IMAGE_PROVIDER_CAPABILITY,
+  benchmarkProviderConditioning,
+} from "../providers/provider-capabilities";
 
 const logger = createSafeLogger("worker.generation-service");
 const shouldCompilePromptForJob = (jobType: CarverAiJobPayload["jobType"]) =>
@@ -236,6 +248,7 @@ export type GenerationServiceDependencies = {
   resolveGenerationMaskImage: typeof resolveGenerationMaskImage;
   generateImagesFromPrompt: typeof generateImagesFromPrompt;
   persistGeneratedAssistantMessage: typeof persistGeneratedAssistantMessage;
+  persistCandidateEvaluation: typeof persistCandidateEvaluation;
   shotInvocationStore: ShotInvocationStore;
 };
 
@@ -248,6 +261,7 @@ const defaultGenerationServiceDependencies: GenerationServiceDependencies = {
   resolveGenerationMaskImage,
   generateImagesFromPrompt,
   persistGeneratedAssistantMessage,
+  persistCandidateEvaluation,
   shotInvocationStore: shotInvocationRepository,
 };
 
@@ -432,16 +446,32 @@ export const executeGeneratedImageJob = async (
         }),
       )
     : [];
+  const reusableWinnerForShot = (outputs: readonly PersistedGeneratedOutput[], shotId: string) =>
+    outputs
+      .filter((output) =>
+        output.generatedImage.cameraShot?.shotId === shotId &&
+        output.evaluationScore?.decision !== "reject",
+      )
+      .sort((left, right) => {
+        const leftScore = left.evaluationScore?.compositeScore ?? -1;
+        const rightScore = right.evaluationScore?.compositeScore ?? -1;
+        return rightScore - leftScore ||
+          (left.candidate?.candidateIndex ?? 0) - (right.candidate?.candidateIndex ?? 0);
+      })[0] ?? null;
+  const reusableShotWinners = cameraShots.flatMap((shot) => {
+    const winner = reusableWinnerForShot(reusableShotOutputs, shot.shotId);
+    return winner ? [winner] : [];
+  });
   if (isMultiAngleJob) {
-    for (const output of reusableShotOutputs) {
+    for (const output of reusableShotWinners) {
       const shot = output.generatedImage.cameraShot;
       if (!shot) continue;
-
       const identity = buildShotInvocationIdentity({
         jobId: job.jobId,
         shotSetNodeId: shot.shotSetNodeId,
         shotId: shot.shotId,
         shotOrder: shot.order,
+        candidateIndex: output.candidate?.candidateIndex ?? 0,
       });
       await runGenerationStage("shot_invocation", () =>
         dependencies.shotInvocationStore.markPersisted({
@@ -457,11 +487,11 @@ export const executeGeneratedImageJob = async (
     }
   }
   const reusableShotOutputIds = new Set(
-    reusableShotOutputs
+    reusableShotWinners
       .map((output) => output.generatedImage.cameraShot?.shotId)
       .filter((shotId): shotId is string => Boolean(shotId)),
   );
-  let persistedOutputs: PersistedGeneratedOutput[] = reusableShotOutputs;
+  let persistedOutputs: PersistedGeneratedOutput[] = reusableShotWinners;
   const requestedOutputCount = isMultiAngleJob ? 1 : Math.min(Math.max(job.outputCount ?? 1, 1), 4);
   const shouldPersistChatMessage = job.targetType !== "image-generator";
 
@@ -525,6 +555,14 @@ export const executeGeneratedImageJob = async (
         output.generatedImage.cameraShot?.shotId === shotId && (!assetId || output.assetId === assetId),
       ) ?? null;
     };
+    const findReusableShotWinner = async (shotId: string) => {
+      const outputs = await dependencies.findReusableGeneratedImageAssets({
+        jobId: job.jobId,
+        projectId: job.projectId,
+        ownerId: job.userId,
+      });
+      return reusableWinnerForShot(outputs, shotId);
+    };
     let outputIndex = 0;
 
     for (const shot of shotsToGenerate) {
@@ -543,15 +581,16 @@ export const executeGeneratedImageJob = async (
       }
       let conditioning: ModelConditioning | null = null;
       let evidenceImages: ReturnType<typeof buildSceneEvidenceProviderImages> = [];
+      let sceneEvidenceBuild: Awaited<ReturnType<typeof buildSceneEvidence>> | null = null;
       // New multi-angle jobs already carry both a normalized CameraSpec and a
       // semantic PromptPlan. Build the provider-neutral package before any
       // provider work. Legacy persisted jobs continue through the compatible
       // source/reference manifest until their next job creation.
       const cameraSpec = shot?.cameraSpec;
       if (shot && shotState.compiledPromptV2 && cameraSpec && targetImage && inputMetadata?.width && inputMetadata.height) {
-        conditioning = await runGenerationStage("conditioning_assembly", async () => {
+        const conditioningAssembly = await runGenerationStage("conditioning_assembly", async () => {
           const sourceContentHash = hashSourceImageContent(targetImage.buffer);
-          const sceneEvidence = await buildSceneEvidence({
+          const evidenceBuild = await buildSceneEvidence({
             source: {
               assetId: targetImage.assetId ?? job.cameraShotSetContext!.source.assetId!,
               buffer: targetImage.buffer,
@@ -560,23 +599,29 @@ export const executeGeneratedImageJob = async (
             targetCamera: cameraSpec,
             protectedRegionMaskAssetId: job.maskAssetId,
           });
-          evidenceImages = buildSceneEvidenceProviderImages(sceneEvidence.artifacts);
-          return buildModelConditioning({
-            job,
-            cameraShot: shot,
-            compiledPrompt: shotState.compiledPromptV2!,
-            source: {
-              // The resolver's asset ID must agree with the canonical request
-              // source. The builder validates that agreement before provider work.
-              assetId: targetImage.assetId ?? job.cameraShotSetContext!.source.assetId!,
-              width: inputMetadata.width,
-              height: inputMetadata.height,
-              mimeType: targetImage.mimeType,
-              contentHash: sourceContentHash,
+          return {
+            evidenceBuild,
+            conditioning: buildModelConditioning({
+              job,
+              cameraShot: shot,
+              compiledPrompt: shotState.compiledPromptV2!,
+              source: {
+                // The resolver's asset ID must agree with the canonical request
+                // source. The builder validates that agreement before provider work.
+                assetId: targetImage.assetId ?? job.cameraShotSetContext!.source.assetId!,
+                width: inputMetadata.width,
+                height: inputMetadata.height,
+                mimeType: targetImage.mimeType,
+                contentHash: sourceContentHash,
+              },
+              sceneEvidence: evidenceBuild.evidence,
             },
-            sceneEvidence: sceneEvidence.evidence,
-          });
+            ),
+          };
         });
+        sceneEvidenceBuild = conditioningAssembly.evidenceBuild;
+        evidenceImages = buildSceneEvidenceProviderImages(sceneEvidenceBuild.artifacts);
+        conditioning = conditioningAssembly.conditioning;
         logger.info("model conditioning assembled", {
           jobId: job.jobId,
           shotId: shot.shotId,
@@ -595,6 +640,22 @@ export const executeGeneratedImageJob = async (
         }),
       );
       const requestedProviderModel = job.model && job.model !== "auto" ? job.model : undefined;
+      const candidatePolicy = planCandidatePolicy(conditioning?.sceneEvidence);
+      const shotCandidateCount = shot ? candidatePolicy.candidateCount : requestedOutputCount;
+      if (conditioning) {
+        const benchmark = benchmarkProviderConditioning({
+          conditioning,
+          orderedRoles: imageManifest.map((image) => image.role),
+          candidates: shotCandidateCount,
+          providers: [OPENAI_IMAGE_PROVIDER_CAPABILITY],
+        });
+        logger.info("provider conditioning capability benchmark", {
+          jobId: job.jobId,
+          shotId: shot?.shotId ?? null,
+          candidateCount: shotCandidateCount,
+          supported: benchmark[0]?.supported ?? false,
+        });
+      }
       const shotInvocation = shot
         ? await runGenerationStage("shot_invocation", () =>
             dependencies.shotInvocationStore.claim({
@@ -613,9 +674,15 @@ export const executeGeneratedImageJob = async (
 
       if (shotInvocation?.kind === "persisted") {
         const persisted = await runGenerationStage("asset_persistence", () =>
-          findReusableShotOutput(shot!.shotId, shotInvocation.outputAssetId),
+          findReusableShotWinner(shot!.shotId),
         );
         if (!persisted) {
+          const durableOutput = await runGenerationStage("asset_persistence", () =>
+            findReusableShotOutput(shot!.shotId, shotInvocation.outputAssetId),
+          );
+          if (durableOutput?.evaluationScore?.decision === "reject") {
+            throw new GenerationDecisionGateError("reject");
+          }
           throw new Error("Durable shot state references an unavailable output asset.");
         }
         persistedOutputs.push(persisted);
@@ -623,8 +690,12 @@ export const executeGeneratedImageJob = async (
       }
 
       if (shotInvocation?.kind === "outcome_unknown") {
-        const persisted = await runGenerationStage("asset_persistence", () => findReusableShotOutput(shot!.shotId));
+        const persisted = await runGenerationStage("asset_persistence", () => findReusableShotWinner(shot!.shotId));
         if (!persisted) {
+          const durableOutput = await runGenerationStage("asset_persistence", () => findReusableShotOutput(shot!.shotId));
+          if (durableOutput?.evaluationScore?.decision === "reject") {
+            throw new GenerationDecisionGateError("reject");
+          }
           throw new ShotInvocationOutcomeUnknownError(shotInvocation.identity.invocationId);
         }
         await runGenerationStage("shot_invocation", () =>
@@ -668,7 +739,7 @@ export const executeGeneratedImageJob = async (
       });
       const images = job.simulation
         ? await Promise.all(
-            Array.from({ length: requestedOutputCount }, () =>
+            Array.from({ length: shotCandidateCount }, () =>
               generateSimulatedImage({
                 job,
                 prompt: providerPrompt,
@@ -682,17 +753,30 @@ export const executeGeneratedImageJob = async (
               mode: job.executionMode,
               model: requestedProviderModel,
               size: generatorAspectRatio ? getImageGeneratorProviderSize(generatorAspectRatio) : undefined,
-              outputCount: requestedOutputCount,
+              outputCount: shotCandidateCount,
               imageManifest,
               targetImage,
               referenceImages,
               maskImage,
             }),
           );
-      // Persist each camera shot before advancing to the next provider call.
-      // A later-shot failure can then replay only the missing shot on retry.
-      for (const providerImage of images) {
-        const persistedOutputIndex = shot?.order ?? outputIndex;
+      if (shot && images.length !== shotCandidateCount) {
+        throw new Error(
+          `The image provider returned ${images.length} candidates; expected ${shotCandidateCount} for camera shot ${shot.shotId}.`,
+        );
+      }
+      // Persist every paid candidate before selecting a shot winner. The durable
+      // invocation remains candidate zero for the current provider `n` call;
+      // each returned candidate still has a stable ID and evaluation receipt.
+      const evaluatedShotCandidates: Array<{
+        candidate: GenerationCandidate;
+        score: EvaluationScore;
+        output: PersistedGeneratedOutput;
+      }> = [];
+      for (const [candidateIndex, providerImage] of images.entries()) {
+        const persistedOutputIndex = shot
+          ? (shot.order * 4) + candidateIndex
+          : outputIndex;
         logger.info("generation provider image received", {
           jobId: job.jobId,
           projectId: job.projectId,
@@ -712,6 +796,39 @@ export const executeGeneratedImageJob = async (
               }),
             )
           : providerImage;
+
+        const candidateIdentity = shot
+          ? buildShotInvocationIdentity({
+              jobId: job.jobId,
+              shotSetNodeId: shot.shotSetNodeId,
+              shotId: shot.shotId,
+              shotOrder: shot.order,
+              candidateIndex,
+            })
+          : null;
+        const candidateForEvaluation = candidateIdentity
+          ? {
+              ...candidateIdentity,
+              conditioningHash: conditioning?.conditioningHash ?? null,
+              assetId: "pending-persistence",
+            } satisfies GenerationCandidate
+          : null;
+        const evidenceBuildForEvaluation = sceneEvidenceBuild;
+        const evaluationScore = candidateForEvaluation && conditioning && evidenceBuildForEvaluation
+          ? await runGenerationStage("candidate_evaluation", () =>
+              evaluateGeneratedCandidate({
+                candidate: candidateForEvaluation,
+                image: {
+                  buffer: normalizedImage.buffer,
+                  mimeType: providerImage.mimeType,
+                  width: normalizedImage.width,
+                  height: normalizedImage.height,
+                },
+                evidence: conditioning.sceneEvidence,
+                artifacts: evidenceBuildForEvaluation.artifacts,
+              }),
+            )
+          : undefined;
 
         const persisted = await runGenerationStage("asset_persistence", () =>
           dependencies.persistGeneratedImageAsset({
@@ -734,13 +851,15 @@ export const executeGeneratedImageJob = async (
                   mode: shot.mode,
                 }
               : undefined,
-            ...(shotInvocation?.kind === "claimed"
+            ...(candidateIdentity
               ? {
-                  invocationId: shotInvocation.identity.invocationId,
-                  candidateId: shotInvocation.identity.candidateId,
+                  invocationId: candidateIdentity.invocationId,
+                  candidateId: candidateIdentity.candidateId,
+                  candidateIndex,
                   conditioningHash: conditioning?.conditioningHash ?? null,
                 }
               : {}),
+            ...(evaluationScore ? { evaluationScore } : {}),
             buffer: normalizedImage.buffer,
             mimeType: providerImage.mimeType,
             width: normalizedImage.width,
@@ -749,7 +868,7 @@ export const executeGeneratedImageJob = async (
           }),
         );
 
-        if (shotInvocation?.kind === "claimed") {
+        if (shotInvocation?.kind === "claimed" && candidateIndex === 0) {
           await runGenerationStage("shot_invocation", () =>
             dependencies.shotInvocationStore.markPersisted({
               jobId: job.jobId,
@@ -764,10 +883,64 @@ export const executeGeneratedImageJob = async (
           );
         }
 
-        persistedOutputs.push(persisted);
+        if (candidateForEvaluation && evaluationScore) {
+          evaluatedShotCandidates.push({
+            candidate: { ...candidateForEvaluation, assetId: persisted.assetId },
+            score: evaluationScore,
+            output: persisted,
+          });
+          await runGenerationStage("candidate_evaluation", () =>
+            dependencies.persistCandidateEvaluation({
+              jobId: job.jobId,
+              projectId: job.projectId,
+              ownerId: job.userId,
+              candidate: { ...candidateForEvaluation, assetId: persisted.assetId },
+              assetId: persisted.assetId,
+              score: evaluationScore,
+            }),
+          );
+        } else {
+          persistedOutputs.push(persisted);
+        }
         if (!shot) {
           outputIndex += 1;
         }
+      }
+      if (shot && evaluatedShotCandidates.length > 0) {
+        const winner = selectDeterministicWinner(evaluatedShotCandidates);
+        if (!winner) {
+          throw new GenerationDecisionGateError("reject");
+        }
+        const selected = evaluatedShotCandidates.find((entry) => entry.candidate.candidateId === winner.candidate.candidateId);
+        if (!selected) throw new Error("Candidate evaluator selected an unavailable output.");
+        if (shotInvocation?.kind === "claimed" && winner.candidate.candidateIndex !== 0) {
+          await runGenerationStage("shot_invocation", () =>
+            dependencies.shotInvocationStore.markPersisted({
+              jobId: job.jobId,
+              projectId: job.projectId,
+              ownerId: job.userId,
+              identity: {
+                invocationId: winner.candidate.invocationId,
+                candidateId: winner.candidate.candidateId,
+                shotSetNodeId: shot.shotSetNodeId,
+                shotId: shot.shotId,
+                shotOrder: shot.order,
+                candidateIndex: winner.candidate.candidateIndex,
+              },
+              outputAssetId: selected.output.assetId,
+              conditioningHash: winner.candidate.conditioningHash,
+              providerModel: selected.output.generatedImage.provider ?? null,
+            }),
+          );
+        }
+        persistedOutputs.push(selected.output);
+        logger.info("deterministic candidate winner selected", {
+          jobId: job.jobId,
+          shotId: shot.shotId,
+          candidateId: winner.candidate.candidateId,
+          candidateIndex: winner.candidate.candidateIndex,
+          score: winner.score.compositeScore,
+        });
       }
     }
 

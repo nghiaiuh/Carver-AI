@@ -158,6 +158,11 @@ export const buildJobError = (error: unknown): WorkerJobError => {
         errorMessage: "The generated image could not be processed. Please retry shortly.",
         permanent: false,
       },
+      candidate_evaluation: {
+        errorCode: "generation_candidate_evaluation_failed",
+        errorMessage: "The generated camera candidates could not be evaluated. Please retry shortly.",
+        permanent: false,
+      },
       asset_persistence: {
         errorCode: "storage_upload_failed",
         errorMessage: "The generated image could not be stored. Please retry shortly.",
